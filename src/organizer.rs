@@ -484,6 +484,7 @@ mod property_tests {
                 Just(ContentCategory::Featurette),
                 Just(ContentCategory::BehindTheScenes),
                 Just(ContentCategory::DeletedScene),
+                Just(ContentCategory::Interview),
             ]
         ) {
             let expected_subdir = match category {
@@ -491,6 +492,7 @@ mod property_tests {
                 ContentCategory::Featurette => "featurettes",
                 ContentCategory::BehindTheScenes => "behind the scenes",
                 ContentCategory::DeletedScene => "deleted scenes",
+                ContentCategory::Interview => "interviews",
             };
 
             prop_assert_eq!(category.subdirectory(), expected_subdir);
@@ -507,6 +509,7 @@ mod property_tests {
                 Just(ContentCategory::Featurette),
                 Just(ContentCategory::BehindTheScenes),
                 Just(ContentCategory::DeletedScene),
+                Just(ContentCategory::Interview),
             ]
         ) {
             let runtime = tokio::runtime::Runtime::new().unwrap();

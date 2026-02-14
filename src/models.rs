@@ -181,6 +181,8 @@ pub enum ContentCategory {
     BehindTheScenes,
     /// Deleted scenes
     DeletedScene,
+    /// Cast and crew interviews
+    Interview,
 }
 
 impl fmt::Display for ContentCategory {
@@ -190,6 +192,7 @@ impl fmt::Display for ContentCategory {
             ContentCategory::Featurette => write!(f, "Featurette"),
             ContentCategory::BehindTheScenes => write!(f, "Behind the Scenes"),
             ContentCategory::DeletedScene => write!(f, "Deleted Scene"),
+            ContentCategory::Interview => write!(f, "Interview"),
         }
     }
 }
@@ -202,6 +205,7 @@ impl ContentCategory {
             ContentCategory::Featurette => "featurettes",
             ContentCategory::BehindTheScenes => "behind the scenes",
             ContentCategory::DeletedScene => "deleted scenes",
+            ContentCategory::Interview => "interviews",
         }
     }
 }
@@ -254,6 +258,7 @@ mod tests {
             ContentCategory::DeletedScene.subdirectory(),
             "deleted scenes"
         );
+        assert_eq!(ContentCategory::Interview.subdirectory(), "interviews");
     }
 
     #[test]

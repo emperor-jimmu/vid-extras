@@ -9,12 +9,12 @@ The extras_fetcher is a Rust-based automation utility designed to enrich Jellyfi
 - **Extras_Fetcher**: The Rust-based video extras downloader system
 - **Movie_Folder**: A directory containing a movie file, named in format "Movie Title (Year)"
 - **Root_Directory**: The top-level directory containing all Movie_Folders
-- **Extra_Content**: Supplementary video materials including trailers, behind-the-scenes, deleted scenes, featurettes, and bloopers
+- **Extra_Content**: Supplementary video materials including trailers, behind-the-scenes, deleted scenes, featurettes, and interviews
 - **Done_Marker**: A file named "done.ext" containing JSON timestamp indicating completed processing
 - **TMDB**: TheMovieDB API service for movie metadata and video links
 - **Archive_Org**: Internet Archive's Moving Image Archive for historical EPK content
 - **EPK**: Electronic Press Kit - promotional materials for movies
-- **Target_Subdirectory**: Jellyfin-compliant folders (/trailers, /featurettes, /behind the scenes, /deleted scenes)
+- **Target_Subdirectory**: Jellyfin-compliant folders (/trailers, /featurettes, /behind the scenes, /deleted scenes, /interviews)
 - **Temp_Folder**: Temporary staging directory for downloads before processing
 - **CRF**: Constant Rate Factor - video quality parameter for ffmpeg encoding
 
@@ -60,8 +60,7 @@ The extras_fetcher is a Rust-based automation utility designed to enrich Jellyfi
 5. WHEN processing TMDB video entries with type "Behind the Scenes", THE Extras_Fetcher SHALL map them to the /behind the scenes Target_Subdirectory
 6. WHEN processing TMDB video entries with type "Deleted Scene", THE Extras_Fetcher SHALL map them to the /deleted scenes Target_Subdirectory
 7. WHEN processing TMDB video entries with type "Featurette", THE Extras_Fetcher SHALL map them to the /featurettes Target_Subdirectory
-8. WHEN processing TMDB video entries with type "Bloopers", THE Extras_Fetcher SHALL map them to the /featurettes Target_Subdirectory
-9. WHEN TMDB API requests fail, THE Extras_Fetcher SHALL log the error and continue processing with other sources
+8. WHEN TMDB API requests fail, THE Extras_Fetcher SHALL log the error and continue processing with other sources
 
 ### Requirement 4: Archive.org Content Discovery
 
@@ -87,13 +86,12 @@ The extras_fetcher is a Rust-based automation utility designed to enrich Jellyfi
 2. WHEN searching YouTube, THE Extras_Fetcher SHALL use yt-dlp's ytsearch operator
 3. WHEN searching for deleted scenes, THE Extras_Fetcher SHALL use the query pattern "{Movie Title} {Year} deleted scenes"
 4. WHEN searching for behind-the-scenes content, THE Extras_Fetcher SHALL use the query pattern "{Movie Title} {Year} behind the scenes"
-5. WHEN searching for bloopers, THE Extras_Fetcher SHALL use the query pattern "{Movie Title} {Year} bloopers"
-6. WHEN searching for interviews, THE Extras_Fetcher SHALL use the query pattern "{Movie Title} {Year} cast interview"
-7. WHEN a YouTube video duration exceeds 20 minutes, THE Extras_Fetcher SHALL exclude it from results
-8. WHEN a YouTube video duration is less than 30 seconds, THE Extras_Fetcher SHALL exclude it from results
-9. WHEN a YouTube video title contains "Review", "Reaction", "Analysis", "Explained", "Ending", "Theory", or "React", THE Extras_Fetcher SHALL exclude it from results
-10. WHEN a YouTube video is identified as a YouTube Short, THE Extras_Fetcher SHALL exclude it from results
-11. WHEN YouTube search fails, THE Extras_Fetcher SHALL log the error and continue with available content
+5. WHEN searching for interviews, THE Extras_Fetcher SHALL use the query pattern "{Movie Title} {Year} cast interview"
+6. WHEN a YouTube video duration exceeds 20 minutes, THE Extras_Fetcher SHALL exclude it from results
+7. WHEN a YouTube video duration is less than 30 seconds, THE Extras_Fetcher SHALL exclude it from results
+8. WHEN a YouTube video title contains "Review", "Reaction", "Analysis", "Explained", "Ending", "Theory", or "React", THE Extras_Fetcher SHALL exclude it from results
+9. WHEN a YouTube video is identified as a YouTube Short, THE Extras_Fetcher SHALL exclude it from results
+10. WHEN YouTube search fails, THE Extras_Fetcher SHALL log the error and continue with available content
 
 ### Requirement 6: Content Acquisition
 
@@ -133,9 +131,10 @@ The extras_fetcher is a Rust-based automation utility designed to enrich Jellyfi
 2. WHEN organizing featurette content, THE Extras_Fetcher SHALL move files to the /featurettes Target_Subdirectory
 3. WHEN organizing behind-the-scenes content, THE Extras_Fetcher SHALL move files to the /behind the scenes Target_Subdirectory
 4. WHEN organizing deleted scene content, THE Extras_Fetcher SHALL move files to the /deleted scenes Target_Subdirectory
-5. WHEN a Target_Subdirectory does not exist, THE Extras_Fetcher SHALL create it before moving files
-6. WHEN file moves complete successfully, THE Extras_Fetcher SHALL delete the Temp_Folder
-7. WHEN all content is organized, THE Extras_Fetcher SHALL create the Done_Marker file
+5. WHEN organizing interview content, THE Extras_Fetcher SHALL move files to the /interviews Target_Subdirectory
+6. WHEN a Target_Subdirectory does not exist, THE Extras_Fetcher SHALL create it before moving files
+7. WHEN file moves complete successfully, THE Extras_Fetcher SHALL delete the Temp_Folder
+8. WHEN all content is organized, THE Extras_Fetcher SHALL create the Done_Marker file
 
 ### Requirement 9: Parallel Processing
 

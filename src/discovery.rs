@@ -133,7 +133,6 @@ impl TmdbDiscoverer {
             "Behind the Scenes" => Some(ContentCategory::BehindTheScenes),
             "Deleted Scene" => Some(ContentCategory::DeletedScene),
             "Featurette" => Some(ContentCategory::Featurette),
-            "Bloopers" => Some(ContentCategory::Featurette),
             _ => {
                 debug!("Unknown TMDB video type: {}", tmdb_type);
                 None
@@ -360,12 +359,8 @@ impl YoutubeDiscoverer {
                 ContentCategory::BehindTheScenes,
             ),
             (
-                format!("{} {} bloopers", title, year),
-                ContentCategory::Featurette,
-            ),
-            (
                 format!("{} {} cast interview", title, year),
-                ContentCategory::Featurette,
+                ContentCategory::Interview,
             ),
         ]
     }
@@ -380,8 +375,6 @@ impl YoutubeDiscoverer {
             "Ending",
             "Theory",
             "React",
-            "Bloopers",
-            "Gag Reel",
         ];
 
         let title_lower = title.to_lowercase();
@@ -680,7 +673,6 @@ mod property_tests {
             Just("Behind the Scenes"),
             Just("Deleted Scene"),
             Just("Featurette"),
-            Just("Bloopers"),
         ]) {
             let category = TmdbDiscoverer::map_tmdb_type(tmdb_type);
 
@@ -689,7 +681,6 @@ mod property_tests {
                 "Behind the Scenes" => prop_assert_eq!(category, Some(ContentCategory::BehindTheScenes)),
                 "Deleted Scene" => prop_assert_eq!(category, Some(ContentCategory::DeletedScene)),
                 "Featurette" => prop_assert_eq!(category, Some(ContentCategory::Featurette)),
-                "Bloopers" => prop_assert_eq!(category, Some(ContentCategory::Featurette)),
                 _ => unreachable!(),
             }
         }
@@ -796,7 +787,7 @@ mod property_tests {
             // YouTube should always generate search queries regardless of year or other factors
             let queries = YoutubeDiscoverer::build_search_queries(&title, year);
 
-            // YouTube should always produce queries (at least 4 types: deleted scenes, behind the scenes, bloopers, interviews)
+            // YouTube should always produce queries (at least 3 types: deleted scenes, behind the scenes, interviews)
             prop_assert!(
                 !queries.is_empty(),
                 "YouTube should always generate search queries"
@@ -804,8 +795,8 @@ mod property_tests {
 
             // Verify we have queries for all expected content types
             prop_assert!(
-                queries.len() >= 4,
-                "YouTube should generate at least 4 search queries, got {}",
+                queries.len() >= 3,
+                "YouTube should generate at least 3 search queries, got {}",
                 queries.len()
             );
 
@@ -1105,18 +1096,11 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_tmdb_type_mapping_bloopers() {
-        assert_eq!(
-            TmdbDiscoverer::map_tmdb_type("Bloopers"),
-            Some(ContentCategory::Featurette)
-        );
-    }
-
-    #[test]
     fn test_tmdb_type_mapping_unknown() {
         assert_eq!(TmdbDiscoverer::map_tmdb_type("Unknown Type"), None);
         assert_eq!(TmdbDiscoverer::map_tmdb_type("Clip"), None);
         assert_eq!(TmdbDiscoverer::map_tmdb_type("Teaser"), None);
+        assert_eq!(TmdbDiscoverer::map_tmdb_type("Bloopers"), None);
     }
 
     #[test]
@@ -1460,8 +1444,8 @@ mod unit_tests {
         // Test that search queries are constructed correctly
         let queries = YoutubeDiscoverer::build_search_queries("The Matrix", 1999);
 
-        // Should have 4 queries
-        assert_eq!(queries.len(), 4);
+        // Should have 3 queries (deleted scenes, behind the scenes, cast interview)
+        assert_eq!(queries.len(), 3);
 
         // Verify each query contains title and year
         for (query, _category) in &queries {
@@ -1472,7 +1456,6 @@ mod unit_tests {
         // Verify specific query types
         assert!(queries.iter().any(|(q, _)| q.contains("deleted scenes")));
         assert!(queries.iter().any(|(q, _)| q.contains("behind the scenes")));
-        assert!(queries.iter().any(|(q, _)| q.contains("bloopers")));
         assert!(queries.iter().any(|(q, _)| q.contains("cast interview")));
     }
 
@@ -1487,8 +1470,8 @@ mod unit_tests {
                 assert_eq!(*category, ContentCategory::DeletedScene);
             } else if query.contains("behind the scenes") {
                 assert_eq!(*category, ContentCategory::BehindTheScenes);
-            } else if query.contains("bloopers") || query.contains("cast interview") {
-                assert_eq!(*category, ContentCategory::Featurette);
+            } else if query.contains("cast interview") {
+                assert_eq!(*category, ContentCategory::Interview);
             }
         }
     }
@@ -1556,26 +1539,6 @@ mod unit_tests {
         ));
         assert!(YoutubeDiscoverer::contains_excluded_keywords(
             "Reacting to Trailer"
-        ));
-    }
-
-    #[test]
-    fn test_youtube_keyword_filtering_bloopers() {
-        assert!(YoutubeDiscoverer::contains_excluded_keywords(
-            "Movie Bloopers"
-        ));
-        assert!(YoutubeDiscoverer::contains_excluded_keywords(
-            "bloopers compilation"
-        ));
-    }
-
-    #[test]
-    fn test_youtube_keyword_filtering_gag_reel() {
-        assert!(YoutubeDiscoverer::contains_excluded_keywords(
-            "Gag Reel Compilation"
-        ));
-        assert!(YoutubeDiscoverer::contains_excluded_keywords(
-            "gag reel funny moments"
         ));
     }
 

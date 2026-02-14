@@ -1,6 +1,6 @@
 # Product Overview
 
-extras_fetcher is a Jellyfin movie extras automation tool that discovers, downloads, and organizes supplemental video content (trailers, featurettes, behind-the-scenes, deleted scenes) for movie libraries.
+extras_fetcher is a Jellyfin movie extras automation tool that discovers, downloads, and organizes supplemental video content (trailers, featurettes, behind-the-scenes, deleted scenes, interviews) for movie libraries.
 
 The tool scans a Jellyfin movie library, discovers extras from multiple sources (TMDB, Archive.org, YouTube), downloads them using yt-dlp, converts them to x265 format with ffmpeg, and organizes them into Jellyfin-compatible directory structures.
 
