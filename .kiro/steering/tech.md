@@ -16,6 +16,8 @@
 
 ## Testing
 - `proptest` (1.5) - Property-based testing framework
+- `chrono` (0.4) - Date/time handling for tests
+- `tempfile` (3.13) - Temporary file/directory creation for tests
 
 ## External Tools
 - `yt-dlp` - Video downloading (must be in PATH)
