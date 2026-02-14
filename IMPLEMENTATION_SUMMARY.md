@@ -56,13 +56,16 @@ Implemented normalized title matching and collection-based filtering for YouTube
 ### Fallback Sequel Detection (Requirements 5.11)
 **Problem:** When TMDB doesn't provide collection information, sequels were not being filtered out.
 
-**Solution:** Implemented fallback sequel number detection that checks for patterns like "REC 2", "REC3", etc.
+**Solution:** Implemented fallback sequel number detection that checks for patterns like "REC 2", "REC3", "REC II", etc., including Roman numeral support.
 
 **Implementation:**
 - Added `YoutubeDiscoverer::mentions_sequel_number()` to detect sequel numbers 2-19
 - Checks both spaced ("rec 2") and non-spaced ("rec2") patterns using normalization
 - Includes year disambiguation to avoid false positives (e.g., "REC 2007" is not a sequel)
 - Extended range from 2-9 to 2-19 to support longer franchises
+- Added `YoutubeDiscoverer::roman_to_int()` to convert Roman numerals (II-XIX) to integers
+- Detects Roman numerals in both spaced ("REC II") and non-spaced ("RECII") formats
+- Case-insensitive Roman numeral matching
 
 **Example:**
 - Movie: "REC (2007)"
@@ -70,7 +73,11 @@ Implemented normalized title matching and collection-based filtering for YouTube
 - ❌ Excludes: "REC 2: CNN" (sequel number detected)
 - ❌ Excludes: "[Rec]3 Génesis" (sequel number detected)
 - ❌ Excludes: "rec15 behind the scenes" (sequel number detected)
+- ❌ Excludes: "REC II: Behind the Scenes" (Roman numeral detected)
+- ❌ Excludes: "RECIII Genesis" (Roman numeral detected)
+- ❌ Excludes: "REC IV Apocalypse" (Roman numeral detected)
 - ✅ Includes: "REC 2007 Trailer" (year, not sequel number)
+- ✅ Includes: "REC I Behind the Scenes" (I = 1, not a sequel)
 
 ### Duration Limit Increase (Requirements 5.7, 5.8)
 **Problem:** Some legitimate behind-the-scenes content and making-of videos were being excluded due to the 20-minute duration limit.
@@ -122,6 +129,7 @@ pub async fn get_metadata(&self, movie: &MovieEntry) -> DiscoveryMetadata
 fn normalize_title(title: &str) -> String
 fn contains_movie_title(video_title: &str, movie_title: &str) -> bool
 fn mentions_collection_movies(video_title: &str, collection_titles: &[String]) -> bool
+fn roman_to_int(roman: &str) -> Option<u32>
 pub async fn discover_with_metadata(&self, movie: &MovieEntry, metadata: &DiscoveryMetadata) -> Result<Vec<VideoSource>, DiscoveryError>
 ```
 
@@ -163,6 +171,8 @@ pub async fn discover_all(&self, movie: &MovieEntry) -> Vec<VideoSource>
 6. `test_mentions_collection_movies_with_normalization` - Validates normalized collection matching
 7. `test_should_include_video_user_reported_cases` - Validates specific user-reported issues
 8. `test_mentions_sequel_number` - Validates sequel number detection for numbers 2-19
+9. `test_roman_to_int` - Validates Roman numeral conversion (II-XIX)
+10. `test_mentions_sequel_number_with_roman_numerals` - Validates Roman numeral sequel detection
 
 ### Updated Tests
 All existing `should_include_video` test calls updated to include movie_title parameter:
@@ -178,7 +188,7 @@ All existing `should_include_video` test calls updated to include movie_title pa
 - `prop_youtube_duration_filtering` - Updated to validate 30s-2400s range
 
 ### Test Results
-- ✅ All 219 library tests passing (210 passed, 9 ignored)
+- ✅ All 221 library tests passing (212 passed, 9 ignored)
 - ✅ No clippy warnings
 - ✅ Code properly formatted with rustfmt
 - ✅ Compiles without errors or warnings

@@ -579,7 +579,56 @@ impl YoutubeDiscoverer {
         false
     }
 
-    /// Check if video title mentions a sequel number (e.g., "REC 2", "REC3", "[REC]2")
+    /// Convert Roman numeral to integer (supports I-XIX, i.e., 1-19)
+    /// Returns None if the string is not a valid Roman numeral
+    fn roman_to_int(roman: &str) -> Option<u32> {
+        let roman_upper = roman.to_uppercase();
+
+        // Map of Roman numeral characters to values
+        let char_values = |c: char| -> Option<u32> {
+            match c {
+                'I' => Some(1),
+                'V' => Some(5),
+                'X' => Some(10),
+                _ => None,
+            }
+        };
+
+        let chars: Vec<char> = roman_upper.chars().collect();
+        if chars.is_empty() {
+            return None;
+        }
+
+        let mut result = 0;
+        let mut i = 0;
+
+        while i < chars.len() {
+            let current = char_values(chars[i])?;
+
+            if i + 1 < chars.len() {
+                let next = char_values(chars[i + 1])?;
+
+                // Subtractive notation (e.g., IV = 4, IX = 9)
+                if current < next {
+                    result += next - current;
+                    i += 2;
+                    continue;
+                }
+            }
+
+            result += current;
+            i += 1;
+        }
+
+        // Only return valid sequel numbers (2-19)
+        if (2..=19).contains(&result) {
+            Some(result)
+        } else {
+            None
+        }
+    }
+
+    /// Check if video title mentions a sequel number (e.g., "REC 2", "REC3", "[REC]2", "REC II")
     /// This is a fallback for when TMDB doesn't provide collection information
     fn mentions_sequel_number(video_title: &str, movie_title: &str) -> bool {
         let normalized_video = Self::normalize_title(video_title);
@@ -612,6 +661,65 @@ impl YoutubeDiscoverer {
                 debug!(
                     "Detected sequel number {} in '{}' (movie: '{}')",
                     num, video_title, movie_title
+                );
+                return true;
+            }
+        }
+
+        // Check for Roman numerals (II-XIX)
+        // Split the normalized video title into words and check each for Roman numerals
+        for word in normalized_video.split_whitespace() {
+            if let Some(num) = Self::roman_to_int(word) {
+                // Check if this Roman numeral appears after the movie title
+                // by looking for patterns like "rec ii" or "rec iii"
+                let roman_upper = word.to_uppercase();
+                let with_space = format!("{} {}", normalized_movie, word);
+
+                if normalized_video.contains(&with_space) {
+                    debug!(
+                        "Detected sequel Roman numeral {} ({}) in '{}' (movie: '{}')",
+                        roman_upper, num, video_title, movie_title
+                    );
+                    return true;
+                }
+            }
+        }
+
+        // Also check for Roman numerals without spaces (e.g., "recii", "reciii")
+        // by checking if the video title (without spaces) contains movie+roman
+        for num in 2..=19 {
+            // Generate Roman numeral for this number
+            let roman = match num {
+                2 => "ii",
+                3 => "iii",
+                4 => "iv",
+                5 => "v",
+                6 => "vi",
+                7 => "vii",
+                8 => "viii",
+                9 => "ix",
+                10 => "x",
+                11 => "xi",
+                12 => "xii",
+                13 => "xiii",
+                14 => "xiv",
+                15 => "xv",
+                16 => "xvi",
+                17 => "xvii",
+                18 => "xviii",
+                19 => "xix",
+                _ => continue,
+            };
+
+            let without_space = format!("{}{}", normalized_movie, roman);
+
+            if normalized_video_no_spaces.contains(&without_space) {
+                debug!(
+                    "Detected sequel Roman numeral {} ({}) in '{}' (movie: '{}')",
+                    roman.to_uppercase(),
+                    num,
+                    video_title,
+                    movie_title
                 );
                 return true;
             }
@@ -2272,6 +2380,109 @@ fn test_mentions_sequel_number() {
     ));
     assert!(!YoutubeDiscoverer::mentions_sequel_number(
         "REC Official Trailer",
+        "REC"
+    ));
+}
+
+#[test]
+fn test_roman_to_int() {
+    // Test valid Roman numerals (2-19)
+    assert_eq!(YoutubeDiscoverer::roman_to_int("II"), Some(2));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("III"), Some(3));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("IV"), Some(4));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("V"), Some(5));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("VI"), Some(6));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("VII"), Some(7));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("VIII"), Some(8));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("IX"), Some(9));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("X"), Some(10));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XI"), Some(11));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XII"), Some(12));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XIII"), Some(13));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XIV"), Some(14));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XV"), Some(15));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XVI"), Some(16));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XVII"), Some(17));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XVIII"), Some(18));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XIX"), Some(19));
+
+    // Test case insensitivity
+    assert_eq!(YoutubeDiscoverer::roman_to_int("ii"), Some(2));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("Iv"), Some(4));
+    assert_eq!(YoutubeDiscoverer::roman_to_int("xix"), Some(19));
+
+    // Test invalid cases (I = 1 is not a sequel, 20+ not supported)
+    assert_eq!(YoutubeDiscoverer::roman_to_int("I"), None);
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XX"), None);
+    assert_eq!(YoutubeDiscoverer::roman_to_int("XXI"), None);
+
+    // Test invalid Roman numerals
+    assert_eq!(YoutubeDiscoverer::roman_to_int("ABC"), None);
+    assert_eq!(YoutubeDiscoverer::roman_to_int(""), None);
+    assert_eq!(YoutubeDiscoverer::roman_to_int("IIII"), Some(4)); // Valid but non-standard
+}
+
+#[test]
+fn test_mentions_sequel_number_with_roman_numerals() {
+    // Test Roman numeral detection with spaces
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "REC II: Behind the Scenes",
+        "[REC]"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "REC III Genesis",
+        "REC"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "[REC] IV: Apocalypse",
+        "[REC]"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "REC X: The Final Chapter",
+        "REC"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "REC XIX Trailer",
+        "REC"
+    ));
+
+    // Test Roman numeral detection without spaces
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "RECII behind the scenes",
+        "REC"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "[REC]III genesis",
+        "[REC]"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "reciv apocalypse",
+        "REC"
+    ));
+
+    // Test case insensitivity
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "rec ii behind the scenes",
+        "REC"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "REC Ii: CNN",
+        "[REC]"
+    ));
+
+    // Original movie should not trigger (I = 1 is not detected as sequel)
+    assert!(!YoutubeDiscoverer::mentions_sequel_number(
+        "REC I Behind the Scenes",
+        "REC"
+    ));
+    assert!(!YoutubeDiscoverer::mentions_sequel_number(
+        "RECI Official Trailer",
+        "REC"
+    ));
+
+    // Test that Roman numerals in wrong context don't trigger
+    assert!(!YoutubeDiscoverer::mentions_sequel_number(
+        "The History of Rome Part II",
         "REC"
     ));
 }
