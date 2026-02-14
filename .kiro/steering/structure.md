@@ -20,7 +20,7 @@ The codebase follows a pipeline architecture with clear separation of concerns:
 ### Core Modules (src/)
 
 - `main.rs` - Entry point, module declarations
-- `cli.rs` - Command-line interface, argument parsing, configuration
+- `cli.rs` - **[IMPLEMENTED]** Command-line interface, argument parsing, configuration
 - `error.rs` - Centralized error types using thiserror (one enum per module)
 - `models.rs` - Shared data structures (MovieEntry, VideoSource, DoneMarker, enums)
 - `orchestrator.rs` - **[IMPLEMENTED]** Main pipeline coordinator, manages processing flow
@@ -684,7 +684,92 @@ pub struct ProcessingSummary {
 - Drop trait guarantees cleanup even on panic
 - Temp directories use format: `tmp_downloads/{movie_title}_{year}/`
 
+#### CLI Module (src/cli.rs)
+**Status:** ✅ Fully implemented and tested
+
+**Functionality:**
+- Command-line argument parsing using clap with derive macros
+- Support for all required flags: `--help`, `--version`, `--force`, `--mode`, `--concurrency`, `--verbose`
+- Configuration validation (directory existence, concurrency >= 1)
+- Colored banner display with version information
+- Configuration display showing all parameters with colored output
+- Proper error handling with descriptive messages
+
+**Public API:**
+```rust
+pub struct CliArgs {
+    // Root directory containing movie folders
+    pub root_directory: PathBuf,
+    // Ignore done markers and reprocess all movies
+    pub force: bool,
+    // Content source mode (all or youtube)
+    pub mode: SourceMode,
+    // Maximum number of movies to process concurrently
+    pub concurrency: usize,
+    // Enable verbose logging output
+    pub verbose: bool,
+}
+
+pub struct CliConfig {
+    pub root_directory: PathBuf,
+    pub force: bool,
+    pub mode: SourceMode,
+    pub concurrency: usize,
+    pub verbose: bool,
+}
+
+// Parse command-line arguments
+pub fn parse_args() -> Result<CliConfig, CliError>;
+
+// Display colored banner with version
+pub fn display_banner();
+
+// Display configuration with all parameters
+pub fn display_config(config: &CliConfig);
+```
+
+**Test Coverage:**
+- 9 unit tests covering:
+  - Source mode display formatting
+  - CLI config conversion from args
+  - Valid directory validation
+  - Nonexistent directory error handling
+  - File instead of directory error handling
+  - Zero concurrency validation
+  - Default values verification
+  - Banner and config display functions
+- 2 property-based tests with 100+ iterations each:
+  - Property 36: Configuration Display Completeness
+  - Property 38: Verbose Flag Effect
+- Property 4 (Force Flag Overrides Done Markers) validated in scanner module
+- All tests passing ✅ (11 total CLI tests)
+
+**Dependencies:**
+- Uses `clap` (4.5) for argument parsing with derive macros
+- Uses `colored` (2.1) for terminal output formatting
+- Test dependencies: `proptest`, `tempfile`
+
+**Requirements Validated:**
+- 1.1: Root directory command-line argument
+- 1.2: --help flag displays usage information
+- 1.3: --version flag displays version information
+- 1.4: --force flag ignores done markers (validated in scanner tests)
+- 1.5: --mode parameter for source filtering
+- 13.1: Colored banner with tool name and version
+- 13.2: Configuration display with all parameters
+- 13.8: --verbose flag for detailed output
+
+**Implementation Notes:**
+- Uses clap's derive macros for clean, declarative argument parsing
+- Validation happens before config creation to catch errors early
+- Colored output uses the `colored` crate for cross-platform terminal colors
+- Banner includes ASCII art box with tool name and version
+- Config display shows all parameters with color-coded values
+
 ### Pending Modules
 
-The following modules are defined but not yet implemented:
-- CLI module
+All core modules are now implemented. Remaining tasks:
+- Integration of CLI with main entry point (Task 17)
+- Main entry point implementation (Task 18)
+- Idempotency features verification (Task 19)
+- Final polish and packaging (Tasks 20-21)

@@ -11,6 +11,8 @@ pub enum CliError {
     InvalidRootDir(String),
     #[error("Parse error: {0}")]
     ParseError(String),
+    #[error("Invalid concurrency: {0}")]
+    InvalidConcurrency(String),
 }
 
 /// Scanner-related errors
@@ -24,6 +26,7 @@ pub enum ScanError {
 
 /// Discovery-related errors
 #[derive(Debug, Error)]
+#[allow(clippy::enum_variant_names)]
 pub enum DiscoveryError {
     #[error("API error: {0}")]
     ApiError(String),
