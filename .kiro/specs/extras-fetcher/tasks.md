@@ -13,14 +13,14 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
   - Create error types module with all custom error enums
   - _Requirements: 14.1, 14.5_
 
-- [ ] 2. Implement data models and core types
-  - [ ] 2.1 Create data model structs
+- [x] 2. Implement data models and core types
+  - [x] 2.1 Create data model structs
     - Define MovieEntry, VideoSource, DownloadResult, ConversionResult, DoneMarker structs
     - Define enums: SourceMode, SourceType, ContentCategory, HardwareAccel
     - Implement Display and Debug traits for key types
     - _Requirements: 1.1, 2.2, 3.4-3.8_
   
-  - [ ] 2.2 Write property test for DoneMarker serialization
+  - [x] 2.2 Write property test for DoneMarker serialization
     - **Property 2: Done Marker Round-Trip**
     - **Validates: Requirements 2.2**
 
