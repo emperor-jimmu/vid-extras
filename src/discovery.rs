@@ -24,9 +24,18 @@ struct TmdbSearchResponse {
     results: Vec<TmdbMovie>,
 }
 
-/// TMDB movie result
+/// TMDB movie result (from search API)
 #[derive(Debug, Deserialize)]
 struct TmdbMovie {
+    id: u64,
+    title: String,
+    // Note: search API doesn't return belongs_to_collection
+}
+
+/// TMDB movie details (from movie details API)
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct TmdbMovieDetails {
     id: u64,
     title: String,
     #[serde(default)]
@@ -123,18 +132,58 @@ impl TmdbDiscoverer {
         })?;
 
         if let Some(movie) = search_result.results.first() {
-            info!("Found TMDB movie: {} (ID: {})", movie.title, movie.id);
-            if let Some(ref collection) = movie.belongs_to_collection {
+            let movie_id = movie.id;
+            info!("Found TMDB movie: {} (ID: {})", movie.title, movie_id);
+            
+            // Fetch full movie details to get collection information
+            // The search API doesn't return belongs_to_collection, so we need a second call
+            let collection = self.fetch_movie_details(movie_id).await?;
+            
+            if let Some(ref coll) = collection {
                 info!(
                     "Movie belongs to collection: {} (ID: {})",
-                    collection.name, collection.id
+                    coll.name, coll.id
                 );
+            } else {
+                info!("No collection found for: {} ({})", title, year);
             }
-            Ok(Some((movie.id, movie.belongs_to_collection.clone())))
+            
+            Ok(Some((movie_id, collection)))
         } else {
             info!("No TMDB results found for: {} ({})", title, year);
             Ok(None)
         }
+    }
+
+    /// Fetch movie details to get collection information
+    async fn fetch_movie_details(&self, movie_id: u64) -> Result<Option<TmdbCollection>, DiscoveryError> {
+        let url = format!(
+            "https://api.themoviedb.org/3/movie/{}?api_key={}",
+            movie_id, self.api_key
+        );
+
+        debug!("Fetching TMDB movie details for ID: {}", movie_id);
+
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            error!("TMDB movie details request failed: {}", e);
+            DiscoveryError::NetworkError(e)
+        })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            error!("TMDB movie details failed with status: {}", status);
+            return Err(DiscoveryError::ApiError(format!(
+                "TMDB API returned status {}",
+                status
+            )));
+        }
+
+        let movie_details: TmdbMovieDetails = response.json().await.map_err(|e| {
+            error!("Failed to parse TMDB movie details response: {}", e);
+            DiscoveryError::NetworkError(e)
+        })?;
+
+        Ok(movie_details.belongs_to_collection)
     }
 
     /// Fetch collection details including all movie titles

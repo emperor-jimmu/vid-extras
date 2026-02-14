@@ -1,4 +1,4 @@
-# Bugfix: Filename Collision and Missing Completion Logs
+# Bugfix: Filename Collision, Missing Completion Logs, and Collection Detection
 
 ## Issue 1: Filename Collision During Download
 
@@ -36,6 +36,22 @@ Added explicit completion logging:
 - Added "Conversion batch complete for {movie}" log to mark end of conversion phase
 - These markers make it easy to grep logs and verify each movie's status
 
+## Issue 3: Collection Detection Not Working
+
+### Problem
+Movies that belong to collections (like Mad Max 2 in the Mad Max collection) were not being detected as part of a collection, resulting in the log message "No collection found" even though the movie clearly belongs to a collection.
+
+### Root Cause
+The TMDB search API (`/search/movie`) does **not** return the `belongs_to_collection` field. According to TMDB API documentation, only the movie details API (`/movie/{movie_id}`) includes collection information.
+
+The code was trying to read `belongs_to_collection` from the search response, which always returned null.
+
+### Solution
+Added a second API call to fetch movie details after finding the movie:
+- After search finds a movie ID, call `/movie/{movie_id}` to get full details
+- Extract `belongs_to_collection` from the details response
+- This properly detects collection membership for filtering YouTube results
+
 ## Changes Made
 - `src/downloader.rs`:
   - Modified `download_single()` to generate URL hash and include it in filename
@@ -47,6 +63,13 @@ Added explicit completion logging:
   - Added completion log markers for successful and failed movie processing
   - Added conversion batch completion log
   - Improved visibility of processing status in parallel execution
+
+- `src/discovery.rs`:
+  - Added `fetch_movie_details()` method to call `/movie/{movie_id}` API
+  - Modified `search_movie()` to fetch details after finding movie ID
+  - Added `TmdbMovieDetails` struct for details API response
+  - Removed `belongs_to_collection` from `TmdbMovie` (search response) struct
+  - Collection detection now works correctly for all movies
 
 ## Testing
 - All 224 unit tests pass ✅
@@ -60,4 +83,6 @@ Added explicit completion logging:
 - Ensures all discovered videos are properly downloaded and converted
 - Better visibility into parallel processing status
 - Easier to diagnose issues when processing large libraries
+- Collection filtering now works correctly for YouTube results
+- Reduces irrelevant YouTube results for movies in collections
 - No breaking changes to public API
