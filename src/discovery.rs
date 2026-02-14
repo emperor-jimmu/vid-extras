@@ -497,18 +497,46 @@ impl YoutubeDiscoverer {
             .any(|keyword| title_lower.contains(&keyword.to_lowercase()))
     }
 
-    /// Check if video title mentions other movies from the collection
+    /// Normalize a title for comparison by removing special characters, brackets, and extra spaces
+    fn normalize_title(title: &str) -> String {
+        title
+            .to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<&str>>()
+            .join(" ")
+    }
+
+    /// Check if video title contains the movie title (with normalization)
+    fn contains_movie_title(video_title: &str, movie_title: &str) -> bool {
+        let normalized_video = Self::normalize_title(video_title);
+        let normalized_movie = Self::normalize_title(movie_title);
+
+        // Check if the normalized movie title appears in the normalized video title
+        normalized_video.contains(&normalized_movie)
+    }
+
+    /// Check if video title mentions other movies from the collection (with normalization)
     fn mentions_collection_movies(video_title: &str, collection_titles: &[String]) -> bool {
         if collection_titles.is_empty() {
             return false;
         }
 
-        let video_lower = video_title.to_lowercase();
+        let normalized_video = Self::normalize_title(video_title);
+        let normalized_video_no_spaces = normalized_video.replace(' ', "");
 
-        // Check if any collection movie title appears in the video title
-        collection_titles
-            .iter()
-            .any(|title| video_lower.contains(&title.to_lowercase()))
+        // Check if any normalized collection movie title appears in the normalized video title
+        // We check both with and without spaces to handle cases like "[Rec]3" vs "REC 3"
+        collection_titles.iter().any(|title| {
+            let normalized_collection = Self::normalize_title(title);
+            let normalized_collection_no_spaces = normalized_collection.replace(' ', "");
+
+            // Check both versions to handle spacing variations
+            normalized_video.contains(&normalized_collection)
+                || normalized_video_no_spaces.contains(&normalized_collection_no_spaces)
+        })
     }
 
     /// Check if video title mentions a different year (potential sequel/different movie)
@@ -549,13 +577,23 @@ impl YoutubeDiscoverer {
     /// Filter a video based on all criteria
     fn should_include_video(
         video_title: &str,
+        movie_title: &str,
         duration_secs: u32,
         width: u32,
         height: u32,
         expected_year: u16,
         collection_titles: &[String],
     ) -> bool {
-        // Check if video mentions other movies from the collection
+        // Check if movie title is in video title (with normalization)
+        if !Self::contains_movie_title(video_title, movie_title) {
+            debug!(
+                "Excluding video '{}' - does not contain movie title '{}' (normalized)",
+                video_title, movie_title
+            );
+            return false;
+        }
+
+        // Check if video mentions other movies from the collection (with normalization)
         if Self::mentions_collection_movies(video_title, collection_titles) {
             debug!(
                 "Excluding video '{}' - mentions other collection movies",
@@ -607,6 +645,7 @@ impl YoutubeDiscoverer {
     async fn search_youtube(
         &self,
         query: &str,
+        movie_title: &str,
         category: ContentCategory,
         expected_year: u16,
         collection_titles: &[String],
@@ -659,6 +698,7 @@ impl YoutubeDiscoverer {
                     // Apply filtering
                     if Self::should_include_video(
                         &title,
+                        movie_title,
                         duration,
                         width,
                         height,
@@ -699,6 +739,7 @@ impl YoutubeDiscoverer {
             match self
                 .search_youtube(
                     &query,
+                    &movie.title,
                     category,
                     movie.year,
                     &metadata.collection_movie_titles,
@@ -1805,6 +1846,7 @@ mod unit_tests {
         // Valid video: good duration, no keywords, not a Short, contains movie title
         assert!(YoutubeDiscoverer::should_include_video(
             "REC Official Trailer",
+            "REC",
             120,
             1920,
             1080,
@@ -1813,6 +1855,7 @@ mod unit_tests {
         ));
         assert!(YoutubeDiscoverer::should_include_video(
             "REC Behind the Scenes",
+            "REC",
             300,
             1920,
             1080,
@@ -1826,6 +1869,7 @@ mod unit_tests {
         // Excluded due to duration
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Official Trailer",
+            "REC",
             20,
             1920,
             1080,
@@ -1834,6 +1878,7 @@ mod unit_tests {
         )); // Too short
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Behind the Scenes",
+            "REC",
             1500,
             1920,
             1080,
@@ -1847,6 +1892,7 @@ mod unit_tests {
         // Excluded due to keyword
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Movie Review",
+            "REC",
             120,
             1920,
             1080,
@@ -1855,6 +1901,7 @@ mod unit_tests {
         ));
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Ending Explained",
+            "REC",
             300,
             1920,
             1080,
@@ -1868,6 +1915,7 @@ mod unit_tests {
         // Excluded as YouTube Short
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Quick Clip",
+            "REC",
             45,
             1080,
             1920,
@@ -1881,6 +1929,7 @@ mod unit_tests {
         // Video fails multiple criteria
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Movie Review",
+            "REC",
             20,
             1080,
             1920,
@@ -1894,6 +1943,7 @@ mod unit_tests {
         // Video with same year should be included
         assert!(YoutubeDiscoverer::should_include_video(
             "REC (2007) Behind the Scenes",
+            "REC",
             300,
             1920,
             1080,
@@ -1907,6 +1957,7 @@ mod unit_tests {
         // Video mentioning a different year (sequel) should be excluded
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC 2 (2009) Fighting Scene",
+            "REC",
             300,
             1920,
             1080,
@@ -1920,6 +1971,7 @@ mod unit_tests {
         // Video without year should be included
         assert!(YoutubeDiscoverer::should_include_video(
             "REC Behind the Scenes Featurette",
+            "REC",
             300,
             1920,
             1080,
@@ -1939,6 +1991,7 @@ mod unit_tests {
 
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC 2 Behind the Scenes",
+            "REC",
             300,
             1920,
             1080,
@@ -1948,6 +2001,7 @@ mod unit_tests {
 
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC 3 Genesis Deleted Scenes",
+            "REC",
             300,
             1920,
             1080,
@@ -1958,6 +2012,7 @@ mod unit_tests {
         // Video about the original movie should be included
         assert!(YoutubeDiscoverer::should_include_video(
             "REC Behind the Scenes",
+            "REC",
             300,
             1920,
             1080,
@@ -1972,5 +2027,138 @@ mod unit_tests {
         let query = ArchiveOrgDiscoverer::build_query("REC", 2007);
         assert!(query.contains("year:2007"));
         assert!(query.contains("title:\"REC\""));
+    }
+
+    #[test]
+    fn test_normalize_title_removes_brackets() {
+        // Test that brackets are removed
+        assert_eq!(YoutubeDiscoverer::normalize_title("[REC]"), "rec");
+        assert_eq!(YoutubeDiscoverer::normalize_title("[Rec]"), "rec");
+        assert_eq!(YoutubeDiscoverer::normalize_title("(REC)"), "rec");
+    }
+
+    #[test]
+    fn test_normalize_title_removes_special_chars() {
+        // Test that special characters are removed
+        assert_eq!(
+            YoutubeDiscoverer::normalize_title("REC: The Movie"),
+            "rec the movie"
+        );
+        assert_eq!(
+            YoutubeDiscoverer::normalize_title("REC - Behind Scenes"),
+            "rec behind scenes"
+        );
+        assert_eq!(
+            YoutubeDiscoverer::normalize_title("REC's Story"),
+            "recs story"
+        );
+    }
+
+    #[test]
+    fn test_normalize_title_normalizes_spaces() {
+        // Test that multiple spaces are normalized
+        assert_eq!(
+            YoutubeDiscoverer::normalize_title("REC  3   Genesis"),
+            "rec 3 genesis"
+        );
+        assert_eq!(YoutubeDiscoverer::normalize_title("  REC  "), "rec");
+    }
+
+    #[test]
+    fn test_contains_movie_title_with_brackets() {
+        // Test that [REC] matches variations
+        assert!(YoutubeDiscoverer::contains_movie_title(
+            "REC Official Trailer",
+            "[REC]"
+        ));
+        assert!(YoutubeDiscoverer::contains_movie_title(
+            "[REC] Behind the Scenes",
+            "[REC]"
+        ));
+        assert!(YoutubeDiscoverer::contains_movie_title(
+            "rec interview",
+            "[REC]"
+        ));
+    }
+
+    #[test]
+    fn test_contains_movie_title_no_match() {
+        // Test that unrelated titles don't match
+        assert!(!YoutubeDiscoverer::contains_movie_title(
+            "What led to Shia Staring at Me",
+            "[REC]"
+        ));
+        assert!(!YoutubeDiscoverer::contains_movie_title(
+            "Completely Unrelated Video",
+            "REC"
+        ));
+    }
+
+    #[test]
+    fn test_mentions_collection_movies_with_normalization() {
+        // Test that collection movie mentions are detected with normalization
+        let collection = vec!["REC 2".to_string(), "REC 3".to_string()];
+
+        assert!(YoutubeDiscoverer::mentions_collection_movies(
+            "[Rec]3 Génesis UK Premiere Interviews",
+            &collection
+        ));
+        assert!(YoutubeDiscoverer::mentions_collection_movies(
+            "REC 2 Behind the Scenes",
+            &collection
+        ));
+        assert!(YoutubeDiscoverer::mentions_collection_movies(
+            "rec3 genesis deleted scenes",
+            &collection
+        ));
+
+        // Original movie should not trigger collection filter
+        assert!(!YoutubeDiscoverer::mentions_collection_movies(
+            "REC Behind the Scenes",
+            &collection
+        ));
+    }
+
+    #[test]
+    fn test_should_include_video_user_reported_cases() {
+        // Test the specific cases reported by the user
+        let collection = vec![
+            "REC 2".to_string(),
+            "REC 3".to_string(),
+            "REC 4".to_string(),
+        ];
+
+        // Case 1: "What led to Shia Staring at Me" - no movie title match
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "What led to Shia Staring at Me",
+            "[REC]",
+            120,
+            1920,
+            1080,
+            2007,
+            &collection
+        ));
+
+        // Case 2: "[Rec]3 Génesis UK Premiere Interviews" - mentions collection movie
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "[Rec]3 Génesis UK Premiere Interviews",
+            "[REC]",
+            120,
+            1920,
+            1080,
+            2007,
+            &collection
+        ));
+
+        // Valid case: REC content should be included
+        assert!(YoutubeDiscoverer::should_include_video(
+            "[REC] Official Trailer",
+            "[REC]",
+            120,
+            1920,
+            1080,
+            2007,
+            &collection
+        ));
     }
 }
