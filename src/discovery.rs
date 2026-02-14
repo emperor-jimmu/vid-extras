@@ -521,6 +521,38 @@ impl YoutubeDiscoverer {
 
     /// Normalize a title for comparison by removing special characters, brackets, and extra spaces
     fn normalize_title(title: &str) -> String {
+        // First, convert superscript numbers to regular numbers
+        let mut title = title
+            .replace('²', " 2")
+            .replace('³', " 3")
+            .replace('⁴', " 4")
+            .replace('⁵', " 5");
+        
+        // Convert Roman numerals at word boundaries (must be surrounded by spaces or at end)
+        // We need to be careful to only match standalone Roman numerals
+        let roman_patterns = [
+            (" II ", " 2 "),
+            (" III ", " 3 "),
+            (" IV ", " 4 "),
+            (" V ", " 5 "),
+        ];
+        
+        for (roman, arabic) in &roman_patterns {
+            title = title.replace(roman, arabic);
+        }
+        
+        // Handle Roman numerals at the end of the string
+        if title.ends_with(" II") {
+            title = title.strip_suffix(" II").unwrap().to_string() + " 2";
+        } else if title.ends_with(" III") {
+            title = title.strip_suffix(" III").unwrap().to_string() + " 3";
+        } else if title.ends_with(" IV") {
+            title = title.strip_suffix(" IV").unwrap().to_string() + " 4";
+        } else if title.ends_with(" V") {
+            title = title.strip_suffix(" V").unwrap().to_string() + " 5";
+        }
+        
+        // Then apply standard normalization
         title
             .to_lowercase()
             .chars()
@@ -1037,6 +1069,19 @@ impl DiscoveryOrchestrator {
                     }
                 }
             }
+        }
+
+        // Deduplicate by URL to avoid downloading the same video twice
+        let initial_count = all_sources.len();
+        all_sources.sort_by(|a, b| a.url.cmp(&b.url));
+        all_sources.dedup_by(|a, b| a.url == b.url);
+        
+        if all_sources.len() < initial_count {
+            log::info!(
+                "Removed {} duplicate URL(s) for {}",
+                initial_count - all_sources.len(),
+                movie
+            );
         }
 
         log::info!(
@@ -2214,6 +2259,25 @@ mod unit_tests {
     }
 
     #[test]
+    fn test_normalize_title_handles_superscript_numbers() {
+        // Test that superscript numbers are converted to regular numbers
+        assert_eq!(YoutubeDiscoverer::normalize_title("[REC]²"), "rec 2");
+        assert_eq!(YoutubeDiscoverer::normalize_title("REC 2"), "rec 2");
+        assert_eq!(YoutubeDiscoverer::normalize_title("[REC] 2"), "rec 2");
+        assert_eq!(YoutubeDiscoverer::normalize_title("Movie³"), "movie 3");
+        assert_eq!(YoutubeDiscoverer::normalize_title("Film⁴"), "film 4");
+    }
+
+    #[test]
+    fn test_normalize_title_handles_roman_numerals() {
+        // Test that Roman numerals are converted to regular numbers
+        assert_eq!(YoutubeDiscoverer::normalize_title("Movie II"), "movie 2");
+        assert_eq!(YoutubeDiscoverer::normalize_title("Film III"), "film 3");
+        assert_eq!(YoutubeDiscoverer::normalize_title("Series IV"), "series 4");
+        assert_eq!(YoutubeDiscoverer::normalize_title("Part V"), "part 5");
+    }
+
+    #[test]
     fn test_normalize_title_removes_special_chars() {
         // Test that special characters are removed
         assert_eq!(
@@ -2523,4 +2587,35 @@ fn test_sequel_detection_without_collection() {
         2007,
         &empty_collection
     ));
+}
+
+#[tokio::test]
+async fn test_discovery_orchestrator_deduplicates_urls() {
+    use std::path::PathBuf;
+    
+    // Test that duplicate URLs from different sources are deduplicated
+    let tmdb_api_key = "test_key".to_string();
+    let orchestrator = DiscoveryOrchestrator::new(tmdb_api_key, SourceMode::All);
+
+    let movie = MovieEntry {
+        path: PathBuf::from("/movies/Test Movie (2020)"),
+        title: "Test Movie".to_string(),
+        year: 2020,
+        has_done_marker: false,
+    };
+
+    // In a real scenario, if TMDB and YouTube both return the same URL,
+    // we should only get one entry in the final results
+    // This is a structural test - the actual deduplication happens in discover_all
+    let sources = orchestrator.discover_all(&movie).await;
+
+    // Verify no duplicate URLs exist
+    let mut seen_urls = std::collections::HashSet::new();
+    for source in &sources {
+        assert!(
+            seen_urls.insert(&source.url),
+            "Duplicate URL found: {}",
+            source.url
+        );
+    }
 }
