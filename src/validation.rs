@@ -42,6 +42,7 @@ impl Validator {
     }
 
     /// Check if a binary exists in the system PATH
+    #[cfg_attr(not(test), allow(dead_code))]
     fn check_binary_exists(&self, name: &str) -> bool {
         // Try to execute the binary with --version flag
         // This works for both yt-dlp and ffmpeg

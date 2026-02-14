@@ -6,6 +6,7 @@ use crate::models::MovieEntry;
 use crate::scanner::Scanner;
 
 /// Summary of processing results
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ProcessingSummary {
     pub total_movies: usize,
@@ -16,6 +17,7 @@ pub struct ProcessingSummary {
 }
 
 /// Result of processing a single movie
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct MovieResult {
     pub movie: MovieEntry,
@@ -24,12 +26,16 @@ pub struct MovieResult {
 }
 
 /// Main orchestrator for the processing pipeline
+#[allow(dead_code)]
 pub struct Orchestrator {
+    #[allow(dead_code)]
     config: CliConfig,
+    #[allow(dead_code)]
     scanner: Scanner,
 }
 
 impl Orchestrator {
+    #[allow(dead_code)]
     pub fn new(config: CliConfig) -> Result<Self, OrchestratorError> {
         let scanner = Scanner::new(config.root_directory.clone(), config.force);
         

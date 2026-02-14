@@ -6,6 +6,7 @@ use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[allow(dead_code)]
 const DONE_MARKER_FILENAME: &str = "done.ext";
 
 /// Scanner for traversing movie library directories
@@ -28,6 +29,7 @@ impl Scanner {
     }
 
     /// Recursively scan a directory for movie folders
+    #[cfg_attr(not(test), allow(dead_code))]
     fn scan_directory(&self, dir: &Path, movies: &mut Vec<MovieEntry>) -> Result<(), ScanError> {
         // Check if directory exists and is readable
         if !dir.exists() {

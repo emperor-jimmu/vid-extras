@@ -72,7 +72,7 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Test ffmpeg codec detection
     - _Requirements: 11.1-11.5_
 
-- [ ] 5. Checkpoint - Core infrastructure complete
+- [x] 5. Checkpoint - Core infrastructure complete
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 6. Implement Discovery module - TMDB

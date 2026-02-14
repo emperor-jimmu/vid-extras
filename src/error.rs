@@ -1,3 +1,7 @@
+// Error types module - centralized error definitions using thiserror
+
+#![allow(dead_code)]
+
 use thiserror::Error;
 
 /// CLI-related errors
