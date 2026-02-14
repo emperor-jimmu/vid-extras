@@ -228,6 +228,10 @@ impl TmdbDiscoverer {
         // Search for the movie to get collection info
         match self.search_movie(&movie.title, movie.year).await {
             Ok(Some((_movie_id, Some(collection)))) => {
+                info!(
+                    "Movie '{}' is part of collection: {}",
+                    movie, collection.name
+                );
                 // Fetch collection details
                 match self.fetch_collection(collection.id).await {
                     Ok(titles) => {
@@ -236,15 +240,33 @@ impl TmdbDiscoverer {
                             .into_iter()
                             .filter(|t| !t.eq_ignore_ascii_case(&movie.title))
                             .collect();
+
+                        if metadata.collection_movie_titles.is_empty() {
+                            info!(
+                                "Collection '{}' has no other movies besides '{}'",
+                                collection.name, movie.title
+                            );
+                        } else {
+                            info!(
+                                "Collection movies to exclude for '{}': {:?}",
+                                movie, metadata.collection_movie_titles
+                            );
+                        }
                     }
                     Err(e) => {
-                        error!("Failed to fetch collection details: {}", e);
+                        error!(
+                            "Failed to fetch collection details for '{}': {}",
+                            collection.name, e
+                        );
                     }
                 }
             }
             Ok(_) => {
                 // No collection or movie not found
-                debug!("No collection found for: {}", movie);
+                info!(
+                    "No collection found for: {} - will not filter collection movies",
+                    movie
+                );
             }
             Err(e) => {
                 error!("Failed to search movie for metadata: {}", e);
@@ -587,7 +609,7 @@ impl YoutubeDiscoverer {
         // Check if movie title is in video title (with normalization)
         if !Self::contains_movie_title(video_title, movie_title) {
             debug!(
-                "Excluding video '{}' - does not contain movie title '{}' (normalized)",
+                "Excluding '{}' - does not contain movie title '{}' (normalized)",
                 video_title, movie_title
             );
             return false;
@@ -596,8 +618,8 @@ impl YoutubeDiscoverer {
         // Check if video mentions other movies from the collection (with normalization)
         if Self::mentions_collection_movies(video_title, collection_titles) {
             debug!(
-                "Excluding video '{}' - mentions other collection movies",
-                video_title
+                "Excluding '{}' - mentions other collection movies (collection: {:?})",
+                video_title, collection_titles
             );
             return false;
         }
@@ -605,7 +627,7 @@ impl YoutubeDiscoverer {
         // Check duration range
         if !Self::is_duration_valid(duration_secs) {
             debug!(
-                "Excluding video '{}' - duration {}s out of range",
+                "Excluding '{}' - duration {}s out of range",
                 video_title, duration_secs
             );
             return false;
@@ -613,31 +635,26 @@ impl YoutubeDiscoverer {
 
         // Check for excluded keywords
         if Self::contains_excluded_keywords(video_title) {
-            debug!(
-                "Excluding video '{}' - contains excluded keyword",
-                video_title
-            );
+            debug!("Excluding '{}' - contains excluded keyword", video_title);
             return false;
         }
 
         // Check if it mentions a different year (potential sequel)
         if Self::mentions_different_year(video_title, expected_year) {
             debug!(
-                "Excluding video '{}' - mentions different year (potential sequel)",
-                video_title
+                "Excluding '{}' - mentions different year (expected: {})",
+                video_title, expected_year
             );
             return false;
         }
 
         // Check if it's a YouTube Short
         if Self::is_youtube_short(duration_secs, width, height) {
-            debug!(
-                "Excluding video '{}' - detected as YouTube Short",
-                video_title
-            );
+            debug!("Excluding '{}' - detected as YouTube Short", video_title);
             return false;
         }
 
+        debug!("Including '{}' - passed all filters", video_title);
         true
     }
 
