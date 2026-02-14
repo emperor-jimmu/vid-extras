@@ -73,12 +73,39 @@ impl Downloader {
         );
 
         let mut results = Vec::new();
+        let total = sources.len();
 
-        // Download each source sequentially
-        for source in sources {
+        // Download each source sequentially with progress indicator
+        for (index, source) in sources.into_iter().enumerate() {
+            let progress = index + 1;
+            info!(
+                "Download progress [{}/{}]: {} from {}",
+                progress, total, source.title, source.url
+            );
+            
             let result = self.download_single(&source, &temp_dir).await;
+            
+            if result.success {
+                info!("✓ Downloaded [{}/{}]: {}", progress, total, source.title);
+            } else {
+                warn!(
+                    "✗ Failed [{}/{}]: {} - {}",
+                    progress,
+                    total,
+                    source.title,
+                    result.error.as_deref().unwrap_or("Unknown error")
+                );
+            }
+            
             results.push(result);
         }
+
+        info!(
+            "Download batch complete for {}: {}/{} successful",
+            movie_id,
+            results.iter().filter(|r| r.success).count(),
+            total
+        );
 
         results
     }

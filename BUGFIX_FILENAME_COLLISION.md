@@ -1,4 +1,4 @@
-# Bugfix: Filename Collision, Missing Completion Logs, and Collection Detection
+# Bugfix: Filename Collision, Missing Completion Logs, Collection Detection, and YouTube Search Improvements
 
 ## Issue 1: Filename Collision During Download
 
@@ -52,12 +52,38 @@ Added a second API call to fetch movie details after finding the movie:
 - Extract `belongs_to_collection` from the details response
 - This properly detects collection membership for filtering YouTube results
 
+## Issue 4: YouTube Search Results Too Limited
+
+### Problem
+YouTube searches were only returning 5 results per query (`ytsearch5:`), which was insufficient for finding relevant extras, especially for popular movies with many fan-made videos.
+
+User reported that a specific Predator 2 deleted scene (https://www.youtube.com/watch?v=7I1hf1r3Ir4) was not being found.
+
+### Solution
+Increased YouTube search results from 5 to 10 per query:
+- Changed `ytsearch5:` to `ytsearch10:` in YouTube discovery
+- This doubles the number of potential results per search query
+- Increases chances of finding official extras among fan content
+
+### Problem
+Download progress was not visible, making it hard to track which videos were being downloaded and whether downloads were succeeding or failing.
+
+### Solution
+Added detailed download progress indicators:
+- Progress indicator: "Download progress [X/Y]: {title} from {url}"
+- Success indicator: "✓ Downloaded [X/Y]: {title}"
+- Failure indicator: "✗ Failed [X/Y]: {title} - {error}"
+- Batch completion summary showing successful/total downloads
+
 ## Changes Made
 - `src/downloader.rs`:
   - Modified `download_single()` to generate URL hash and include it in filename
   - Updated `find_downloaded_file()` to accept `url_hash` parameter and search for hash suffix
   - Fixed clippy warning about collapsible if statements
   - Updated tests to use hash-based filenames
+  - Added download progress logging in `download_all()` method
+  - Added success/failure indicators for each download
+  - Added batch completion summary
 
 - `src/orchestrator.rs`:
   - Added completion log markers for successful and failed movie processing
@@ -70,6 +96,7 @@ Added a second API call to fetch movie details after finding the movie:
   - Added `TmdbMovieDetails` struct for details API response
   - Removed `belongs_to_collection` from `TmdbMovie` (search response) struct
   - Collection detection now works correctly for all movies
+  - Changed YouTube search from `ytsearch5:` to `ytsearch10:` for more results
 
 ## Testing
 - All 224 unit tests pass ✅
