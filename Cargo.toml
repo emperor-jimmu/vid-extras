@@ -28,3 +28,9 @@ chrono = "0.4"
 [dev-dependencies]
 proptest = "1.5"
 tempfile = "3.13"
+
+[profile.release]
+opt-level = "z"  # Optimize for size ("s" is also an option, "z" is stronger)
+lto = true       # Enable Link Time Optimization
+codegen-units = 1 # Disable parallel code generation for maximum size optimization
+strip = true     # Automatically strip symbols from the binary
