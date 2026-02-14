@@ -1,5 +1,6 @@
 // Library module declarations
 pub mod cli;
+pub mod config;
 pub mod converter;
 pub mod discovery;
 pub mod downloader;

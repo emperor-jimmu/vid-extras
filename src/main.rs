@@ -1,5 +1,6 @@
 // Module declarations
 mod cli;
+mod config;
 mod converter;
 mod discovery;
 mod downloader;
@@ -66,7 +67,8 @@ async fn main() {
             eprintln!("\nPlease ensure:");
             eprintln!("  • yt-dlp is installed and available in PATH");
             eprintln!("  • ffmpeg is installed with HEVC/x265 support");
-            eprintln!("  • TMDB_API_KEY environment variable is set");
+            eprintln!("  • TMDB API key is configured in config.cfg");
+            eprintln!("    (You will be prompted to enter it if config.cfg doesn't exist)");
             eprintln!("\nInstallation instructions:");
             eprintln!("  yt-dlp:  https://github.com/yt-dlp/yt-dlp#installation");
             eprintln!("  ffmpeg:  https://ffmpeg.org/download.html");

@@ -1,1 +1,8 @@
 /target
+
+# Configuration file containing API keys
+config.cfg
+
+*.logs
+*.mp4
+*.mkv

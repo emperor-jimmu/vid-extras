@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::error::ValidationError;
 use std::process::Command;
 
@@ -16,7 +17,7 @@ impl Validator {
     /// - yt-dlp binary exists in PATH
     /// - ffmpeg binary exists in PATH
     /// - ffmpeg supports HEVC encoding (libx265, hevc_nvenc, or hevc_qsv)
-    /// - TMDB_API_KEY environment variable is set
+    /// - TMDB API key is configured (in config.cfg or environment variable)
     ///
     /// Returns Ok(api_key) if all checks pass, or ValidationError describing the issue
     pub fn validate_dependencies(&self) -> Result<String, ValidationError> {
@@ -35,7 +36,7 @@ impl Validator {
             return Err(ValidationError::UnsupportedCodec);
         }
 
-        // Check TMDB API key
+        // Check TMDB API key from config file or environment variable
         let api_key = self.check_tmdb_api_key()?;
 
         Ok(api_key)
@@ -65,8 +66,44 @@ impl Validator {
         stdout.contains("libx265") || stdout.contains("hevc_nvenc") || stdout.contains("hevc_qsv")
     }
 
-    /// Check if TMDB API key is configured in environment
+    /// Check if TMDB API key is configured
+    ///
+    /// Checks in this order:
+    /// 1. config.cfg file (loads or prompts user to create)
+    /// 2. TMDB_API_KEY environment variable (fallback for backward compatibility)
     fn check_tmdb_api_key(&self) -> Result<String, ValidationError> {
+        self.check_tmdb_api_key_internal(true)
+    }
+
+    /// Internal method for checking TMDB API key with optional prompting
+    ///
+    /// When allow_prompt is false, only checks existing config file and environment variable
+    /// without prompting the user. This is useful for testing.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn check_tmdb_api_key_internal(&self, allow_prompt: bool) -> Result<String, ValidationError> {
+        // Try to load from existing config file first (without prompting)
+        let config_path = Config::default_path();
+        if let Ok(config) = Config::load(&config_path)
+            && !config.tmdb_api_key.is_empty()
+        {
+            return Ok(config.tmdb_api_key);
+        }
+
+        // If prompting is allowed and config doesn't exist, prompt user
+        if allow_prompt {
+            match Config::load_or_create() {
+                Ok(config) => {
+                    if !config.tmdb_api_key.is_empty() {
+                        return Ok(config.tmdb_api_key);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to load or create config file: {}", e);
+                }
+            }
+        }
+
+        // Fall back to environment variable for backward compatibility
         std::env::var("TMDB_API_KEY")
             .map_err(|_| ValidationError::MissingApiKey("TMDB_API_KEY".to_string()))
     }
@@ -106,7 +143,8 @@ mod tests {
             std::env::remove_var("TMDB_API_KEY");
         }
 
-        let result = validator.check_tmdb_api_key();
+        // Use internal method without prompting
+        let result = validator.check_tmdb_api_key_internal(false);
 
         // Restore original value if it existed
         if let Some(val) = original {
@@ -127,7 +165,8 @@ mod tests {
             std::env::set_var("TMDB_API_KEY", "test_key_12345");
         }
 
-        let result = validator.check_tmdb_api_key();
+        // Use internal method without prompting
+        let result = validator.check_tmdb_api_key_internal(false);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "test_key_12345");
@@ -241,7 +280,8 @@ mod tests {
             std::env::set_var("TMDB_API_KEY", "");
         }
 
-        let result = validator.check_tmdb_api_key();
+        // Use internal method without prompting
+        let result = validator.check_tmdb_api_key_internal(false);
 
         // Clean up
         unsafe {
@@ -263,7 +303,8 @@ mod tests {
             std::env::set_var("TMDB_API_KEY", test_key);
         }
 
-        let result = validator.check_tmdb_api_key();
+        // Use internal method without prompting
+        let result = validator.check_tmdb_api_key_internal(false);
 
         // Clean up
         unsafe {
@@ -371,7 +412,8 @@ mod property_tests {
                 std::env::remove_var("TMDB_API_KEY");
             }
 
-            let result = validator.check_tmdb_api_key();
+            // Use internal method without prompting
+            let result = validator.check_tmdb_api_key_internal(false);
 
             // Restore
             if let Some(val) = original {

@@ -26,11 +26,46 @@ The following tools must be installed and available in your system PATH:
    - Installation: https://ffmpeg.org/download.html
    - Verify: `ffmpeg -version` (should show libx265 or hevc_nvenc/hevc_qsv support)
 
-### Environment Variables
+### Configuration
 
-- `TMDB_API_KEY` (required) - Your TheMovieDB API key
-  - Get one at: https://www.themoviedb.org/settings/api
-  - Set it: `export TMDB_API_KEY=your_api_key_here` (Linux/macOS) or `set TMDB_API_KEY=your_api_key_here` (Windows)
+#### TMDB API Key
+
+A TMDB API key is required for discovering movie extras. The tool will check for the API key in this order:
+
+1. **config.cfg file** (recommended) - The tool will automatically prompt you to enter your API key on first run if this file doesn't exist
+2. **TMDB_API_KEY environment variable** (fallback for backward compatibility)
+
+**Getting your API key:**
+1. Visit: https://www.themoviedb.org/settings/api
+2. Sign up for a free account (if you don't have one)
+3. Request an API key from your account settings
+4. Copy the 'API Key (v3 auth)' value
+
+**Option 1: Using config.cfg (Recommended)**
+
+On first run, the tool will prompt you to enter your API key and automatically create a `config.cfg` file:
+
+```bash
+extras_fetcher /path/to/movies
+# You'll be prompted: "Enter your TMDB API key: "
+# The key will be saved to config.cfg for future use
+```
+
+You can also manually create the config file:
+
+```json
+{
+  "tmdb_api_key": "your_api_key_here"
+}
+```
+
+A sample configuration file is provided as `config.cfg.example` for reference.
+
+**Option 2: Using Environment Variable**
+
+Set the environment variable (for backward compatibility):
+- Linux/macOS: `export TMDB_API_KEY=your_api_key_here`
+- Windows: `set TMDB_API_KEY=your_api_key_here`
 
 ### Optional: Logging
 
@@ -205,8 +240,11 @@ The tool is designed to be safely re-runnable:
 - Install a version with libx265, hevc_nvenc, or hevc_qsv support
 
 ### "Missing API key: TMDB_API_KEY"
+- The tool couldn't find your TMDB API key in config.cfg or environment variable
+- On first run, you'll be prompted to enter your API key
 - Get an API key from: https://www.themoviedb.org/settings/api
-- Set the environment variable: `export TMDB_API_KEY=your_key`
+- The key will be saved to config.cfg automatically
+- Alternatively, set the environment variable: `export TMDB_API_KEY=your_key`
 
 ### Downloads failing
 - Check your internet connection

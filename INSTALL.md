@@ -91,7 +91,30 @@ You should see output containing `libx265`, `hevc_nvenc`, or `hevc_qsv`.
 3. Request an API key (choose "Developer" option)
 4. Copy your API key (v3 auth)
 
-**Set the environment variable:**
+**Configuration Options:**
+
+**Option 1: Using config.cfg (Recommended)**
+
+On first run, extras_fetcher will automatically prompt you to enter your API key and save it to `config.cfg`:
+
+```bash
+extras_fetcher /path/to/movies
+# You'll be prompted: "Enter your TMDB API key: "
+# The key will be saved to config.cfg for future use
+```
+
+You can also manually create the config file in the same directory as the executable:
+
+**config.cfg:**
+```json
+{
+  "tmdb_api_key": "your_api_key_here"
+}
+```
+
+**Option 2: Using Environment Variable (Fallback)**
+
+For backward compatibility, you can still use an environment variable:
 
 **Windows (PowerShell):**
 ```powershell
@@ -120,6 +143,10 @@ export TMDB_API_KEY="your_api_key_here"
 echo 'export TMDB_API_KEY="your_api_key_here"' >> ~/.bashrc
 source ~/.bashrc
 ```
+
+**Note:** The tool checks for the API key in this order:
+1. config.cfg file (prompts if missing)
+2. TMDB_API_KEY environment variable
 
 ## Installing extras_fetcher
 
@@ -174,10 +201,14 @@ yt-dlp --version
 # Check ffmpeg
 ffmpeg -version
 
-# Check TMDB API key
+# Check TMDB API key (if using environment variable)
 echo $TMDB_API_KEY  # Linux/macOS
 echo %TMDB_API_KEY%  # Windows CMD
 echo $env:TMDB_API_KEY  # Windows PowerShell
+
+# Check if config.cfg exists (if using config file)
+# Linux/macOS: cat config.cfg
+# Windows: type config.cfg
 
 # Check extras_fetcher
 extras_fetcher --version
@@ -214,9 +245,12 @@ extras_fetcher /path/to/movie/library --force
 - On Linux, you may need to install from a different repository (e.g., RPM Fusion for Fedora)
 
 ### "Missing API key: TMDB_API_KEY"
-- Ensure the environment variable is set correctly
+- On first run, you'll be prompted to enter your API key
+- The key will be saved to config.cfg automatically
+- If you prefer environment variables, ensure TMDB_API_KEY is set correctly
 - Restart your terminal/shell after setting the variable
 - Verify with: `echo $TMDB_API_KEY` (Linux/macOS) or `echo %TMDB_API_KEY%` (Windows)
+- Check if config.cfg exists and contains a valid API key
 
 ### Hardware Acceleration Not Working
 - The tool will automatically fall back to software encoding

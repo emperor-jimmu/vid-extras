@@ -78,6 +78,23 @@ pub enum OrganizerError {
     FileMove(String),
 }
 
+/// Configuration-related errors
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("Failed to read config file {0}: {1}")]
+    ReadError(std::path::PathBuf, std::io::Error),
+    #[error("Failed to parse config file {0}: {1}")]
+    ParseError(std::path::PathBuf, serde_json::Error),
+    #[error("Failed to write config file {0}: {1}")]
+    WriteError(std::path::PathBuf, std::io::Error),
+    #[error("Failed to serialize config: {0}")]
+    SerializeError(serde_json::Error),
+    #[error("IO error: {0}")]
+    IoError(std::io::Error),
+    #[error("API key cannot be empty")]
+    EmptyApiKey,
+}
+
 /// Orchestrator-related errors
 #[derive(Debug, Error)]
 pub enum OrchestratorError {
