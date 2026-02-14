@@ -52,7 +52,7 @@ Added a second API call to fetch movie details after finding the movie:
 - Extract `belongs_to_collection` from the details response
 - This properly detects collection membership for filtering YouTube results
 
-## Issue 4: YouTube Search Results Too Limited
+## Issue 4: YouTube Search Results Too Limited and Slow NVENC Encoding
 
 ### Problem
 YouTube searches were only returning 5 results per query (`ytsearch5:`), which was insufficient for finding relevant extras, especially for popular movies with many fan-made videos.
@@ -75,6 +75,16 @@ Added detailed download progress indicators:
 - Failure indicator: "✗ Failed [X/Y]: {title} - {error}"
 - Batch completion summary showing successful/total downloads
 
+### Problem
+FFmpeg NVENC conversions were taking too long due to using the p4 (medium) preset, which is balanced but not optimized for speed when processing thousands of movies.
+
+### Solution
+Changed NVENC preset from p4 to p2 for maximum encoding speed:
+- p4 (medium) → p2 (faster) - significantly faster encoding
+- Quality difference is minimal for extras content
+- Better suited for batch processing large libraries
+- According to [FFmpeg NVENC documentation](https://gist.github.com/nico-lab/c2d192cbb793dfd241c1eafeb52a21c3), p1 is the fastest preset
+
 ## Changes Made
 - `src/downloader.rs`:
   - Modified `download_single()` to generate URL hash and include it in filename
@@ -84,6 +94,10 @@ Added detailed download progress indicators:
   - Added download progress logging in `download_all()` method
   - Added success/failure indicators for each download
   - Added batch completion summary
+
+- `src/converter.rs`:
+  - Changed NVENC preset from p4 (medium) to p1 (fastest) for maximum encoding speed
+  - Significantly reduces conversion time for large batch processing
 
 - `src/orchestrator.rs`:
   - Added completion log markers for successful and failed movie processing
@@ -112,4 +126,6 @@ Added detailed download progress indicators:
 - Easier to diagnose issues when processing large libraries
 - Collection filtering now works correctly for YouTube results
 - Reduces irrelevant YouTube results for movies in collections
+- Significantly faster NVENC encoding (p1 vs p4 preset)
+- Better suited for batch processing thousands of movies
 - No breaking changes to public API
