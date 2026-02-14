@@ -93,8 +93,7 @@ The extras_fetcher is a Rust-based automation utility designed to enrich Jellyfi
 8. WHEN a YouTube video title contains "Review", "Reaction", "Analysis", "Explained", "Ending", "Theory", or "React", THE Extras_Fetcher SHALL exclude it from results
 9. WHEN a YouTube video is identified as a YouTube Short, THE Extras_Fetcher SHALL exclude it from results
 10. WHEN YouTube search fails, THE Extras_Fetcher SHALL log the error and continue with available content
-11. WHEN a YouTube video title does not contain the movie title, THE Extras_Fetcher SHALL exclude it from results
-12. WHEN a movie is part of a TMDB collection, THE Extras_Fetcher SHALL exclude YouTube videos that mention other movies in the collection by name
+11. WHEN a movie is part of a TMDB collection, THE Extras_Fetcher SHALL exclude YouTube videos that mention other movies in the collection by name
 
 ### Requirement 6: Content Acquisition
 

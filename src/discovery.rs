@@ -497,15 +497,6 @@ impl YoutubeDiscoverer {
             .any(|keyword| title_lower.contains(&keyword.to_lowercase()))
     }
 
-    /// Check if video title contains the movie title
-    fn contains_movie_title(video_title: &str, movie_title: &str) -> bool {
-        let video_lower = video_title.to_lowercase();
-        let movie_lower = movie_title.to_lowercase();
-
-        // Check if the movie title appears in the video title
-        video_lower.contains(&movie_lower)
-    }
-
     /// Check if video title mentions other movies from the collection
     fn mentions_collection_movies(video_title: &str, collection_titles: &[String]) -> bool {
         if collection_titles.is_empty() {
@@ -558,22 +549,12 @@ impl YoutubeDiscoverer {
     /// Filter a video based on all criteria
     fn should_include_video(
         video_title: &str,
-        movie_title: &str,
         duration_secs: u32,
         width: u32,
         height: u32,
         expected_year: u16,
         collection_titles: &[String],
     ) -> bool {
-        // Check if movie title is in video title
-        if !Self::contains_movie_title(video_title, movie_title) {
-            debug!(
-                "Excluding video '{}' - does not contain movie title '{}'",
-                video_title, movie_title
-            );
-            return false;
-        }
-
         // Check if video mentions other movies from the collection
         if Self::mentions_collection_movies(video_title, collection_titles) {
             debug!(
@@ -626,7 +607,6 @@ impl YoutubeDiscoverer {
     async fn search_youtube(
         &self,
         query: &str,
-        movie_title: &str,
         category: ContentCategory,
         expected_year: u16,
         collection_titles: &[String],
@@ -679,7 +659,6 @@ impl YoutubeDiscoverer {
                     // Apply filtering
                     if Self::should_include_video(
                         &title,
-                        movie_title,
                         duration,
                         width,
                         height,
@@ -720,7 +699,6 @@ impl YoutubeDiscoverer {
             match self
                 .search_youtube(
                     &query,
-                    &movie.title,
                     category,
                     movie.year,
                     &metadata.collection_movie_titles,
@@ -1827,7 +1805,6 @@ mod unit_tests {
         // Valid video: good duration, no keywords, not a Short, contains movie title
         assert!(YoutubeDiscoverer::should_include_video(
             "REC Official Trailer",
-            "REC",
             120,
             1920,
             1080,
@@ -1836,7 +1813,6 @@ mod unit_tests {
         ));
         assert!(YoutubeDiscoverer::should_include_video(
             "REC Behind the Scenes",
-            "REC",
             300,
             1920,
             1080,
@@ -1850,7 +1826,6 @@ mod unit_tests {
         // Excluded due to duration
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Official Trailer",
-            "REC",
             20,
             1920,
             1080,
@@ -1859,7 +1834,6 @@ mod unit_tests {
         )); // Too short
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Behind the Scenes",
-            "REC",
             1500,
             1920,
             1080,
@@ -1873,7 +1847,6 @@ mod unit_tests {
         // Excluded due to keyword
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Movie Review",
-            "REC",
             120,
             1920,
             1080,
@@ -1882,7 +1855,6 @@ mod unit_tests {
         ));
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Ending Explained",
-            "REC",
             300,
             1920,
             1080,
@@ -1896,7 +1868,6 @@ mod unit_tests {
         // Excluded as YouTube Short
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Quick Clip",
-            "REC",
             45,
             1080,
             1920,
@@ -1910,7 +1881,6 @@ mod unit_tests {
         // Video fails multiple criteria
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Movie Review",
-            "REC",
             20,
             1080,
             1920,
@@ -1924,7 +1894,6 @@ mod unit_tests {
         // Video with same year should be included
         assert!(YoutubeDiscoverer::should_include_video(
             "REC (2007) Behind the Scenes",
-            "REC",
             300,
             1920,
             1080,
@@ -1938,7 +1907,6 @@ mod unit_tests {
         // Video mentioning a different year (sequel) should be excluded
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC 2 (2009) Fighting Scene",
-            "REC",
             300,
             1920,
             1080,
@@ -1952,32 +1920,6 @@ mod unit_tests {
         // Video without year should be included
         assert!(YoutubeDiscoverer::should_include_video(
             "REC Behind the Scenes Featurette",
-            "REC",
-            300,
-            1920,
-            1080,
-            2007,
-            &[]
-        ));
-    }
-
-    #[test]
-    fn test_youtube_movie_title_filtering() {
-        // Video must contain the movie title
-        assert!(!YoutubeDiscoverer::should_include_video(
-            "Some Other Movie Behind the Scenes",
-            "REC",
-            300,
-            1920,
-            1080,
-            2007,
-            &[]
-        ));
-
-        // Case-insensitive matching
-        assert!(YoutubeDiscoverer::should_include_video(
-            "rec behind the scenes",
-            "REC",
             300,
             1920,
             1080,
@@ -1997,7 +1939,6 @@ mod unit_tests {
 
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC 2 Behind the Scenes",
-            "REC",
             300,
             1920,
             1080,
@@ -2007,7 +1948,6 @@ mod unit_tests {
 
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC 3 Genesis Deleted Scenes",
-            "REC",
             300,
             1920,
             1080,
@@ -2018,7 +1958,6 @@ mod unit_tests {
         // Video about the original movie should be included
         assert!(YoutubeDiscoverer::should_include_video(
             "REC Behind the Scenes",
-            "REC",
             300,
             1920,
             1080,
