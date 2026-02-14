@@ -13,6 +13,7 @@
 - `regex` (1.11) - Pattern matching
 - `colored` (2.1) - Terminal output formatting
 - `log` (0.4) + `env_logger` (0.11) - Logging infrastructure
+- `urlencoding` (2.1) - URL encoding for API requests
 
 ## Testing
 - `proptest` (1.5) - Property-based testing framework

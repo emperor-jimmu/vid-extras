@@ -75,19 +75,19 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
 - [x] 5. Checkpoint - Core infrastructure complete
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. Implement Discovery module - TMDB
-  - [ ] 6.1 Create TmdbDiscoverer struct
+- [x] 6. Implement Discovery module - TMDB
+  - [x] 6.1 Create TmdbDiscoverer struct
     - Implement movie search by title and year
     - Implement video list fetching
     - Implement type-to-category mapping (Trailer, Behind the Scenes, Deleted Scene, Featurette, Bloopers)
     - Handle API errors gracefully with logging
     - _Requirements: 3.1, 3.2, 3.3, 3.4-3.8, 3.9_
   
-  - [ ] 6.2 Write property test for TMDB type mapping
+  - [x] 6.2 Write property test for TMDB type mapping
     - **Property 7: TMDB Video Type Mapping**
     - **Validates: Requirements 3.4-3.8**
   
-  - [ ] 6.3 Write unit tests for TMDB integration
+  - [x] 6.3 Write unit tests for TMDB integration
     - Test API response parsing with mock responses
     - Test error handling for failed requests
     - Test movie search query construction

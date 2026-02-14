@@ -25,7 +25,7 @@ The codebase follows a pipeline architecture with clear separation of concerns:
 - `models.rs` - Shared data structures (MovieEntry, VideoSource, DoneMarker, enums)
 - `orchestrator.rs` - Main pipeline coordinator, manages processing flow
 - `scanner.rs` - **[IMPLEMENTED]** Directory traversal, movie discovery, folder name parsing
-- `discovery.rs` - Multi-source content discovery (TMDB, Archive.org, YouTube)
+- `discovery.rs` - **[TMDB IMPLEMENTED]** Multi-source content discovery (TMDB complete, Archive.org and YouTube pending)
 - `downloader.rs` - Video downloading via yt-dlp
 - `converter.rs` - Video format conversion with ffmpeg, hardware acceleration detection
 - `organizer.rs` - File organization into Jellyfin structure, done marker management
@@ -143,10 +143,82 @@ impl Validator {
 - 11.5: Descriptive error messages
 - 10.5: Clear error reporting
 
+#### Discovery Module - TMDB (src/discovery.rs)
+**Status:** ✅ TMDB implementation complete (Archive.org and YouTube pending)
+
+**Functionality:**
+- Movie search by title and year via TMDB API
+- Video list fetching from TMDB movie endpoints
+- Type-to-category mapping for 5 content types
+- YouTube URL construction from TMDB video keys
+- Graceful error handling with detailed logging
+- URL encoding for safe API requests
+
+**Public API:**
+```rust
+pub trait ContentDiscoverer {
+    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError>;
+}
+
+pub struct TmdbDiscoverer {
+    // Creates TMDB discoverer with API key
+    pub fn new(api_key: String) -> Self;
+    
+    // Maps TMDB video types to content categories
+    pub fn map_tmdb_type(tmdb_type: &str) -> Option<ContentCategory>;
+}
+
+impl ContentDiscoverer for TmdbDiscoverer {
+    // Discovers video sources from TMDB for a movie
+    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError>;
+}
+```
+
+**Type Mappings:**
+- "Trailer" → ContentCategory::Trailer
+- "Behind the Scenes" → ContentCategory::BehindTheScenes
+- "Deleted Scene" → ContentCategory::DeletedScene
+- "Featurette" → ContentCategory::Featurette
+- "Bloopers" → ContentCategory::Featurette
+
+**Test Coverage:**
+- 16 unit tests covering:
+  - API response parsing with mock JSON
+  - URL construction and encoding
+  - Error handling scenarios
+  - All type mappings including unknown types
+  - Special character handling
+- 1 property-based test with 100+ iterations:
+  - Property 7: TMDB Video Type Mapping
+- All tests passing ✅
+
+**Dependencies:**
+- Uses `reqwest` for HTTP API calls
+- Uses `serde` and `serde_json` for JSON parsing
+- Uses `urlencoding` for safe URL construction
+- Uses `log` for structured logging
+- Test dependencies: `proptest`, `tokio`
+
+**Requirements Validated:**
+- 3.1: Movie search by title and year
+- 3.2: TMDB movie identifier retrieval
+- 3.3: Videos list fetching
+- 3.4-3.8: Type-to-category mapping for all video types
+- 3.9: Graceful API error handling
+
+**API Endpoints Used:**
+- Search: `https://api.themoviedb.org/3/search/movie`
+- Videos: `https://api.themoviedb.org/3/movie/{id}/videos`
+
+**Pending Implementation:**
+- Archive.org discoverer (for movies < 2010)
+- YouTube discoverer (with duration and keyword filtering)
+- DiscoveryOrchestrator (to coordinate all sources)
+
 ### Pending Modules
 
 The following modules are defined but not yet implemented:
-- Discovery module (TMDB, Archive.org, YouTube)
+- Discovery module - Archive.org and YouTube discoverers
 - Downloader module
 - Converter module
 - Organizer module
