@@ -40,7 +40,9 @@ The following tools must be installed and available in your system PATH:
 
 ## Installation
 
-### From Source
+For detailed installation instructions including dependency setup, see [INSTALL.md](INSTALL.md).
+
+### Quick Install from Source
 
 ```bash
 # Clone the repository
@@ -50,7 +52,11 @@ cd extras_fetcher
 # Build release binary
 cargo build --release
 
-# Binary will be at: target/release/extras_fetcher
+# Binary will be at: target/release/extras_fetcher (or extras_fetcher.exe on Windows)
+
+# Optional: Install to system PATH
+# Linux/macOS: sudo cp target/release/extras_fetcher /usr/local/bin/
+# Windows: copy target\release\extras_fetcher.exe C:\Windows\System32\
 ```
 
 ## Usage

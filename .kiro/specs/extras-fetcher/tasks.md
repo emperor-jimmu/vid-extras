@@ -393,7 +393,7 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
   - Create README.md with usage instructions
   - Document environment variables (TMDB_API_KEY)
 
-- [ ] 21. Build and package
+- [x] 21. Build and package
   - Build release binary with cargo build --release
   - Test binary on sample movie library
   - Verify colored output in terminal
