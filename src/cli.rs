@@ -144,11 +144,31 @@ pub fn display_banner() {
 /// Display configuration with all parameters
 pub fn display_config(config: &CliConfig) {
     println!("{}", "Configuration:".bright_green().bold());
-    println!("  {} {:?}", "Root Directory:".bright_white(), config.root_directory);
+    println!(
+        "  {} {:?}",
+        "Root Directory:".bright_white(),
+        config.root_directory
+    );
     println!("  {} {}", "Mode:".bright_white(), config.mode);
-    println!("  {} {}", "Force Reprocess:".bright_white(), if config.force { "Yes".bright_yellow() } else { "No".bright_white() });
+    println!(
+        "  {} {}",
+        "Force Reprocess:".bright_white(),
+        if config.force {
+            "Yes".bright_yellow()
+        } else {
+            "No".bright_white()
+        }
+    );
     println!("  {} {}", "Concurrency:".bright_white(), config.concurrency);
-    println!("  {} {}", "Verbose:".bright_white(), if config.verbose { "Yes".bright_yellow() } else { "No".bright_white() });
+    println!(
+        "  {} {}",
+        "Verbose:".bright_white(),
+        if config.verbose {
+            "Yes".bright_yellow()
+        } else {
+            "No".bright_white()
+        }
+    );
     println!();
 }
 
@@ -401,7 +421,7 @@ mod property_tests {
             // When verbose=true, we expect DEBUG level logging
             // When verbose=false, we expect INFO level logging
             // This is typically configured in the main function with env_logger
-            
+
             // We can verify that the flag is accessible and has the correct value
             if verbose {
                 prop_assert!(

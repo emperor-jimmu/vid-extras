@@ -273,7 +273,11 @@ impl Orchestrator {
         info!("Found {} sources for {}", sources.len(), movie);
 
         // Phase 3: Download
-        info!("Phase 3: Downloading {} videos for {}", sources.len(), movie);
+        info!(
+            "Phase 3: Downloading {} videos for {}",
+            sources.len(),
+            movie
+        );
         let downloads = downloader.download_all(&movie_id, sources).await;
 
         let download_count = downloads.len();
@@ -334,7 +338,11 @@ impl Orchestrator {
         match organizer.organize(conversions, &temp_dir).await {
             Ok(_) => {
                 info!("Successfully organized files for {}", movie);
-                MovieResult::success(movie, successful_download_count, successful_conversion_count)
+                MovieResult::success(
+                    movie,
+                    successful_download_count,
+                    successful_conversion_count,
+                )
             }
             Err(e) => {
                 error!("Organization failed for {}: {}", movie, e);
@@ -354,7 +362,10 @@ impl Orchestrator {
 
         match tokio::fs::remove_dir_all(&self.temp_base).await {
             Ok(_) => {
-                info!("Cleaned up pre-existing temp directory: {:?}", self.temp_base);
+                info!(
+                    "Cleaned up pre-existing temp directory: {:?}",
+                    self.temp_base
+                );
             }
             Err(e) => {
                 warn!(
@@ -474,10 +485,12 @@ mod tests {
         assert_eq!(result.downloads, 0);
         assert_eq!(result.conversions, 0);
         assert!(result.error.is_some());
-        assert!(result
-            .error
-            .unwrap()
-            .contains("conversion phase failed: FFmpeg error"));
+        assert!(
+            result
+                .error
+                .unwrap()
+                .contains("conversion phase failed: FFmpeg error")
+        );
     }
 
     #[test]
@@ -646,10 +659,12 @@ mod tests {
         let failed_result = MovieResult::failed(movie, "download", "Network error".to_string());
         assert!(!failed_result.success);
         assert!(failed_result.error.is_some());
-        assert!(failed_result
-            .error
-            .unwrap()
-            .contains("download phase failed"));
+        assert!(
+            failed_result
+                .error
+                .unwrap()
+                .contains("download phase failed")
+        );
     }
 
     #[test]
@@ -792,18 +807,18 @@ mod property_tests {
             // - Downloader::download_all() processes sources sequentially in a for loop
             // - Each download completes before the next one starts
             // - No concurrent downloads happen within a single movie
-            
+
             // We verify the design constraint exists by checking that:
             // 1. The downloader is called with all sources at once
             // 2. The implementation processes them one by one
-            
+
             // Since we can't easily test async behavior in proptest without mocking,
             // we verify the contract: download_all takes a Vec and processes sequentially
-            
+
             prop_assert!(num_sources > 0);
             prop_assert!(year >= 2000 && year < 2025);
             prop_assert!(!title.trim().is_empty());
-            
+
             // The sequential nature is guaranteed by the implementation:
             // - No tokio::spawn within download_single
             // - No parallel iteration (no join_all or similar)
@@ -824,14 +839,14 @@ mod property_tests {
             // 1. Creating a Semaphore with the specified limit
             // 2. Each task acquires a permit before processing
             // 3. The semaphore ensures at most N permits are active
-            
+
             // Verify the concurrency value is valid
             prop_assert!(concurrency >= 1);
             prop_assert!(concurrency <= 5);
-            
+
             // The implementation uses Arc<Semaphore::new(concurrency)>
             // which guarantees at most `concurrency` tasks run simultaneously
-            
+
             // This is a design-level property enforced by tokio::sync::Semaphore
         }
     }
@@ -850,14 +865,14 @@ mod property_tests {
             // 2. Errors are caught and converted to MovieResult::failed
             // 3. The loop continues to the next movie regardless of errors
             // 4. No early returns or panics that would stop processing
-            
+
             prop_assert!(num_movies >= 2);
-            
+
             // The implementation processes each movie in a try-catch pattern:
             // - process_movie_static returns MovieResult (never panics)
             // - Failed results are logged but don't stop the loop
             // - Each movie's temp directory is independent
-            
+
             // This is enforced by the design of MovieResult and error handling
         }
     }
@@ -873,12 +888,12 @@ mod property_tests {
             // 1. Drop trait implementation on Orchestrator
             // 2. Drop is called when Orchestrator goes out of scope
             // 3. The Drop impl removes temp_base directory
-            
+
             // This is a Rust language guarantee:
             // - Drop is always called when a value goes out of scope
             // - Even on panic (unless the panic is during Drop itself)
             // - The implementation uses std::fs::remove_dir_all in Drop
-            
+
             // We verify the Drop trait is implemented (compile-time check)
             // The actual cleanup behavior is tested in unit tests
         }
@@ -895,12 +910,12 @@ mod property_tests {
             // 1. cleanup_pre_existing_temp() is called at the start of run()
             // 2. It removes the entire temp_base directory if it exists
             // 3. Downloader::create_temp_dir() also cleans existing directories
-            
+
             // This is enforced by the implementation:
             // - run() calls cleanup_pre_existing_temp() before scanning
             // - create_temp_dir() removes existing directories before creating new ones
             // - Both use fs::remove_dir_all for complete cleanup
-            
+
             // The property is validated by the implementation design
         }
     }

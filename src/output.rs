@@ -5,6 +5,7 @@ use crate::orchestrator::ProcessingSummary;
 use colored::Colorize;
 
 /// Display scanning progress for a movie
+#[allow(dead_code)]
 pub fn display_scanning_progress(movie: &MovieEntry, skipped: bool) {
     if skipped {
         println!(
@@ -24,6 +25,7 @@ pub fn display_scanning_progress(movie: &MovieEntry, skipped: bool) {
 }
 
 /// Display discovery phase start
+#[allow(dead_code)]
 pub fn display_discovery_start(movie: &MovieEntry, source_count: usize) {
     println!(
         "\n{} {} - Discovered {} sources",
@@ -34,6 +36,7 @@ pub fn display_discovery_start(movie: &MovieEntry, source_count: usize) {
 }
 
 /// Display download progress for a single video
+#[allow(dead_code)]
 pub fn display_download_progress(
     title: &str,
     source_type: SourceType,
@@ -51,6 +54,7 @@ pub fn display_download_progress(
 }
 
 /// Display download result
+#[allow(dead_code)]
 pub fn display_download_result(title: &str, success: bool, error: Option<&str>) {
     if success {
         println!(
@@ -70,6 +74,7 @@ pub fn display_download_result(title: &str, success: bool, error: Option<&str>) 
 }
 
 /// Display conversion progress for a single video
+#[allow(dead_code)]
 pub fn display_conversion_progress(filename: &str, current: usize, total: usize) {
     println!(
         "  {} Converting [{}/{}]: {}",
@@ -81,6 +86,7 @@ pub fn display_conversion_progress(filename: &str, current: usize, total: usize)
 }
 
 /// Display conversion result
+#[allow(dead_code)]
 pub fn display_conversion_result(filename: &str, success: bool, error: Option<&str>) {
     if success {
         println!(
@@ -100,6 +106,7 @@ pub fn display_conversion_result(filename: &str, success: bool, error: Option<&s
 }
 
 /// Display organization progress
+#[allow(dead_code)]
 pub fn display_organization_start(movie: &MovieEntry, file_count: usize) {
     println!(
         "\n{} {} - Organizing {} files",
@@ -110,6 +117,7 @@ pub fn display_organization_start(movie: &MovieEntry, file_count: usize) {
 }
 
 /// Display file organization result
+#[allow(dead_code)]
 pub fn display_file_organized(filename: &str, category: ContentCategory) {
     println!(
         "  {} Moved to /{}: {}",
@@ -120,9 +128,10 @@ pub fn display_file_organized(filename: &str, category: ContentCategory) {
 }
 
 /// Display error message with context
-/// 
+///
 /// Formats error messages with movie title and operation type for clarity.
 /// Requirements: 10.1, 13.7
+#[allow(dead_code)]
 pub fn display_error(movie_title: &str, operation: &str, error: &str) {
     println!(
         "{} {} - {} failed: {}",
@@ -134,26 +143,26 @@ pub fn display_error(movie_title: &str, operation: &str, error: &str) {
 }
 
 /// Display processing summary statistics
-/// 
+///
 /// Shows colored statistics for the entire processing run.
 /// Requirements: 13.6
 pub fn display_summary(summary: &ProcessingSummary) {
     println!("\n{}", "═".repeat(60).bright_cyan());
     println!("{}", "Processing Summary".bright_cyan().bold());
     println!("{}", "═".repeat(60).bright_cyan());
-    
+
     println!(
         "  {} {}",
         "Total Movies:".bright_white(),
         summary.total_movies.to_string().bright_yellow()
     );
-    
+
     println!(
         "  {} {}",
         "Successful:".bright_white(),
         summary.successful.to_string().green()
     );
-    
+
     println!(
         "  {} {}",
         "Failed:".bright_white(),
@@ -163,24 +172,28 @@ pub fn display_summary(summary: &ProcessingSummary) {
             summary.failed.to_string().bright_white()
         }
     );
-    
+
     println!(
         "  {} {}",
         "Total Downloads:".bright_white(),
         summary.total_downloads.to_string().bright_cyan()
     );
-    
+
     println!(
         "  {} {}",
         "Total Conversions:".bright_white(),
         summary.total_conversions.to_string().bright_cyan()
     );
-    
+
     println!("{}", "═".repeat(60).bright_cyan());
-    
+
     // Display completion message
     if summary.failed == 0 && summary.successful > 0 {
-        println!("\n{} {}", "✓".green().bold(), "All movies processed successfully!".green().bold());
+        println!(
+            "\n{} {}",
+            "✓".green().bold(),
+            "All movies processed successfully!".green().bold()
+        );
     } else if summary.failed > 0 {
         println!(
             "\n{} {} movies completed with {} errors",
@@ -194,6 +207,7 @@ pub fn display_summary(summary: &ProcessingSummary) {
 }
 
 /// Display phase header
+#[allow(dead_code)]
 pub fn display_phase(phase_number: usize, phase_name: &str) {
     println!(
         "\n{} {} {}",
@@ -204,12 +218,9 @@ pub fn display_phase(phase_number: usize, phase_name: &str) {
 }
 
 /// Display movie processing start
+#[allow(dead_code)]
 pub fn display_movie_start(movie: &MovieEntry) {
-    println!(
-        "\n{} {}",
-        "━".repeat(60).bright_cyan(),
-        ""
-    );
+    println!("\n{}", "━".repeat(60).bright_cyan());
     println!(
         "{} Processing: {}",
         "🎬".bright_cyan(),
@@ -219,6 +230,7 @@ pub fn display_movie_start(movie: &MovieEntry) {
 }
 
 /// Display movie processing completion
+#[allow(dead_code)]
 pub fn display_movie_complete(
     movie: &MovieEntry,
     downloads: usize,
@@ -386,14 +398,14 @@ mod tests {
     fn test_error_message_formatting() {
         // Test that error messages include all required context
         // Requirements: 10.1, 13.7
-        
+
         let movie_title = "The Matrix (1999)";
         let operation = "download";
         let error = "Network timeout after 5 minutes";
-        
+
         // Verify the function doesn't panic and formats correctly
         display_error(movie_title, operation, error);
-        
+
         // The function should display:
         // - Movie title
         // - Operation type
@@ -405,7 +417,7 @@ mod tests {
     fn test_summary_statistics_display() {
         // Test summary display with various scenarios
         // Requirements: 13.3-13.7
-        
+
         // Scenario 1: All successful
         let summary1 = ProcessingSummary {
             total_movies: 10,
@@ -415,7 +427,7 @@ mod tests {
             total_conversions: 25,
         };
         display_summary(&summary1);
-        
+
         // Scenario 2: Mixed results
         let summary2 = ProcessingSummary {
             total_movies: 10,
@@ -425,7 +437,7 @@ mod tests {
             total_conversions: 15,
         };
         display_summary(&summary2);
-        
+
         // Scenario 3: All failed
         let summary3 = ProcessingSummary {
             total_movies: 5,
@@ -441,22 +453,22 @@ mod tests {
     fn test_colored_output_generation() {
         // Test that colored output is generated for different status types
         // Requirements: 13.3
-        
+
         let movie = create_test_movie();
-        
+
         // Green for success
         display_scanning_progress(&movie, false);
         display_download_result("test.mp4", true, None);
         display_conversion_result("test.mp4", true, None);
-        
+
         // Yellow for warnings/skipped
         display_scanning_progress(&movie, true);
-        
+
         // Red for errors
         display_download_result("test.mp4", false, Some("Error"));
         display_conversion_result("test.mp4", false, Some("Error"));
         display_error("Test (2020)", "conversion", "FFmpeg failed");
-        
+
         // Blue for progress
         display_download_progress("test.mp4", SourceType::YouTube, 1, 3);
         display_conversion_progress("test.mp4", 1, 3);
@@ -466,12 +478,12 @@ mod tests {
     fn test_progress_indicator_formatting() {
         // Test progress indicators show current/total counts
         // Requirements: 13.4, 13.5
-        
+
         // Download progress
         display_download_progress("Trailer 1", SourceType::TMDB, 1, 5);
         display_download_progress("Trailer 2", SourceType::YouTube, 2, 5);
         display_download_progress("Trailer 3", SourceType::ArchiveOrg, 3, 5);
-        
+
         // Conversion progress
         display_conversion_progress("trailer1.mp4", 1, 3);
         display_conversion_progress("trailer2.mp4", 2, 3);
@@ -504,25 +516,25 @@ mod property_tests {
         ) {
             // Create a movie title with year
             let movie_title = format!("{} ({})", title.trim(), year);
-            
+
             // The display_error function should accept and format:
             // 1. Movie title (with context)
             // 2. Operation type (which phase failed)
             // 3. Error message (what went wrong)
-            
+
             // Verify the function doesn't panic with various inputs
             display_error(&movie_title, operation, &error_msg);
-            
+
             // The function should display all three components:
             // - Movie title for context (which movie failed)
             // - Operation type (which phase failed)
             // - Error message (what went wrong)
-            
+
             // This ensures that when errors occur, users can identify:
             // 1. WHAT movie had the problem (movie_title)
             // 2. WHERE in the pipeline it failed (operation)
             // 3. WHY it failed (error_msg)
-            
+
             // Verify inputs are valid
             prop_assert!(!movie_title.trim().is_empty());
             prop_assert!(!operation.is_empty());

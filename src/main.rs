@@ -17,14 +17,14 @@ use output::display_summary;
 use validation::Validator;
 
 /// Main entry point for extras_fetcher
-/// 
+///
 /// Coordinates the complete processing pipeline:
 /// 1. Parse CLI arguments and validate configuration
 /// 2. Initialize logging based on verbosity flag
 /// 3. Validate system dependencies (yt-dlp, ffmpeg, TMDB API key)
 /// 4. Create and execute the orchestrator
 /// 5. Display final processing summary
-/// 
+///
 /// Requirements: 11.1-11.5, 10.5
 #[tokio::main]
 async fn main() {
@@ -41,11 +41,9 @@ async fn main() {
     // Initialize logging based on verbose flag
     // Requirements: 13.8
     if config.verbose {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
-            .init();
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     } else {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-            .init();
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     }
 
     // Display banner and configuration
@@ -63,13 +61,13 @@ async fn main() {
         Err(e) => {
             // Fatal error: missing dependencies
             // Requirements: 10.5, 11.5
-            eprintln!("\n{}", "✗ Dependency validation failed".to_string());
+            eprintln!("\n✗ Dependency validation failed");
             eprintln!("  Error: {}", e);
-            eprintln!("\n{}", "Please ensure:".to_string());
+            eprintln!("\nPlease ensure:");
             eprintln!("  • yt-dlp is installed and available in PATH");
             eprintln!("  • ffmpeg is installed with HEVC/x265 support");
             eprintln!("  • TMDB_API_KEY environment variable is set");
-            eprintln!("\n{}", "Installation instructions:".to_string());
+            eprintln!("\nInstallation instructions:");
             eprintln!("  yt-dlp:  https://github.com/yt-dlp/yt-dlp#installation");
             eprintln!("  ffmpeg:  https://ffmpeg.org/download.html");
             eprintln!("  TMDB:    https://www.themoviedb.org/settings/api");
@@ -89,7 +87,7 @@ async fn main() {
         Err(e) => {
             // Fatal error: orchestrator initialization failed
             // Requirements: 10.5
-            eprintln!("\n{}", "✗ Initialization failed".to_string());
+            eprintln!("\n✗ Initialization failed");
             eprintln!("  Error: {}", e);
             std::process::exit(1);
         }
@@ -105,7 +103,7 @@ async fn main() {
         Err(e) => {
             // Fatal error: orchestrator execution failed
             // Requirements: 10.5
-            eprintln!("\n{}", "✗ Processing failed".to_string());
+            eprintln!("\n✗ Processing failed");
             eprintln!("  Error: {}", e);
             std::process::exit(1);
         }
@@ -117,10 +115,7 @@ async fn main() {
 
     // Exit with appropriate code
     if summary.failed > 0 {
-        log::warn!(
-            "Processing completed with {} failures",
-            summary.failed
-        );
+        log::warn!("Processing completed with {} failures", summary.failed);
         std::process::exit(1);
     } else {
         log::info!("All movies processed successfully");
