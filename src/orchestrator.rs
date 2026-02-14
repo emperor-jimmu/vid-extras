@@ -1,11 +1,9 @@
 // Orchestrator module - coordinates all processing phases
 
 use crate::cli::CliConfig;
-use crate::converter::Converter;
-use crate::discovery::DiscoveryOrchestrator;
-use crate::downloader::Downloader;
 use crate::error::OrchestratorError;
-use crate::scanner::{MovieEntry, Scanner};
+use crate::models::MovieEntry;
+use crate::scanner::Scanner;
 
 /// Summary of processing results
 #[derive(Debug, Clone)]

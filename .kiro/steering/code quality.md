@@ -15,35 +15,35 @@ This document establishes the code quality standards and design principles for t
 ## SOLID Principles in Rust
 
 ### Single Responsibility Principle (SRP)
-Each module, struct, function, or trait should have one, and only one, reason to change. [codesignal](https://codesignal.com/learn/courses/applying-clean-code-principles-in-rust/lessons/applying-clean-code-principles-in-rust-understanding-and-implementing-solid-principles)
+Each module, struct, function, or trait should have one, and only one, reason to change.
 
 **Implementation Guidelines:**
 - Keep modules focused on a single task or domain concept
-- Leverage Rust's ownership and borrowing rules to naturally promote smaller, focused units of functionality [holeoftherabbit](https://www.holeoftherabbit.com/2025/01/19/rust-and-the-solid-principals/)
+- Leverage Rust's ownership and borrowing rules to naturally promote smaller, focused units of functionality 
 - Favor composition through structs, enums, and modules rather than monolithic structures
 - Each function should perform one well-defined operation
-- Separate concerns: logging, file I/O, business logic, and data processing should live in distinct components [darrenhorrocks.co](https://www.darrenhorrocks.co.uk/solid-principles-rust-with-examples/)
+- Separate concerns: logging, file I/O, business logic, and data processing should live in distinct components
 
 ### Open/Closed Principle (OCP)
-Software entities should be open for extension but closed for modification. [codesignal](https://codesignal.com/learn/courses/applying-clean-code-principles-in-rust/lessons/applying-clean-code-principles-in-rust-understanding-and-implementing-solid-principles)
+Software entities should be open for extension but closed for modification. 
 
 **Implementation Guidelines:**
-- Use traits and trait implementations to extend functionality without modifying existing code [codesignal](https://codesignal.com/learn/courses/applying-clean-code-principles-in-rust/lessons/applying-clean-code-principles-in-rust-understanding-and-implementing-solid-principles)
+- Use traits and trait implementations to extend functionality without modifying existing code
 - Leverage enum-based polymorphism for extending behavior
 - Design trait boundaries that allow new implementations without changing core logic
 - Utilize generics with trait bounds to create extensible APIs
 
 ### Liskov Substitution Principle (LSP)
-Implementations should honor the contracts of their traits, ensuring substitutability. [holeoftherabbit](https://www.holeoftherabbit.com/2025/01/19/rust-and-the-solid-principals/)
+Implementations should honor the contracts of their traits, ensuring substitutability. 
 
 **Implementation Guidelines:**
-- Rust avoids classical inheritance, so LSP is achieved through traits and polymorphism [holeoftherabbit](https://www.holeoftherabbit.com/2025/01/19/rust-and-the-solid-principals/)
+- Rust avoids classical inheritance, so LSP is achieved through traits and polymorphism 
 - Ensure trait implementations maintain expected behavior and invariants
-- Leverage Rust's type system and compile-time checks to catch substitution errors early [holeoftherabbit](https://www.holeoftherabbit.com/2025/01/19/rust-and-the-solid-principals/)
+- Leverage Rust's type system and compile-time checks to catch substitution errors early
 - Document trait contracts clearly, including preconditions and postconditions
 
 ### Interface Segregation Principle (ISP)
-Design small, focused traits to avoid forcing implementations to depend on unused interfaces. [codesignal](https://codesignal.com/learn/courses/applying-clean-code-principles-in-rust/lessons/applying-clean-code-principles-in-rust-understanding-and-implementing-solid-principles)
+Design small, focused traits to avoid forcing implementations to depend on unused interfaces.
 
 **Implementation Guidelines:**
 - Create granular traits rather than large, monolithic trait definitions
@@ -52,7 +52,7 @@ Design small, focused traits to avoid forcing implementations to depend on unuse
 - Use trait composition to build complex behaviors from simple traits
 
 ### Dependency Inversion Principle (DIP)
-Depend on abstractions (traits) rather than concrete implementations to decouple high-level and low-level modules. [codesignal](https://codesignal.com/learn/courses/applying-clean-code-principles-in-rust/lessons/applying-clean-code-principles-in-rust-understanding-and-implementing-solid-principles)
+Depend on abstractions (traits) rather than concrete implementations to decouple high-level and low-level modules.
 
 **Implementation Guidelines:**
 - Use traits to define interfaces between modules
@@ -63,7 +63,7 @@ Depend on abstractions (traits) rather than concrete implementations to decouple
 ## Code Quality Standards
 
 ### Readability
-Code should be self-explanatory and follow Rust conventions. [dev](https://dev.to/mbayoun95/rust-clean-code-crafting-elegant-efficient-and-maintainable-software-27ce)
+Code should be self-explanatory and follow Rust conventions. 
 
 **Requirements:**
 - Use meaningful, descriptive names for functions, variables, types, and modules
@@ -74,7 +74,7 @@ Code should be self-explanatory and follow Rust conventions. [dev](https://dev.t
 - Document public APIs with rustdoc comments (`///`)
 
 ### Simplicity
-Avoid unnecessary complexity and write code that does one thing well. [dev](https://dev.to/mbayoun95/rust-clean-code-crafting-elegant-efficient-and-maintainable-software-27ce)
+Avoid unnecessary complexity and write code that does one thing well.
 
 **Requirements:**
 - Prefer straightforward solutions over clever ones
@@ -84,7 +84,7 @@ Avoid unnecessary complexity and write code that does one thing well. [dev](http
 - Choose appropriate data structures for the use case
 
 ### Encapsulation
-Hide implementation details and expose only necessary interfaces. [holeoftherabbit](https://www.holeoftherabbit.com/2025/01/19/rust-and-the-solid-principals/)
+Hide implementation details and expose only necessary interfaces. 
 
 **Requirements:**
 - Use appropriate visibility modifiers (`pub`, `pub(crate)`, private by default)
@@ -96,7 +96,7 @@ Hide implementation details and expose only necessary interfaces. [holeoftherabb
 ## Code Smells and Anti-Patterns
 
 ### Bloaters
-Avoid code, methods, and structs that grow to unmanageable sizes. [refactoring](https://refactoring.guru/refactoring/smells)
+Avoid code, methods, and structs that grow to unmanageable sizes. 
 
 **Prohibited:**
 - Functions longer than 50-100 lines (excluding tests)
@@ -107,18 +107,18 @@ Avoid code, methods, and structs that grow to unmanageable sizes. [refactoring](
 ### Rust-Specific Anti-Patterns
 
 **Excessive Cloning:**
-- Avoid unnecessary `.clone()` calls [mcpmarket](https://mcpmarket.com/tools/skills/rust-anti-pattern-refactor)
+- Avoid unnecessary `.clone()` calls 
 - Use borrowing and references appropriately
 - Consider `Rc`/`Arc` for shared ownership when cloning is unavoidable
 
 **Unsafe Unwrap Usage:**
-- Never use `.unwrap()` in production code [reddit](https://www.reddit.com/r/rust/comments/14lz0rz/best_practices_for_rust/)
-- Use `.expect()` with descriptive messages for truly impossible failure cases [reddit](https://www.reddit.com/r/rust/comments/14lz0rz/best_practices_for_rust/)
+- Never use `.unwrap()` in production code
+- Use `.expect()` with descriptive messages for truly impossible failure cases
 - Prefer pattern matching, `if let`, or the `?` operator for error handling
-- Leverage `Option::flatten()` and `Result::flatten()` for nested types [reddit](https://www.reddit.com/r/rust/comments/14lz0rz/best_practices_for_rust/)
+- Leverage `Option::flatten()` and `Result::flatten()` for nested types
 
 **Large Structs with Self-Referential Methods:**
-- Avoid designs where methods produce references and then mutate `self` [jrasky.github](https://jrasky.github.io/posts/2018-02-17-two-anti-patterns-rust/)
+- Avoid designs where methods produce references and then mutate `self`
 - Refactor into smaller, focused structs
 - Consider splitting state from behavior
 
@@ -130,7 +130,7 @@ Avoid code, methods, and structs that grow to unmanageable sizes. [refactoring](
 ## Dead Code Elimination
 
 **Requirements:**
-- Run `cargo check` and `cargo clippy` regularly [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
+- Run `cargo check` and `cargo clippy` regularly 
 - Address all dead code warnings before committing
 - Remove commented-out code; rely on version control instead
 - Prune unused dependencies from `Cargo.toml`
@@ -139,28 +139,28 @@ Avoid code, methods, and structs that grow to unmanageable sizes. [refactoring](
 ## Error Handling
 
 **Standards:**
-- Implement proper error handling throughout the codebase [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
+- Implement proper error handling throughout the codebase 
 - Use `Result<T, E>` for operations that can fail
 - Define custom error types using `thiserror` or similar
 - Propagate errors using the `?` operator
-- Log errors at appropriate levels with context [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
-- Provide clear, specific error messages that help locate issues [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
+- Log errors at appropriate levels with context 
+- Provide clear, specific error messages that help locate issues
 
 ## Safety and Correctness
 
 **Requirements:**
-- Ensure code compiles without warnings [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
-- Document all `unsafe` code with safety invariants and justification [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
+- Ensure code compiles without warnings 
+- Document all `unsafe` code with safety invariants and justification
 - Minimize use of `unsafe` blocks; use only when absolutely necessary
-- Verify business logic for edge cases and error conditions [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
-- Use assertions at key points to verify assumptions [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
+- Verify business logic for edge cases and error conditions
+- Use assertions at key points to verify assumptions 
 - Leverage Rust's type system to prevent bugs at compile time
 
 ## Testing and Maintainability
 
 **Standards:**
 - Write unit tests for all public APIs and critical logic
-- Follow the "working code, then tests, then refactor" approach [reddit](https://www.reddit.com/r/rust/comments/14lz0rz/best_practices_for_rust/)
+- Follow the "working code, then tests, then refactor" approach 
 - Make code independently testable through dependency injection
 - Use integration tests for end-to-end validation
 - Maintain test coverage for refactored code
@@ -168,11 +168,11 @@ Avoid code, methods, and structs that grow to unmanageable sizes. [refactoring](
 ## Performance Considerations
 
 **Guidelines:**
-- Identify obvious inefficiencies like unnecessary allocations [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
+- Identify obvious inefficiencies like unnecessary allocations 
 - Use appropriate data structures and algorithms for the use case
-- Consider lazy evaluation, async processing, or parallelism where beneficial [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
-- Benchmark before optimizing to prevent performance regression [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
-- Balance compilation size, compilation time, and runtime performance [github](https://github.com/ZhangHanDong/rust-code-review-guidelines)
+- Consider lazy evaluation, async processing, or parallelism where beneficial 
+- Benchmark before optimizing to prevent performance regression 
+- Balance compilation size, compilation time, and runtime performance
 
 ## Continuous Improvement
 
@@ -181,7 +181,7 @@ Avoid code, methods, and structs that grow to unmanageable sizes. [refactoring](
 - Use `cargo fmt` to maintain consistent formatting
 - Conduct code reviews focusing on design principles, not just syntax
 - Regularly refactor code to improve quality
-- Keep build times fast by running `cargo check` frequently [reddit](https://www.reddit.com/r/rust/comments/14lz0rz/best_practices_for_rust/)
+- Keep build times fast by running `cargo check` frequently 
 - Document architectural decisions and design patterns used
 
 ## Enforcement

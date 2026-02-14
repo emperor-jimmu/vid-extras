@@ -24,27 +24,27 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - **Property 2: Done Marker Round-Trip**
     - **Validates: Requirements 2.2**
 
-- [ ] 3. Implement Scanner module
-  - [ ] 3.1 Create Scanner struct with directory traversal logic
+- [x] 3. Implement Scanner module
+  - [x] 3.1 Create Scanner struct with directory traversal logic
     - Implement recursive directory walking
     - Implement folder name parsing with regex pattern "^(.+?)\\s*\\((\\d{4})\\)$"
     - Implement done marker detection
     - Build MovieEntry queue with filtering logic
     - _Requirements: 1.6, 1.7, 1.8, 1.9, 2.3_
   
-  - [ ] 3.2 Write property test for folder name parsing
+  - [x] 3.2 Write property test for folder name parsing
     - **Property 1: Folder Name Parsing Correctness**
     - **Validates: Requirements 1.7**
   
-  - [ ] 3.3 Write property test for done marker skipping
+  - [x] 3.3 Write property test for done marker skipping
     - **Property 3: Done Marker Skipping Behavior**
     - **Validates: Requirements 1.8, 2.3, 12.1**
   
-  - [ ] 3.4 Write property test for recursive traversal
+  - [x] 3.4 Write property test for recursive traversal
     - **Property 6: Recursive Directory Traversal Completeness**
     - **Validates: Requirements 1.6**
   
-  - [ ] 3.5 Write unit tests for scanner edge cases
+  - [x] 3.5 Write unit tests for scanner edge cases
     - Test invalid folder names
     - Test empty directories
     - Test nested directory structures

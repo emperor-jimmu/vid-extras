@@ -1,7 +1,7 @@
 // Discovery module - handles content discovery from multiple sources
 
 use crate::error::DiscoveryError;
-use crate::scanner::MovieEntry;
+use crate::models::MovieEntry;
 
 /// Type of content source
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
