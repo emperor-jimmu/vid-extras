@@ -115,8 +115,8 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Test error handling
     - _Requirements: 4.3, 4.4, 4.7_
 
-- [ ] 8. Implement Discovery module - YouTube
-  - [ ] 8.1 Create YoutubeDiscoverer struct
+- [x] 8. Implement Discovery module - YouTube
+  - [x] 8.1 Create YoutubeDiscoverer struct
     - Implement yt-dlp search integration with ytsearch operator
     - Implement search query construction for different content types
     - Implement duration filtering (30s - 20min)
@@ -125,23 +125,23 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Handle search errors gracefully with logging
     - _Requirements: 5.1, 5.2, 5.3-5.6, 5.7, 5.8, 5.9, 5.10, 5.11_
   
-  - [ ] 8.2 Write property test for YouTube always queried
+  - [x] 8.2 Write property test for YouTube always queried
     - **Property 10: YouTube Always Queried**
     - **Validates: Requirements 5.1**
   
-  - [ ] 8.3 Write property test for duration filtering
+  - [x] 8.3 Write property test for duration filtering
     - **Property 11: YouTube Duration Filtering**
     - **Validates: Requirements 5.7, 5.8**
   
-  - [ ] 8.4 Write property test for keyword filtering
+  - [x] 8.4 Write property test for keyword filtering
     - **Property 12: YouTube Keyword Filtering**
     - **Validates: Requirements 5.9**
   
-  - [ ] 8.5 Write property test for Shorts exclusion
+  - [x] 8.5 Write property test for Shorts exclusion
     - **Property 13: YouTube Shorts Exclusion**
     - **Validates: Requirements 5.10**
   
-  - [ ] 8.6 Write unit tests for YouTube integration
+  - [x] 8.6 Write unit tests for YouTube integration
     - Test search query construction
     - Test filtering logic with various inputs
     - Test error handling

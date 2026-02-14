@@ -29,6 +29,8 @@ pub enum DiscoveryError {
     ApiError(String),
     #[error("Network error: {0}")]
     NetworkError(#[from] reqwest::Error),
+    #[error("yt-dlp error: {0}")]
+    YtDlpError(String),
 }
 
 /// Download-related errors

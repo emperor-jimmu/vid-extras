@@ -340,8 +340,204 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
 }
 
 /// YouTube content discoverer
-#[allow(dead_code)]
 pub struct YoutubeDiscoverer;
+
+impl YoutubeDiscoverer {
+    /// Create a new YouTube discoverer
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Build search queries for different content types
+    fn build_search_queries(title: &str, year: u16) -> Vec<(String, ContentCategory)> {
+        vec![
+            (
+                format!("{} {} deleted scenes", title, year),
+                ContentCategory::DeletedScene,
+            ),
+            (
+                format!("{} {} behind the scenes", title, year),
+                ContentCategory::BehindTheScenes,
+            ),
+            (
+                format!("{} {} bloopers", title, year),
+                ContentCategory::Featurette,
+            ),
+            (
+                format!("{} {} cast interview", title, year),
+                ContentCategory::Featurette,
+            ),
+        ]
+    }
+
+    /// Check if a video title contains excluded keywords
+    fn contains_excluded_keywords(title: &str) -> bool {
+        let excluded_keywords = [
+            "Review",
+            "Reaction",
+            "Analysis",
+            "Explained",
+            "Ending",
+            "Theory",
+            "React",
+        ];
+
+        let title_lower = title.to_lowercase();
+        excluded_keywords
+            .iter()
+            .any(|keyword| title_lower.contains(&keyword.to_lowercase()))
+    }
+
+    /// Check if duration is within acceptable range (30s - 20min)
+    fn is_duration_valid(duration_secs: u32) -> bool {
+        duration_secs >= 30 && duration_secs <= 1200 // 20 minutes = 1200 seconds
+    }
+
+    /// Check if video is a YouTube Short (duration < 60s and vertical aspect ratio)
+    fn is_youtube_short(duration_secs: u32, width: u32, height: u32) -> bool {
+        // YouTube Shorts are typically < 60 seconds and have vertical aspect ratio (9:16 or similar)
+        if duration_secs >= 60 {
+            return false;
+        }
+
+        // Check for vertical aspect ratio (height > width)
+        // Allow some tolerance for aspect ratio detection
+        height > width
+    }
+
+    /// Filter a video based on all criteria
+    fn should_include_video(
+        title: &str,
+        duration_secs: u32,
+        width: u32,
+        height: u32,
+    ) -> bool {
+        // Check duration range
+        if !Self::is_duration_valid(duration_secs) {
+            debug!("Excluding video '{}' - duration {}s out of range", title, duration_secs);
+            return false;
+        }
+
+        // Check for excluded keywords
+        if Self::contains_excluded_keywords(title) {
+            debug!("Excluding video '{}' - contains excluded keyword", title);
+            return false;
+        }
+
+        // Check if it's a YouTube Short
+        if Self::is_youtube_short(duration_secs, width, height) {
+            debug!("Excluding video '{}' - detected as YouTube Short", title);
+            return false;
+        }
+
+        true
+    }
+
+    /// Search YouTube using yt-dlp for a specific query
+    async fn search_youtube(
+        &self,
+        query: &str,
+        category: ContentCategory,
+    ) -> Result<Vec<VideoSource>, DiscoveryError> {
+        // Use yt-dlp with ytsearch5 to get top 5 results
+        let search_query = format!("ytsearch5:{}", query);
+
+        debug!("Searching YouTube with query: {}", query);
+
+        // Execute yt-dlp to search and get video metadata
+        let output = tokio::process::Command::new("yt-dlp")
+            .arg("--dump-json")
+            .arg("--no-playlist")
+            .arg("--skip-download")
+            .arg(&search_query)
+            .output()
+            .await
+            .map_err(|e| {
+                error!("Failed to execute yt-dlp: {}", e);
+                DiscoveryError::YtDlpError(format!("Failed to execute yt-dlp: {}", e))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            error!("yt-dlp search failed: {}", stderr);
+            return Err(DiscoveryError::YtDlpError(format!(
+                "yt-dlp search failed: {}",
+                stderr
+            )));
+        }
+
+        // Parse JSON output (yt-dlp outputs one JSON object per line)
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut sources = Vec::new();
+
+        for line in stdout.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            match serde_json::from_str::<serde_json::Value>(line) {
+                Ok(json) => {
+                    // Extract video metadata
+                    let title = json["title"].as_str().unwrap_or("Unknown").to_string();
+                    let url = json["webpage_url"].as_str().unwrap_or("").to_string();
+                    let duration = json["duration"].as_u64().unwrap_or(0) as u32;
+                    let width = json["width"].as_u64().unwrap_or(1920) as u32;
+                    let height = json["height"].as_u64().unwrap_or(1080) as u32;
+
+                    // Apply filtering
+                    if Self::should_include_video(&title, duration, width, height) {
+                        sources.push(VideoSource {
+                            url,
+                            source_type: SourceType::YouTube,
+                            category,
+                            title,
+                        });
+                        debug!("Added YouTube video: {}", sources.last().unwrap().title);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to parse yt-dlp JSON output: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        Ok(sources)
+    }
+}
+
+impl ContentDiscoverer for YoutubeDiscoverer {
+    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
+        info!("Discovering YouTube content for: {}", movie);
+
+        let queries = Self::build_search_queries(&movie.title, movie.year);
+        let mut all_sources = Vec::new();
+
+        for (query, category) in queries {
+            match self.search_youtube(&query, category).await {
+                Ok(mut sources) => {
+                    info!(
+                        "Found {} YouTube videos for query: {}",
+                        sources.len(),
+                        query
+                    );
+                    all_sources.append(&mut sources);
+                }
+                Err(e) => {
+                    error!("YouTube search failed for query '{}': {}", query, e);
+                    // Continue with other queries even if one fails
+                }
+            }
+        }
+
+        info!(
+            "Discovered {} YouTube sources for: {}",
+            all_sources.len(),
+            movie
+        );
+        Ok(all_sources)
+    }
+}
 
 /// Orchestrates discovery from all sources
 #[allow(dead_code)]
@@ -462,6 +658,202 @@ mod property_tests {
                 "Query should contain AND operator, got: {}",
                 query
             );
+        }
+    }
+
+    // Feature: extras-fetcher, Property 10: YouTube Always Queried
+    // Validates: Requirements 5.1
+    proptest! {
+        #[test]
+        fn prop_youtube_always_queried(
+            title in "[a-zA-Z0-9 ]{1,30}",
+            year in 1900u16..2100u16
+        ) {
+            // YouTube should always generate search queries regardless of year or other factors
+            let queries = YoutubeDiscoverer::build_search_queries(&title, year);
+            
+            // YouTube should always produce queries (at least 4 types: deleted scenes, behind the scenes, bloopers, interviews)
+            prop_assert!(
+                !queries.is_empty(),
+                "YouTube should always generate search queries"
+            );
+            
+            // Verify we have queries for all expected content types
+            prop_assert!(
+                queries.len() >= 4,
+                "YouTube should generate at least 4 search queries, got {}",
+                queries.len()
+            );
+            
+            // Verify each query contains the title and year
+            for (query, _category) in &queries {
+                prop_assert!(
+                    query.contains(&title),
+                    "Query should contain title '{}', got: {}",
+                    title,
+                    query
+                );
+                prop_assert!(
+                    query.contains(&year.to_string()),
+                    "Query should contain year '{}', got: {}",
+                    year,
+                    query
+                );
+            }
+        }
+    }
+
+    // Feature: extras-fetcher, Property 11: YouTube Duration Filtering
+    // Validates: Requirements 5.7, 5.8
+    proptest! {
+        #[test]
+        fn prop_youtube_duration_filtering(duration_secs in 0u32..3600u32) {
+            // Videos should be excluded if duration < 30s OR duration > 20min (1200s)
+            let should_exclude = duration_secs < 30 || duration_secs > 1200;
+            let is_valid = YoutubeDiscoverer::is_duration_valid(duration_secs);
+            
+            // is_duration_valid should return true only for videos in the 30s-1200s range
+            prop_assert_eq!(
+                is_valid,
+                !should_exclude,
+                "Duration {}s: is_valid={}, should_exclude={}",
+                duration_secs,
+                is_valid,
+                should_exclude
+            );
+            
+            // Verify boundary conditions
+            if duration_secs < 30 {
+                prop_assert!(!is_valid, "Videos < 30s should be excluded");
+            } else if duration_secs > 1200 {
+                prop_assert!(!is_valid, "Videos > 1200s (20min) should be excluded");
+            } else {
+                prop_assert!(is_valid, "Videos between 30s and 1200s should be included");
+            }
+        }
+    }
+
+    // Feature: extras-fetcher, Property 12: YouTube Keyword Filtering
+    // Validates: Requirements 5.9
+    proptest! {
+        #[test]
+        fn prop_youtube_keyword_filtering(
+            prefix in "[a-zA-Z0-9 ]{0,20}",
+            suffix in "[a-zA-Z0-9 ]{0,20}",
+            keyword in prop_oneof![
+                Just("Review"),
+                Just("Reaction"),
+                Just("Analysis"),
+                Just("Explained"),
+                Just("Ending"),
+                Just("Theory"),
+                Just("React"),
+            ]
+        ) {
+            // Test with keyword in various positions and cases
+            let title_with_keyword = format!("{} {} {}", prefix, keyword, suffix);
+            let title_lowercase = format!("{} {} {}", prefix, keyword.to_lowercase(), suffix);
+            let title_uppercase = format!("{} {} {}", prefix, keyword.to_uppercase(), suffix);
+            
+            // All variations should be detected and excluded
+            prop_assert!(
+                YoutubeDiscoverer::contains_excluded_keywords(&title_with_keyword),
+                "Title '{}' should be excluded (contains '{}')",
+                title_with_keyword,
+                keyword
+            );
+            
+            prop_assert!(
+                YoutubeDiscoverer::contains_excluded_keywords(&title_lowercase),
+                "Title '{}' should be excluded (case-insensitive)",
+                title_lowercase
+            );
+            
+            prop_assert!(
+                YoutubeDiscoverer::contains_excluded_keywords(&title_uppercase),
+                "Title '{}' should be excluded (case-insensitive)",
+                title_uppercase
+            );
+            
+            // Test that titles without keywords are not excluded
+            if !prefix.to_lowercase().contains(&keyword.to_lowercase()) 
+                && !suffix.to_lowercase().contains(&keyword.to_lowercase()) {
+                let clean_title = format!("{} {}", prefix, suffix);
+                if !clean_title.trim().is_empty() {
+                    // Only test if the clean title doesn't accidentally contain the keyword
+                    let contains_keyword = ["review", "reaction", "analysis", "explained", "ending", "theory", "react"]
+                        .iter()
+                        .any(|kw| clean_title.to_lowercase().contains(kw));
+                    
+                    if !contains_keyword {
+                        prop_assert!(
+                            !YoutubeDiscoverer::contains_excluded_keywords(&clean_title),
+                            "Title '{}' should not be excluded (no keywords)",
+                            clean_title
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Feature: extras-fetcher, Property 13: YouTube Shorts Exclusion
+    // Validates: Requirements 5.10
+    proptest! {
+        #[test]
+        fn prop_youtube_shorts_exclusion(
+            duration_secs in 0u32..120u32,
+            width in 100u32..2000u32,
+            height in 100u32..2000u32
+        ) {
+            let is_short = YoutubeDiscoverer::is_youtube_short(duration_secs, width, height);
+            
+            // YouTube Shorts are defined as:
+            // - Duration < 60 seconds AND
+            // - Vertical aspect ratio (height > width)
+            let expected_short = duration_secs < 60 && height > width;
+            
+            prop_assert_eq!(
+                is_short,
+                expected_short,
+                "Duration: {}s, Dimensions: {}x{}, is_short: {}, expected: {}",
+                duration_secs,
+                width,
+                height,
+                is_short,
+                expected_short
+            );
+            
+            // Verify specific cases
+            if duration_secs >= 60 {
+                prop_assert!(
+                    !is_short,
+                    "Videos >= 60s should not be classified as Shorts ({}s, {}x{})",
+                    duration_secs,
+                    width,
+                    height
+                );
+            }
+            
+            if height <= width {
+                prop_assert!(
+                    !is_short,
+                    "Videos with horizontal/square aspect ratio should not be Shorts ({}s, {}x{})",
+                    duration_secs,
+                    width,
+                    height
+                );
+            }
+            
+            if duration_secs < 60 && height > width {
+                prop_assert!(
+                    is_short,
+                    "Short vertical videos should be classified as Shorts ({}s, {}x{})",
+                    duration_secs,
+                    width,
+                    height
+                );
+            }
         }
     }
 }
@@ -841,5 +1233,281 @@ mod unit_tests {
         let response = response.unwrap();
         assert_eq!(response.response.docs.len(), 1);
         assert_eq!(response.response.docs[0].subject.len(), 0);
+    }
+
+    // YouTube tests
+
+    #[test]
+    fn test_youtube_discoverer_creation() {
+        let discoverer = YoutubeDiscoverer::new();
+        // Just verify it can be created (zero-sized type)
+        assert!(std::mem::size_of_val(&discoverer) == 0);
+    }
+
+    #[test]
+    fn test_youtube_search_query_construction() {
+        // Test that search queries are constructed correctly
+        let queries = YoutubeDiscoverer::build_search_queries("The Matrix", 1999);
+
+        // Should have 4 queries
+        assert_eq!(queries.len(), 4);
+
+        // Verify each query contains title and year
+        for (query, _category) in &queries {
+            assert!(query.contains("The Matrix"));
+            assert!(query.contains("1999"));
+        }
+
+        // Verify specific query types
+        assert!(queries
+            .iter()
+            .any(|(q, _)| q.contains("deleted scenes")));
+        assert!(queries
+            .iter()
+            .any(|(q, _)| q.contains("behind the scenes")));
+        assert!(queries.iter().any(|(q, _)| q.contains("bloopers")));
+        assert!(queries
+            .iter()
+            .any(|(q, _)| q.contains("cast interview")));
+    }
+
+    #[test]
+    fn test_youtube_search_query_categories() {
+        // Test that categories are mapped correctly
+        let queries = YoutubeDiscoverer::build_search_queries("Test Movie", 2020);
+
+        // Find each query type and verify its category
+        for (query, category) in &queries {
+            if query.contains("deleted scenes") {
+                assert_eq!(*category, ContentCategory::DeletedScene);
+            } else if query.contains("behind the scenes") {
+                assert_eq!(*category, ContentCategory::BehindTheScenes);
+            } else if query.contains("bloopers") || query.contains("cast interview") {
+                assert_eq!(*category, ContentCategory::Featurette);
+            }
+        }
+    }
+
+    #[test]
+    fn test_youtube_keyword_filtering_review() {
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Movie Review"
+        ));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Honest Review of the Film"
+        ));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "REVIEW - Movie Title"
+        ));
+    }
+
+    #[test]
+    fn test_youtube_keyword_filtering_reaction() {
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "First Time Reaction"
+        ));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Movie Reaction Video"
+        ));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "REACTION to Trailer"
+        ));
+    }
+
+    #[test]
+    fn test_youtube_keyword_filtering_analysis() {
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Movie Analysis"
+        ));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "In-Depth Analysis"
+        ));
+    }
+
+    #[test]
+    fn test_youtube_keyword_filtering_explained() {
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Movie Explained"
+        ));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Ending Explained"
+        ));
+    }
+
+    #[test]
+    fn test_youtube_keyword_filtering_theory() {
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Movie Theory"
+        ));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Fan Theory Discussion"
+        ));
+    }
+
+    #[test]
+    fn test_youtube_keyword_filtering_react() {
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "React to Movie"
+        ));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Reacting to Trailer"
+        ));
+    }
+
+    #[test]
+    fn test_youtube_keyword_filtering_no_match() {
+        // These should NOT be filtered
+        assert!(!YoutubeDiscoverer::contains_excluded_keywords(
+            "Official Trailer"
+        ));
+        assert!(!YoutubeDiscoverer::contains_excluded_keywords(
+            "Behind the Scenes"
+        ));
+        assert!(!YoutubeDiscoverer::contains_excluded_keywords(
+            "Deleted Scenes"
+        ));
+        assert!(!YoutubeDiscoverer::contains_excluded_keywords(
+            "Cast Interview"
+        ));
+        assert!(!YoutubeDiscoverer::contains_excluded_keywords(
+            "Making of Documentary"
+        ));
+    }
+
+    #[test]
+    fn test_youtube_keyword_filtering_case_insensitive() {
+        // Test case insensitivity
+        assert!(YoutubeDiscoverer::contains_excluded_keywords("review"));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords("REVIEW"));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords("Review"));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords("ReViEw"));
+    }
+
+    #[test]
+    fn test_youtube_duration_valid_range() {
+        // Test valid durations (30s - 1200s)
+        assert!(YoutubeDiscoverer::is_duration_valid(30)); // Minimum
+        assert!(YoutubeDiscoverer::is_duration_valid(60));
+        assert!(YoutubeDiscoverer::is_duration_valid(300)); // 5 minutes
+        assert!(YoutubeDiscoverer::is_duration_valid(600)); // 10 minutes
+        assert!(YoutubeDiscoverer::is_duration_valid(1200)); // Maximum (20 minutes)
+    }
+
+    #[test]
+    fn test_youtube_duration_invalid_too_short() {
+        // Test durations that are too short
+        assert!(!YoutubeDiscoverer::is_duration_valid(0));
+        assert!(!YoutubeDiscoverer::is_duration_valid(10));
+        assert!(!YoutubeDiscoverer::is_duration_valid(29));
+    }
+
+    #[test]
+    fn test_youtube_duration_invalid_too_long() {
+        // Test durations that are too long
+        assert!(!YoutubeDiscoverer::is_duration_valid(1201));
+        assert!(!YoutubeDiscoverer::is_duration_valid(1500));
+        assert!(!YoutubeDiscoverer::is_duration_valid(3600));
+    }
+
+    #[test]
+    fn test_youtube_shorts_detection_vertical_short() {
+        // Vertical videos under 60s should be detected as Shorts
+        assert!(YoutubeDiscoverer::is_youtube_short(30, 1080, 1920)); // 9:16
+        assert!(YoutubeDiscoverer::is_youtube_short(45, 720, 1280)); // 9:16
+        assert!(YoutubeDiscoverer::is_youtube_short(59, 1080, 1920)); // Just under 60s
+    }
+
+    #[test]
+    fn test_youtube_shorts_detection_horizontal_not_short() {
+        // Horizontal videos should NOT be Shorts regardless of duration
+        assert!(!YoutubeDiscoverer::is_youtube_short(30, 1920, 1080)); // 16:9
+        assert!(!YoutubeDiscoverer::is_youtube_short(45, 1280, 720)); // 16:9
+    }
+
+    #[test]
+    fn test_youtube_shorts_detection_long_vertical_not_short() {
+        // Vertical videos over 60s should NOT be Shorts
+        assert!(!YoutubeDiscoverer::is_youtube_short(60, 1080, 1920));
+        assert!(!YoutubeDiscoverer::is_youtube_short(120, 1080, 1920));
+    }
+
+    #[test]
+    fn test_youtube_shorts_detection_square_not_short() {
+        // Square videos should NOT be Shorts
+        assert!(!YoutubeDiscoverer::is_youtube_short(30, 1080, 1080));
+        assert!(!YoutubeDiscoverer::is_youtube_short(45, 720, 720));
+    }
+
+    #[test]
+    fn test_youtube_should_include_video_valid() {
+        // Valid video: good duration, no keywords, not a Short
+        assert!(YoutubeDiscoverer::should_include_video(
+            "Official Trailer",
+            120,
+            1920,
+            1080
+        ));
+        assert!(YoutubeDiscoverer::should_include_video(
+            "Behind the Scenes",
+            300,
+            1920,
+            1080
+        ));
+    }
+
+    #[test]
+    fn test_youtube_should_include_video_excluded_by_duration() {
+        // Excluded due to duration
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "Official Trailer",
+            20,
+            1920,
+            1080
+        )); // Too short
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "Behind the Scenes",
+            1500,
+            1920,
+            1080
+        )); // Too long
+    }
+
+    #[test]
+    fn test_youtube_should_include_video_excluded_by_keyword() {
+        // Excluded due to keyword
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "Movie Review",
+            120,
+            1920,
+            1080
+        ));
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "Ending Explained",
+            300,
+            1920,
+            1080
+        ));
+    }
+
+    #[test]
+    fn test_youtube_should_include_video_excluded_as_short() {
+        // Excluded as YouTube Short
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "Quick Clip",
+            45,
+            1080,
+            1920
+        )); // Vertical, under 60s
+    }
+
+    #[test]
+    fn test_youtube_should_include_video_multiple_exclusions() {
+        // Video fails multiple criteria
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "Movie Review",
+            20,
+            1080,
+            1920
+        )); // Keyword + duration + Short
     }
 }
