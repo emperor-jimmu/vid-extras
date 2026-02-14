@@ -61,6 +61,7 @@ The extras_fetcher is a Rust-based automation utility designed to enrich Jellyfi
 6. WHEN processing TMDB video entries with type "Deleted Scene", THE Extras_Fetcher SHALL map them to the /deleted scenes Target_Subdirectory
 7. WHEN processing TMDB video entries with type "Featurette", THE Extras_Fetcher SHALL map them to the /featurettes Target_Subdirectory
 8. WHEN TMDB API requests fail, THE Extras_Fetcher SHALL log the error and continue processing with other sources
+9. WHEN a TMDB movie is part of a collection, THE Extras_Fetcher SHALL retrieve the collection details including all movie titles in the collection
 
 ### Requirement 4: Archive.org Content Discovery
 
@@ -92,6 +93,8 @@ The extras_fetcher is a Rust-based automation utility designed to enrich Jellyfi
 8. WHEN a YouTube video title contains "Review", "Reaction", "Analysis", "Explained", "Ending", "Theory", or "React", THE Extras_Fetcher SHALL exclude it from results
 9. WHEN a YouTube video is identified as a YouTube Short, THE Extras_Fetcher SHALL exclude it from results
 10. WHEN YouTube search fails, THE Extras_Fetcher SHALL log the error and continue with available content
+11. WHEN a YouTube video title does not contain the movie title, THE Extras_Fetcher SHALL exclude it from results
+12. WHEN a movie is part of a TMDB collection, THE Extras_Fetcher SHALL exclude YouTube videos that mention other movies in the collection by name
 
 ### Requirement 6: Content Acquisition
 

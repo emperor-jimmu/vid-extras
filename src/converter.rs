@@ -88,7 +88,7 @@ impl Converter {
                     );
                     // Clean up temp file
                     let _ = fs::remove_file(&temp_output_path).await;
-                    
+
                     return ConversionResult {
                         input_path: input_path.clone(),
                         output_path: final_output_path.clone(),

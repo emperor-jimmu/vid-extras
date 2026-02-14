@@ -5,6 +5,13 @@ use crate::models::{ContentCategory, MovieEntry, SourceMode, SourceType, VideoSo
 use log::{debug, error, info};
 use serde::Deserialize;
 
+/// Discovery metadata including collection information
+#[derive(Debug, Clone, Default)]
+pub struct DiscoveryMetadata {
+    /// Titles of other movies in the same collection (for exclusion filtering)
+    pub collection_movie_titles: Vec<String>,
+}
+
 /// Trait for content discoverers
 #[allow(async_fn_in_trait)]
 pub trait ContentDiscoverer {
@@ -20,6 +27,32 @@ struct TmdbSearchResponse {
 /// TMDB movie result
 #[derive(Debug, Deserialize)]
 struct TmdbMovie {
+    id: u64,
+    title: String,
+    #[serde(default)]
+    belongs_to_collection: Option<TmdbCollection>,
+}
+
+/// TMDB collection information
+#[derive(Debug, Deserialize, Clone)]
+struct TmdbCollection {
+    id: u64,
+    name: String,
+}
+
+/// TMDB collection details response
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct TmdbCollectionResponse {
+    id: u64,
+    name: String,
+    parts: Vec<TmdbCollectionPart>,
+}
+
+/// TMDB collection part (movie in collection)
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct TmdbCollectionPart {
     id: u64,
     title: String,
 }
@@ -55,8 +88,12 @@ impl TmdbDiscoverer {
         }
     }
 
-    /// Search for a movie by title and year
-    async fn search_movie(&self, title: &str, year: u16) -> Result<Option<u64>, DiscoveryError> {
+    /// Search for a movie by title and year, returns movie ID and optional collection info
+    async fn search_movie(
+        &self,
+        title: &str,
+        year: u16,
+    ) -> Result<Option<(u64, Option<TmdbCollection>)>, DiscoveryError> {
         let url = format!(
             "https://api.themoviedb.org/3/search/movie?api_key={}&query={}&year={}",
             self.api_key,
@@ -87,11 +124,55 @@ impl TmdbDiscoverer {
 
         if let Some(movie) = search_result.results.first() {
             info!("Found TMDB movie: {} (ID: {})", movie.title, movie.id);
-            Ok(Some(movie.id))
+            if let Some(ref collection) = movie.belongs_to_collection {
+                info!(
+                    "Movie belongs to collection: {} (ID: {})",
+                    collection.name, collection.id
+                );
+            }
+            Ok(Some((movie.id, movie.belongs_to_collection.clone())))
         } else {
             info!("No TMDB results found for: {} ({})", title, year);
             Ok(None)
         }
+    }
+
+    /// Fetch collection details including all movie titles
+    async fn fetch_collection(&self, collection_id: u64) -> Result<Vec<String>, DiscoveryError> {
+        let url = format!(
+            "https://api.themoviedb.org/3/collection/{}?api_key={}",
+            collection_id, self.api_key
+        );
+
+        debug!("Fetching TMDB collection ID: {}", collection_id);
+
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            error!("TMDB collection request failed: {}", e);
+            DiscoveryError::NetworkError(e)
+        })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            error!("TMDB collection fetch failed with status: {}", status);
+            return Err(DiscoveryError::ApiError(format!(
+                "TMDB API returned status {}",
+                status
+            )));
+        }
+
+        let collection: TmdbCollectionResponse = response.json().await.map_err(|e| {
+            error!("Failed to parse TMDB collection response: {}", e);
+            DiscoveryError::NetworkError(e)
+        })?;
+
+        let titles: Vec<String> = collection.parts.iter().map(|p| p.title.clone()).collect();
+        info!(
+            "Found {} movies in collection '{}': {:?}",
+            titles.len(),
+            collection.name,
+            titles
+        );
+        Ok(titles)
     }
 
     /// Fetch videos for a movie by ID
@@ -139,6 +220,39 @@ impl TmdbDiscoverer {
             }
         }
     }
+
+    /// Get discovery metadata including collection information
+    pub async fn get_metadata(&self, movie: &MovieEntry) -> DiscoveryMetadata {
+        let mut metadata = DiscoveryMetadata::default();
+
+        // Search for the movie to get collection info
+        match self.search_movie(&movie.title, movie.year).await {
+            Ok(Some((_movie_id, Some(collection)))) => {
+                // Fetch collection details
+                match self.fetch_collection(collection.id).await {
+                    Ok(titles) => {
+                        // Exclude the current movie title from the list
+                        metadata.collection_movie_titles = titles
+                            .into_iter()
+                            .filter(|t| !t.eq_ignore_ascii_case(&movie.title))
+                            .collect();
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch collection details: {}", e);
+                    }
+                }
+            }
+            Ok(_) => {
+                // No collection or movie not found
+                debug!("No collection found for: {}", movie);
+            }
+            Err(e) => {
+                error!("Failed to search movie for metadata: {}", e);
+            }
+        }
+
+        metadata
+    }
 }
 
 impl ContentDiscoverer for TmdbDiscoverer {
@@ -146,8 +260,8 @@ impl ContentDiscoverer for TmdbDiscoverer {
         info!("Discovering TMDB content for: {}", movie);
 
         // Search for the movie
-        let movie_id = match self.search_movie(&movie.title, movie.year).await {
-            Ok(Some(id)) => id,
+        let (movie_id, _collection) = match self.search_movie(&movie.title, movie.year).await {
+            Ok(Some(result)) => result,
             Ok(None) => {
                 info!("No TMDB match found for: {}", movie);
                 return Ok(Vec::new());
@@ -383,6 +497,29 @@ impl YoutubeDiscoverer {
             .any(|keyword| title_lower.contains(&keyword.to_lowercase()))
     }
 
+    /// Check if video title contains the movie title
+    fn contains_movie_title(video_title: &str, movie_title: &str) -> bool {
+        let video_lower = video_title.to_lowercase();
+        let movie_lower = movie_title.to_lowercase();
+
+        // Check if the movie title appears in the video title
+        video_lower.contains(&movie_lower)
+    }
+
+    /// Check if video title mentions other movies from the collection
+    fn mentions_collection_movies(video_title: &str, collection_titles: &[String]) -> bool {
+        if collection_titles.is_empty() {
+            return false;
+        }
+
+        let video_lower = video_title.to_lowercase();
+
+        // Check if any collection movie title appears in the video title
+        collection_titles
+            .iter()
+            .any(|title| video_lower.contains(&title.to_lowercase()))
+    }
+
     /// Check if video title mentions a different year (potential sequel/different movie)
     fn mentions_different_year(title: &str, expected_year: u16) -> bool {
         // Look for 4-digit years in the title
@@ -420,39 +557,65 @@ impl YoutubeDiscoverer {
 
     /// Filter a video based on all criteria
     fn should_include_video(
-        title: &str,
+        video_title: &str,
+        movie_title: &str,
         duration_secs: u32,
         width: u32,
         height: u32,
         expected_year: u16,
+        collection_titles: &[String],
     ) -> bool {
+        // Check if movie title is in video title
+        if !Self::contains_movie_title(video_title, movie_title) {
+            debug!(
+                "Excluding video '{}' - does not contain movie title '{}'",
+                video_title, movie_title
+            );
+            return false;
+        }
+
+        // Check if video mentions other movies from the collection
+        if Self::mentions_collection_movies(video_title, collection_titles) {
+            debug!(
+                "Excluding video '{}' - mentions other collection movies",
+                video_title
+            );
+            return false;
+        }
+
         // Check duration range
         if !Self::is_duration_valid(duration_secs) {
             debug!(
                 "Excluding video '{}' - duration {}s out of range",
-                title, duration_secs
+                video_title, duration_secs
             );
             return false;
         }
 
         // Check for excluded keywords
-        if Self::contains_excluded_keywords(title) {
-            debug!("Excluding video '{}' - contains excluded keyword", title);
+        if Self::contains_excluded_keywords(video_title) {
+            debug!(
+                "Excluding video '{}' - contains excluded keyword",
+                video_title
+            );
             return false;
         }
 
         // Check if it mentions a different year (potential sequel)
-        if Self::mentions_different_year(title, expected_year) {
+        if Self::mentions_different_year(video_title, expected_year) {
             debug!(
                 "Excluding video '{}' - mentions different year (potential sequel)",
-                title
+                video_title
             );
             return false;
         }
 
         // Check if it's a YouTube Short
         if Self::is_youtube_short(duration_secs, width, height) {
-            debug!("Excluding video '{}' - detected as YouTube Short", title);
+            debug!(
+                "Excluding video '{}' - detected as YouTube Short",
+                video_title
+            );
             return false;
         }
 
@@ -463,8 +626,10 @@ impl YoutubeDiscoverer {
     async fn search_youtube(
         &self,
         query: &str,
+        movie_title: &str,
         category: ContentCategory,
         expected_year: u16,
+        collection_titles: &[String],
     ) -> Result<Vec<VideoSource>, DiscoveryError> {
         // Use yt-dlp with ytsearch5 to get top 5 results
         let search_query = format!("ytsearch5:{}", query);
@@ -512,7 +677,15 @@ impl YoutubeDiscoverer {
                     let height = json["height"].as_u64().unwrap_or(1080) as u32;
 
                     // Apply filtering
-                    if Self::should_include_video(&title, duration, width, height, expected_year) {
+                    if Self::should_include_video(
+                        &title,
+                        movie_title,
+                        duration,
+                        width,
+                        height,
+                        expected_year,
+                        collection_titles,
+                    ) {
                         sources.push(VideoSource {
                             url,
                             source_type: SourceType::YouTube,
@@ -531,17 +704,29 @@ impl YoutubeDiscoverer {
 
         Ok(sources)
     }
-}
 
-impl ContentDiscoverer for YoutubeDiscoverer {
-    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
+    /// Discover YouTube content with metadata for filtering
+    pub async fn discover_with_metadata(
+        &self,
+        movie: &MovieEntry,
+        metadata: &DiscoveryMetadata,
+    ) -> Result<Vec<VideoSource>, DiscoveryError> {
         info!("Discovering YouTube content for: {}", movie);
 
         let queries = Self::build_search_queries(&movie.title, movie.year);
         let mut all_sources = Vec::new();
 
         for (query, category) in queries {
-            match self.search_youtube(&query, category, movie.year).await {
+            match self
+                .search_youtube(
+                    &query,
+                    &movie.title,
+                    category,
+                    movie.year,
+                    &metadata.collection_movie_titles,
+                )
+                .await
+            {
                 Ok(mut sources) => {
                     info!(
                         "Found {} YouTube videos for query: {}",
@@ -563,6 +748,14 @@ impl ContentDiscoverer for YoutubeDiscoverer {
             movie
         );
         Ok(all_sources)
+    }
+}
+
+impl ContentDiscoverer for YoutubeDiscoverer {
+    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
+        // Use empty metadata when called through trait
+        let metadata = DiscoveryMetadata::default();
+        self.discover_with_metadata(movie, &metadata).await
     }
 }
 
@@ -591,6 +784,9 @@ impl DiscoveryOrchestrator {
     /// In YoutubeOnly mode: queries only YouTube
     pub async fn discover_all(&self, movie: &MovieEntry) -> Vec<VideoSource> {
         let mut all_sources = Vec::new();
+
+        // Get metadata from TMDB (collection info for YouTube filtering)
+        let metadata = self.tmdb.get_metadata(movie).await;
 
         match self.mode {
             SourceMode::All => {
@@ -624,8 +820,8 @@ impl DiscoveryOrchestrator {
                     log::debug!("Skipping Archive.org for {} (year >= 2010)", movie);
                 }
 
-                // Query YouTube (always)
-                match self.youtube.discover(movie).await {
+                // Query YouTube with metadata for better filtering
+                match self.youtube.discover_with_metadata(movie, &metadata).await {
                     Ok(sources) => {
                         log::info!("Found {} sources from YouTube for {}", sources.len(), movie);
                         all_sources.extend(sources);
@@ -636,8 +832,8 @@ impl DiscoveryOrchestrator {
                 }
             }
             SourceMode::YoutubeOnly => {
-                // Query only YouTube
-                match self.youtube.discover(movie).await {
+                // Query only YouTube with metadata
+                match self.youtube.discover_with_metadata(movie, &metadata).await {
                     Ok(sources) => {
                         log::info!("Found {} sources from YouTube for {}", sources.len(), movie);
                         all_sources.extend(sources);
@@ -1628,20 +1824,24 @@ mod unit_tests {
 
     #[test]
     fn test_youtube_should_include_video_valid() {
-        // Valid video: good duration, no keywords, not a Short
+        // Valid video: good duration, no keywords, not a Short, contains movie title
         assert!(YoutubeDiscoverer::should_include_video(
-            "Official Trailer",
+            "REC Official Trailer",
+            "REC",
             120,
             1920,
             1080,
-            2007
+            2007,
+            &[]
         ));
         assert!(YoutubeDiscoverer::should_include_video(
-            "Behind the Scenes",
+            "REC Behind the Scenes",
+            "REC",
             300,
             1920,
             1080,
-            2007
+            2007,
+            &[]
         ));
     }
 
@@ -1649,18 +1849,22 @@ mod unit_tests {
     fn test_youtube_should_include_video_excluded_by_duration() {
         // Excluded due to duration
         assert!(!YoutubeDiscoverer::should_include_video(
-            "Official Trailer",
+            "REC Official Trailer",
+            "REC",
             20,
             1920,
             1080,
-            2007
+            2007,
+            &[]
         )); // Too short
         assert!(!YoutubeDiscoverer::should_include_video(
-            "Behind the Scenes",
+            "REC Behind the Scenes",
+            "REC",
             1500,
             1920,
             1080,
-            2007
+            2007,
+            &[]
         )); // Too long
     }
 
@@ -1668,18 +1872,22 @@ mod unit_tests {
     fn test_youtube_should_include_video_excluded_by_keyword() {
         // Excluded due to keyword
         assert!(!YoutubeDiscoverer::should_include_video(
-            "Movie Review",
+            "REC Movie Review",
+            "REC",
             120,
             1920,
             1080,
-            2007
+            2007,
+            &[]
         ));
         assert!(!YoutubeDiscoverer::should_include_video(
-            "Ending Explained",
+            "REC Ending Explained",
+            "REC",
             300,
             1920,
             1080,
-            2007
+            2007,
+            &[]
         ));
     }
 
@@ -1687,11 +1895,13 @@ mod unit_tests {
     fn test_youtube_should_include_video_excluded_as_short() {
         // Excluded as YouTube Short
         assert!(!YoutubeDiscoverer::should_include_video(
-            "Quick Clip",
+            "REC Quick Clip",
+            "REC",
             45,
             1080,
             1920,
-            2007
+            2007,
+            &[]
         )); // Vertical, under 60s
     }
 
@@ -1699,11 +1909,13 @@ mod unit_tests {
     fn test_youtube_should_include_video_multiple_exclusions() {
         // Video fails multiple criteria
         assert!(!YoutubeDiscoverer::should_include_video(
-            "Movie Review",
+            "REC Movie Review",
+            "REC",
             20,
             1080,
             1920,
-            2007
+            2007,
+            &[]
         )); // Keyword + duration + Short
     }
 
@@ -1712,10 +1924,12 @@ mod unit_tests {
         // Video with same year should be included
         assert!(YoutubeDiscoverer::should_include_video(
             "REC (2007) Behind the Scenes",
+            "REC",
             300,
             1920,
             1080,
-            2007
+            2007,
+            &[]
         ));
     }
 
@@ -1724,10 +1938,12 @@ mod unit_tests {
         // Video mentioning a different year (sequel) should be excluded
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC 2 (2009) Fighting Scene",
+            "REC",
             300,
             1920,
             1080,
-            2007
+            2007,
+            &[]
         ));
     }
 
@@ -1735,11 +1951,79 @@ mod unit_tests {
     fn test_youtube_year_filtering_no_year() {
         // Video without year should be included
         assert!(YoutubeDiscoverer::should_include_video(
-            "Behind the Scenes Featurette",
+            "REC Behind the Scenes Featurette",
+            "REC",
             300,
             1920,
             1080,
-            2007
+            2007,
+            &[]
+        ));
+    }
+
+    #[test]
+    fn test_youtube_movie_title_filtering() {
+        // Video must contain the movie title
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "Some Other Movie Behind the Scenes",
+            "REC",
+            300,
+            1920,
+            1080,
+            2007,
+            &[]
+        ));
+
+        // Case-insensitive matching
+        assert!(YoutubeDiscoverer::should_include_video(
+            "rec behind the scenes",
+            "REC",
+            300,
+            1920,
+            1080,
+            2007,
+            &[]
+        ));
+    }
+
+    #[test]
+    fn test_youtube_collection_filtering() {
+        // Video mentioning collection movies should be excluded
+        let collection_titles = vec![
+            "REC 2".to_string(),
+            "REC 3".to_string(),
+            "REC 4".to_string(),
+        ];
+
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "REC 2 Behind the Scenes",
+            "REC",
+            300,
+            1920,
+            1080,
+            2007,
+            &collection_titles
+        ));
+
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "REC 3 Genesis Deleted Scenes",
+            "REC",
+            300,
+            1920,
+            1080,
+            2007,
+            &collection_titles
+        ));
+
+        // Video about the original movie should be included
+        assert!(YoutubeDiscoverer::should_include_video(
+            "REC Behind the Scenes",
+            "REC",
+            300,
+            1920,
+            1080,
+            2007,
+            &collection_titles
         ));
     }
 

@@ -336,11 +336,7 @@ mod tests {
 
         // Verify files were moved
         assert!(movie_path.join("trailers/trailer.mp4").exists());
-        assert!(
-            movie_path
-                .join("featurettes/featurette.mp4")
-                .exists()
-        );
+        assert!(movie_path.join("featurettes/featurette.mp4").exists());
 
         // Verify temp dir was cleaned up
         assert!(!temp_dir.exists());
@@ -452,16 +448,8 @@ mod tests {
         // Verify all files were moved
         assert!(movie_path.join("trailers/trailer.mp4").exists());
         assert!(movie_path.join("featurettes/featurette.mp4").exists());
-        assert!(
-            movie_path
-                .join("behind the scenes/behind.mp4")
-                .exists()
-        );
-        assert!(
-            movie_path
-                .join("deleted scenes/deleted.mp4")
-                .exists()
-        );
+        assert!(movie_path.join("behind the scenes/behind.mp4").exists());
+        assert!(movie_path.join("deleted scenes/deleted.mp4").exists());
     }
 
     #[tokio::test]
