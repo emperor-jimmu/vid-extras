@@ -19,10 +19,11 @@ The codebase follows a pipeline architecture with clear separation of concerns:
 
 ### Core Modules (src/)
 
-- `main.rs` - Entry point, module declarations
+- `main.rs` - **[IMPLEMENTED]** Entry point, async runtime, dependency validation, orchestrator execution
 - `cli.rs` - **[IMPLEMENTED]** Command-line interface, argument parsing, configuration
 - `error.rs` - Centralized error types using thiserror (one enum per module)
 - `models.rs` - Shared data structures (MovieEntry, VideoSource, DoneMarker, enums)
+- `output.rs` - **[IMPLEMENTED]** CLI output formatting, colored progress display, summary statistics
 - `orchestrator.rs` - **[IMPLEMENTED]** Main pipeline coordinator, manages processing flow
 - `scanner.rs` - **[IMPLEMENTED]** Directory traversal, movie discovery, folder name parsing
 - `discovery.rs` - **[IMPLEMENTED]** Multi-source content discovery (TMDB, Archive.org, YouTube, and DiscoveryOrchestrator)
@@ -766,10 +767,82 @@ pub fn display_config(config: &CliConfig);
 - Banner includes ASCII art box with tool name and version
 - Config display shows all parameters with color-coded values
 
+#### Main Entry Point (src/main.rs)
+**Status:** ✅ Fully implemented and tested
+
+**Functionality:**
+- Async main function using tokio runtime
+- CLI argument parsing with error handling
+- Logging initialization based on verbose flag (debug vs info level)
+- Dependency validation before processing
+- Orchestrator creation and execution
+- Final summary display
+- Proper exit codes (0 for success, 1 for failures)
+- Descriptive error messages for all failure scenarios
+- Installation instructions on dependency validation failures
+
+**Public API:**
+```rust
+#[tokio::main]
+async fn main() {
+    // 1. Parse CLI arguments
+    // 2. Initialize logging (debug or info level)
+    // 3. Display banner and configuration
+    // 4. Validate dependencies (yt-dlp, ffmpeg, TMDB API key)
+    // 5. Create orchestrator
+    // 6. Execute processing pipeline
+    // 7. Display summary
+    // 8. Exit with appropriate code
+}
+```
+
+**Integration Tests:**
+Created comprehensive integration test suite in `tests/main_integration_tests.rs`:
+- 11 integration tests covering:
+  1. Validation of missing yt-dlp
+  2. Validation of missing ffmpeg
+  3. Validation of missing TMDB API key
+  4. Validation of ffmpeg HEVC support
+  5. Scanner integration with file system
+  6. Orchestrator with empty directory
+  7. Orchestrator respecting done markers
+  8. CLI parsing with all flag combinations
+  9. Error handling for invalid directories
+  10. Graceful error handling without panics
+  11. Complete execution flow end-to-end
+
+**Test Coverage:**
+- All 11 integration tests passing ✅
+- Tests avoid real network operations to prevent hanging
+- Uses tempfile for isolated file system testing
+- Comprehensive coverage of Requirements 11.1-11.5 and 10.5
+
+**Dependencies:**
+- Uses `tokio` for async runtime
+- Uses `env_logger` for logging infrastructure
+- Uses CLI, validation, orchestrator, and output modules
+- Test dependencies: `tokio`, `tempfile`, `serde_json`
+
+**Requirements Validated:**
+- 11.1: yt-dlp binary verification at startup
+- 11.2: ffmpeg binary verification at startup
+- 11.3: ffmpeg HEVC support verification
+- 11.4: TMDB API key validation
+- 11.5: Descriptive error messages for missing dependencies
+- 10.5: Fatal error handling with clear messages
+- 13.6: Final summary display
+- 13.8: Verbose logging support
+
+**Implementation Notes:**
+- Added `to_models_source_mode()` conversion method to bridge CLI and models enums
+- Comprehensive error handling with user-friendly messages
+- Installation instructions displayed on dependency validation failures
+- Graceful handling of fatal vs recoverable errors
+- Exit codes: 0 for success, 1 for any failures
+- Logging level controlled by --verbose flag
+
 ### Pending Modules
 
 All core modules are now implemented. Remaining tasks:
-- Integration of CLI with main entry point (Task 17)
-- Main entry point implementation (Task 18)
 - Idempotency features verification (Task 19)
 - Final polish and packaging (Tasks 20-21)

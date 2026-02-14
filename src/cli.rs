@@ -24,6 +24,16 @@ impl std::fmt::Display for SourceMode {
     }
 }
 
+impl SourceMode {
+    /// Convert CLI SourceMode to models::SourceMode
+    pub fn to_models_source_mode(self) -> crate::models::SourceMode {
+        match self {
+            SourceMode::All => crate::models::SourceMode::All,
+            SourceMode::YoutubeOnly => crate::models::SourceMode::YoutubeOnly,
+        }
+    }
+}
+
 /// extras_fetcher - Automated Jellyfin movie extras downloader
 ///
 /// Discovers, downloads, and organizes supplementary video content (trailers,
