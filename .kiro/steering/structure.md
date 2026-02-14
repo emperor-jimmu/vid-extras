@@ -798,7 +798,7 @@ async fn main() {
 
 **Integration Tests:**
 Created comprehensive integration test suite in `tests/main_integration_tests.rs`:
-- 11 integration tests covering:
+- 16 integration tests covering:
   1. Validation of missing yt-dlp
   2. Validation of missing ffmpeg
   3. Validation of missing TMDB API key
@@ -810,12 +810,17 @@ Created comprehensive integration test suite in `tests/main_integration_tests.rs
   9. Error handling for invalid directories
   10. Graceful error handling without panics
   11. Complete execution flow end-to-end
+  12. Idempotency: Multiple runs on same library
+  13. Idempotency: Interruption and resumption
+  14. Idempotency: Force flag behavior
+  15. Idempotency: Partial library processing
+  16. Idempotency: Invalid done markers
 
 **Test Coverage:**
-- All 11 integration tests passing ✅
+- All 16 integration tests passing ✅
 - Tests avoid real network operations to prevent hanging
 - Uses tempfile for isolated file system testing
-- Comprehensive coverage of Requirements 11.1-11.5 and 10.5
+- Comprehensive coverage of Requirements 11.1-11.5, 10.5, and 12.1-12.4
 
 **Dependencies:**
 - Uses `tokio` for async runtime
@@ -841,8 +846,42 @@ Created comprehensive integration test suite in `tests/main_integration_tests.rs
 - Exit codes: 0 for success, 1 for any failures
 - Logging level controlled by --verbose flag
 
+#### Idempotency Features (Task 19)
+**Status:** ✅ Fully implemented and tested
+
+**Functionality:**
+- Done marker checking throughout pipeline
+- Force flag override for reprocessing
+- Partial library processing support
+- Safe resumption after interruption
+- Pre-existing temp cleanup
+- Multiple run idempotency
+
+**Test Coverage:**
+- 1 property-based test with 100+ iterations:
+  - Property 35: Idempotent Re-execution
+- 5 comprehensive integration tests:
+  1. Multiple runs on same library
+  2. Interruption and resumption
+  3. Force flag behavior
+  4. Partial library processing
+  5. Invalid done marker handling
+- All tests passing ✅
+
+**Requirements Validated:**
+- 12.1: Done marker skipping behavior
+- 12.2: Safe re-execution without duplicate work
+- 12.3: Partial library processing
+- 12.4: Safe resumption after interruption
+
+**Implementation Notes:**
+- Scanner validates done markers and respects force flag
+- Orchestrator cleans up pre-existing temp directories
+- Drop trait ensures cleanup on exit
+- Invalid done markers are treated as missing
+- Multiple scans with same settings produce identical results
+
 ### Pending Modules
 
 All core modules are now implemented. Remaining tasks:
-- Idempotency features verification (Task 19)
 - Final polish and packaging (Tasks 20-21)

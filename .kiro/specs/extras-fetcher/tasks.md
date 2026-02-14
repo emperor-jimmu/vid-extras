@@ -366,19 +366,19 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Test graceful error handling
     - _Requirements: 11.1-11.5, 10.5_
 
-- [ ] 19. Implement idempotency features
-  - [ ] 19.1 Add idempotency checks throughout pipeline
+- [x] 19. Implement idempotency features
+  - [x] 19.1 Add idempotency checks throughout pipeline
     - Verify done marker checking in scanner
     - Verify force flag overrides done markers
     - Verify partial library processing
     - Verify safe resumption after interruption
     - _Requirements: 12.1, 12.2, 12.3, 12.4_
   
-  - [ ] 19.2 Write property test for idempotent re-execution
+  - [x] 19.2 Write property test for idempotent re-execution
     - **Property 35: Idempotent Re-execution**
     - **Validates: Requirements 12.2, 12.3**
   
-  - [ ] 19.3 Write integration tests for idempotency
+  - [x] 19.3 Write integration tests for idempotency
     - Test multiple runs on same library
     - Test interruption and resumption
     - Test force flag behavior

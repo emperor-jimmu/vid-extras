@@ -771,6 +771,7 @@ mod tests {
 
 #[cfg(test)]
 mod property_tests {
+    use crate::scanner::Scanner;
     use proptest::prelude::*;
 
     // Feature: extras-fetcher, Property 27: Sequential Downloads Within Movie
@@ -901,6 +902,102 @@ mod property_tests {
             // - Both use fs::remove_dir_all for complete cleanup
             
             // The property is validated by the implementation design
+        }
+    }
+
+    // Feature: extras-fetcher, Property 35: Idempotent Re-execution
+    // Validates: Requirements 12.2, 12.3
+    // For any library directory, running the tool multiple times should only
+    // process folders without done markers (unless --force is used).
+    proptest! {
+        #[test]
+        fn prop_idempotent_re_execution(
+            num_movies in 2usize..5usize,
+            force_flag in proptest::bool::ANY
+        ) {
+            use tempfile::TempDir;
+            use tokio::runtime::Runtime;
+
+            let rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                let temp_root = TempDir::new().unwrap();
+                let root_dir = temp_root.path().join("movies");
+                tokio::fs::create_dir(&root_dir).await.unwrap();
+
+                // Create movie folders
+                let mut movie_paths = Vec::new();
+                for i in 0..num_movies {
+                    let movie_folder = format!("Movie {} (202{})", i, i);
+                    let movie_path = root_dir.join(&movie_folder);
+                    tokio::fs::create_dir(&movie_path).await.unwrap();
+                    movie_paths.push(movie_path);
+                }
+
+                // First scan - all movies should be found
+                let scanner1 = Scanner::new(root_dir.clone(), false);
+                let movies1 = scanner1.scan().unwrap();
+                prop_assert_eq!(movies1.len(), num_movies, "First scan should find all movies");
+
+                // Add done markers to half the movies
+                let num_with_markers = num_movies / 2;
+                for i in 0..num_with_markers {
+                    let done_marker = crate::models::DoneMarker {
+                        finished_at: "2024-01-15T10:30:00Z".to_string(),
+                        version: "0.1.0".to_string(),
+                    };
+                    let marker_json = serde_json::to_string(&done_marker).unwrap();
+                    tokio::fs::write(movie_paths[i].join("done.ext"), marker_json)
+                        .await
+                        .unwrap();
+                }
+
+                // Second scan without force flag - should skip movies with done markers
+                let scanner2 = Scanner::new(root_dir.clone(), false);
+                let movies2 = scanner2.scan().unwrap();
+                let expected_without_force = num_movies - num_with_markers;
+                prop_assert_eq!(
+                    movies2.len(),
+                    expected_without_force,
+                    "Second scan without force should skip movies with done markers"
+                );
+
+                // Verify that movies without done markers are still found
+                for movie in &movies2 {
+                    prop_assert!(
+                        !movie.has_done_marker,
+                        "Movies in second scan should not have done markers"
+                    );
+                }
+
+                // Third scan with force flag - should find all movies regardless of done markers
+                let scanner3 = Scanner::new(root_dir.clone(), force_flag);
+                let movies3 = scanner3.scan().unwrap();
+
+                if force_flag {
+                    prop_assert_eq!(
+                        movies3.len(),
+                        num_movies,
+                        "Scan with force flag should find all movies"
+                    );
+                } else {
+                    prop_assert_eq!(
+                        movies3.len(),
+                        expected_without_force,
+                        "Scan without force flag should still skip movies with done markers"
+                    );
+                }
+
+                // Verify idempotency: multiple scans with same settings produce same results
+                let scanner4 = Scanner::new(root_dir.clone(), force_flag);
+                let movies4 = scanner4.scan().unwrap();
+                prop_assert_eq!(
+                    movies3.len(),
+                    movies4.len(),
+                    "Multiple scans with same settings should produce same results (idempotent)"
+                );
+
+                Ok(()) as Result<(), proptest::test_runner::TestCaseError>
+            }).unwrap();
         }
     }
 }
