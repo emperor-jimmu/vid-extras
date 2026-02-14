@@ -105,8 +105,17 @@ impl Downloader {
     async fn download_single(&self, source: &VideoSource, dest_dir: &Path) -> DownloadResult {
         info!("Downloading: {} from {}", source.title, source.url);
 
-        // Build yt-dlp command with platform-appropriate filename sanitization
-        let output_template = dest_dir.join("%(title)s.%(ext)s");
+        // Generate a unique hash from the URL to prevent filename collisions
+        // when multiple videos have the same title
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        source.url.hash(&mut hasher);
+        let url_hash = hasher.finish();
+        
+        // Build yt-dlp command with unique filename to prevent collisions
+        // Format: "title_HASH.ext" where HASH is first 8 chars of URL hash
+        let output_template = dest_dir.join(format!("%(title)s_{:08x}.%(ext)s", url_hash));
         let output_template_str = output_template.to_string_lossy().to_string();
 
         let mut cmd = Command::new("yt-dlp");
@@ -132,7 +141,7 @@ impl Downloader {
             Ok(Ok(output)) => {
                 if output.status.success() {
                     // Find the downloaded file
-                    match self.find_downloaded_file(dest_dir, &source.title).await {
+                    match self.find_downloaded_file(dest_dir, &source.title, url_hash).await {
                         Ok(local_path) => {
                             info!("Successfully downloaded: {:?}", local_path);
                             DownloadResult {
@@ -210,20 +219,42 @@ impl Downloader {
     }
 
     /// Find the downloaded file in the destination directory
+    /// Now looks for files with the URL hash suffix pattern
     async fn find_downloaded_file(
         &self,
         dest_dir: &Path,
         expected_title: &str,
+        url_hash: u64,
     ) -> Result<PathBuf, DownloadError> {
         debug!(
-            "Searching for downloaded file matching: '{}'",
-            expected_title
+            "Searching for downloaded file matching: '{}' with hash {:08x}",
+            expected_title, url_hash
         );
 
         let mut entries = fs::read_dir(dest_dir).await?;
+        let hash_suffix = format!("_{:08x}", url_hash);
+
+        // Look for files with the hash suffix
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.is_file()
+                && let Some(filename) = path.file_name()
+            {
+                let filename_str = filename.to_string_lossy();
+                // Check if filename contains our hash suffix
+                if filename_str.contains(&hash_suffix) {
+                    debug!("Found file with hash suffix: {:?}", path);
+                    return Ok(path);
+                }
+            }
+        }
+
+        // Fallback: if no file with hash found, use the old fuzzy matching logic
+        warn!("No file found with hash suffix {}, falling back to fuzzy matching", hash_suffix);
+        
+        let mut entries = fs::read_dir(dest_dir).await?;
         let mut candidates = Vec::new();
 
-        // Collect all files in the directory
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             if path.is_file() {
@@ -453,13 +484,14 @@ mod tests {
 
         let temp_dir = downloader.create_temp_dir("find_test").await.unwrap();
 
-        // Create a file
-        let test_file = temp_dir.join("Test Trailer.mp4");
+        // Create a file with hash suffix
+        let test_hash = 0x12345678u64;
+        let test_file = temp_dir.join(format!("Test Trailer_{:08x}.mp4", test_hash));
         fs::write(&test_file, "video").await.unwrap();
 
         // Should find the file
         let found = downloader
-            .find_downloaded_file(&temp_dir, "Test Trailer")
+            .find_downloaded_file(&temp_dir, "Test Trailer", test_hash)
             .await
             .unwrap();
 
@@ -475,7 +507,7 @@ mod tests {
 
         // No files in directory
         let result = downloader
-            .find_downloaded_file(&temp_dir, "Nonexistent")
+            .find_downloaded_file(&temp_dir, "Nonexistent", 0x99999999u64)
             .await;
 
         assert!(result.is_err());

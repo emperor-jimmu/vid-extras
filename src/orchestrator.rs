@@ -308,6 +308,7 @@ impl Orchestrator {
             successful_download_count, movie
         );
         let conversions = converter.convert_batch(downloads).await;
+        info!("Conversion batch complete for {}", movie);
 
         let conversion_count = conversions.len();
         let successful_conversion_count = conversions.iter().filter(|c| c.success).count();
@@ -340,6 +341,7 @@ impl Orchestrator {
         match organizer.organize(conversions, &temp_dir).await {
             Ok(_) => {
                 info!("Successfully organized files for {}", movie);
+                info!("✓ Movie processing complete: {}", movie);
                 MovieResult::success(
                     movie,
                     successful_download_count,
@@ -348,6 +350,7 @@ impl Orchestrator {
             }
             Err(e) => {
                 error!("Organization failed for {}: {}", movie, e);
+                error!("✗ Movie processing failed: {}", movie);
                 MovieResult::failed(movie, "organization", e.to_string())
             }
         }
