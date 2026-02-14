@@ -62,6 +62,10 @@ pub struct CliArgs {
     /// Enable verbose logging output
     #[arg(short, long)]
     pub verbose: bool,
+
+    /// Process a single movie folder directly (instead of scanning for multiple movies)
+    #[arg(short, long)]
+    pub single: bool,
 }
 
 /// CLI configuration
@@ -72,6 +76,7 @@ pub struct CliConfig {
     pub mode: SourceMode,
     pub concurrency: usize,
     pub verbose: bool,
+    pub single: bool,
 }
 
 impl From<CliArgs> for CliConfig {
@@ -82,6 +87,7 @@ impl From<CliArgs> for CliConfig {
             mode: args.mode,
             concurrency: args.concurrency,
             verbose: args.verbose,
+            single: args.single,
         }
     }
 }
@@ -152,6 +158,15 @@ pub fn display_config(config: &CliConfig) {
     println!("  {} {}", "Mode:".bright_white(), config.mode);
     println!(
         "  {} {}",
+        "Single Folder:".bright_white(),
+        if config.single {
+            "Yes".bright_yellow()
+        } else {
+            "No".bright_white()
+        }
+    );
+    println!(
+        "  {} {}",
         "Force Reprocess:".bright_white(),
         if config.force {
             "Yes".bright_yellow()
@@ -192,6 +207,7 @@ mod tests {
             mode: SourceMode::YoutubeOnly,
             concurrency: 4,
             verbose: true,
+            single: false,
         };
 
         let config: CliConfig = args.into();
@@ -200,6 +216,7 @@ mod tests {
         assert_eq!(config.mode, SourceMode::YoutubeOnly);
         assert_eq!(config.concurrency, 4);
         assert!(config.verbose);
+        assert!(!config.single);
     }
 
     #[test]
@@ -211,6 +228,7 @@ mod tests {
             mode: SourceMode::All,
             concurrency: 2,
             verbose: false,
+            single: false,
         };
 
         let result = validate_config(&args);
@@ -225,6 +243,7 @@ mod tests {
             mode: SourceMode::All,
             concurrency: 2,
             verbose: false,
+            single: false,
         };
 
         let result = validate_config(&args);
@@ -250,6 +269,7 @@ mod tests {
             mode: SourceMode::All,
             concurrency: 2,
             verbose: false,
+            single: false,
         };
 
         let result = validate_config(&args);
@@ -271,6 +291,7 @@ mod tests {
             mode: SourceMode::All,
             concurrency: 0,
             verbose: false,
+            single: false,
         };
 
         let result = validate_config(&args);
@@ -292,6 +313,7 @@ mod tests {
             mode: SourceMode::All,
             concurrency: 2,
             verbose: false,
+            single: false,
         };
 
         let result = validate_config(&args);
@@ -302,6 +324,7 @@ mod tests {
         assert_eq!(config.mode, SourceMode::All);
         assert_eq!(config.concurrency, 2);
         assert!(!config.verbose);
+        assert!(!config.single);
     }
 
     #[test]
@@ -318,6 +341,7 @@ mod tests {
             mode: SourceMode::YoutubeOnly,
             concurrency: 4,
             verbose: true,
+            single: false,
         };
 
         // Just verify the config can be displayed without panicking
@@ -345,6 +369,7 @@ mod property_tests {
             ],
             concurrency in 1usize..=10,
             verbose in proptest::bool::ANY,
+            single in proptest::bool::ANY,
         ) {
             // Create a config with the generated values
             let config = CliConfig {
@@ -353,6 +378,7 @@ mod property_tests {
                 mode,
                 concurrency,
                 verbose,
+                single,
             };
 
             // Capture the display output
@@ -393,6 +419,7 @@ mod property_tests {
             prop_assert_eq!(config.mode, mode);
             prop_assert_eq!(config.concurrency, concurrency);
             prop_assert_eq!(config.verbose, verbose);
+            prop_assert_eq!(config.single, single);
         }
     }
 
@@ -412,6 +439,7 @@ mod property_tests {
                 mode: SourceMode::All,
                 concurrency: 2,
                 verbose,
+                single: false,
             };
 
             // Verify the verbose flag is correctly stored

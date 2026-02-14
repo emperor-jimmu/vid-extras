@@ -184,7 +184,7 @@ async fn test_scanner_integration() {
     create_movie_with_done_marker(&root).expect("Failed to create done marker");
 
     // Scan without force flag - should skip movie with done marker
-    let scanner = Scanner::new(root.clone(), false);
+    let scanner = Scanner::new(root.clone(), false, false);
     let movies = scanner.scan().expect("Scan should succeed");
 
     // Should find only the movie without done marker
@@ -193,7 +193,7 @@ async fn test_scanner_integration() {
     assert_eq!(movies[0].year, 2020);
 
     // Scan with force flag - should include all movies
-    let scanner_force = Scanner::new(root.clone(), true);
+    let scanner_force = Scanner::new(root.clone(), true, false);
     let movies_force = scanner_force.scan().expect("Scan should succeed");
 
     // Should find both movies
@@ -211,7 +211,7 @@ async fn test_orchestrator_empty_directory() {
     let root = temp_dir.path().to_path_buf();
 
     // Test scanner on empty directory
-    let scanner = Scanner::new(root.clone(), false);
+    let scanner = Scanner::new(root.clone(), false, false);
     let movies = scanner
         .scan()
         .expect("Scan should succeed on empty directory");
@@ -239,7 +239,7 @@ async fn test_orchestrator_with_done_markers() {
     create_movie_with_done_marker(&root).expect("Failed to create done marker");
 
     // Test scanner without force flag - should skip movie with done marker
-    let scanner = Scanner::new(root.clone(), false);
+    let scanner = Scanner::new(root.clone(), false, false);
     let movies = scanner.scan().expect("Scan should succeed");
     assert_eq!(
         movies.len(),
@@ -248,7 +248,7 @@ async fn test_orchestrator_with_done_markers() {
     );
 
     // Test scanner with force flag - should include all movies
-    let scanner_force = Scanner::new(root.clone(), true);
+    let scanner_force = Scanner::new(root.clone(), true, false);
     let movies_force = scanner_force.scan().expect("Scan should succeed");
     assert_eq!(
         movies_force.len(),
@@ -387,7 +387,7 @@ async fn test_complete_execution_flow() {
     let validation_result = validator.validate_dependencies();
 
     // Step 2: Scan for movies
-    let scanner = Scanner::new(root.clone(), false);
+    let scanner = Scanner::new(root.clone(), false, false);
     let scan_result = scanner.scan();
 
     // Verify scan succeeds
@@ -400,7 +400,7 @@ async fn test_complete_execution_flow() {
         use extras_fetcher::models::SourceMode;
         use extras_fetcher::orchestrator::Orchestrator;
 
-        let orchestrator = Orchestrator::new(root, api_key, SourceMode::YoutubeOnly, false, 1);
+        let orchestrator = Orchestrator::new(root, api_key, SourceMode::YoutubeOnly, false, 1, false);
 
         // Orchestrator creation should succeed
         assert!(orchestrator.is_ok());
@@ -434,7 +434,7 @@ async fn test_idempotency_multiple_runs_on_same_library() {
     }
 
     // First run - all movies should be found
-    let scanner1 = Scanner::new(root.clone(), false);
+    let scanner1 = Scanner::new(root.clone(), false, false);
     let movies1 = scanner1.scan().expect("First scan should succeed");
     assert_eq!(movies1.len(), 5, "First scan should find all 5 movies");
 
@@ -453,7 +453,7 @@ async fn test_idempotency_multiple_runs_on_same_library() {
     }
 
     // Second run - should only find 2 movies without done markers
-    let scanner2 = Scanner::new(root.clone(), false);
+    let scanner2 = Scanner::new(root.clone(), false, false);
     let movies2 = scanner2.scan().expect("Second scan should succeed");
     assert_eq!(
         movies2.len(),
@@ -467,7 +467,7 @@ async fn test_idempotency_multiple_runs_on_same_library() {
     assert!(titles.contains(&"Movie 5"), "Should find Movie 5");
 
     // Third run - should still find the same 2 movies (idempotent)
-    let scanner3 = Scanner::new(root.clone(), false);
+    let scanner3 = Scanner::new(root.clone(), false, false);
     let movies3 = scanner3.scan().expect("Third scan should succeed");
     assert_eq!(
         movies3.len(),
@@ -490,7 +490,7 @@ async fn test_idempotency_multiple_runs_on_same_library() {
     }
 
     // Fourth run - should find no movies (all have done markers)
-    let scanner4 = Scanner::new(root.clone(), false);
+    let scanner4 = Scanner::new(root.clone(), false, false);
     let movies4 = scanner4.scan().expect("Fourth scan should succeed");
     assert_eq!(
         movies4.len(),
@@ -516,7 +516,7 @@ async fn test_idempotency_interruption_and_resumption() {
     }
 
     // Initial scan - all movies found
-    let scanner = Scanner::new(root.clone(), false);
+    let scanner = Scanner::new(root.clone(), false, false);
     let movies = scanner.scan().expect("Initial scan should succeed");
     assert_eq!(movies.len(), 4, "Should find all 4 movies initially");
 
@@ -546,7 +546,7 @@ async fn test_idempotency_interruption_and_resumption() {
     }
 
     // Resume scan - should find movies 3 and 4 (without done markers)
-    let scanner_resume = Scanner::new(root.clone(), false);
+    let scanner_resume = Scanner::new(root.clone(), false, false);
     let movies_resume = scanner_resume.scan().expect("Resume scan should succeed");
     assert_eq!(
         movies_resume.len(),
@@ -581,7 +581,7 @@ async fn test_idempotency_interruption_and_resumption() {
     .expect("Failed to write done marker");
 
     // Final scan - should only find movie 4
-    let scanner_final = Scanner::new(root.clone(), false);
+    let scanner_final = Scanner::new(root.clone(), false, false);
     let movies_final = scanner_final.scan().expect("Final scan should succeed");
     assert_eq!(
         movies_final.len(),
@@ -618,7 +618,7 @@ async fn test_idempotency_force_flag_behavior() {
     }
 
     // Scan without force flag - should find no movies
-    let scanner_no_force = Scanner::new(root.clone(), false);
+    let scanner_no_force = Scanner::new(root.clone(), false, false);
     let movies_no_force = scanner_no_force
         .scan()
         .expect("Scan without force should succeed");
@@ -629,7 +629,7 @@ async fn test_idempotency_force_flag_behavior() {
     );
 
     // Scan with force flag - should find all movies
-    let scanner_force = Scanner::new(root.clone(), true);
+    let scanner_force = Scanner::new(root.clone(), true, false);
     let movies_force = scanner_force
         .scan()
         .expect("Scan with force should succeed");
@@ -649,7 +649,7 @@ async fn test_idempotency_force_flag_behavior() {
     }
 
     // Multiple force scans should be idempotent
-    let scanner_force2 = Scanner::new(root.clone(), true);
+    let scanner_force2 = Scanner::new(root.clone(), true, false);
     let movies_force2 = scanner_force2
         .scan()
         .expect("Second force scan should succeed");
@@ -677,7 +677,7 @@ async fn test_idempotency_partial_library_processing() {
     }
 
     // First scan - find all 3 movies
-    let scanner1 = Scanner::new(root.clone(), false);
+    let scanner1 = Scanner::new(root.clone(), false, false);
     let movies1 = scanner1.scan().expect("First scan should succeed");
     assert_eq!(movies1.len(), 3, "Should find 3 movies initially");
 
@@ -696,7 +696,7 @@ async fn test_idempotency_partial_library_processing() {
     }
 
     // Second scan - should find only movie 3
-    let scanner2 = Scanner::new(root.clone(), false);
+    let scanner2 = Scanner::new(root.clone(), false, false);
     let movies2 = scanner2.scan().expect("Second scan should succeed");
     assert_eq!(movies2.len(), 1, "Should find 1 unprocessed movie");
     assert_eq!(movies2[0].title, "Movie 3");
@@ -708,7 +708,7 @@ async fn test_idempotency_partial_library_processing() {
     }
 
     // Third scan - should find movie 3 plus new movies 4, 5, 6
-    let scanner3 = Scanner::new(root.clone(), false);
+    let scanner3 = Scanner::new(root.clone(), false, false);
     let movies3 = scanner3.scan().expect("Third scan should succeed");
     assert_eq!(
         movies3.len(),
@@ -738,7 +738,7 @@ async fn test_idempotency_partial_library_processing() {
     }
 
     // Final scan - should find no movies (all processed)
-    let scanner4 = Scanner::new(root.clone(), false);
+    let scanner4 = Scanner::new(root.clone(), false, false);
     let movies4 = scanner4.scan().expect("Final scan should succeed");
     assert_eq!(movies4.len(), 0, "All movies should be processed");
 
@@ -747,7 +747,7 @@ async fn test_idempotency_partial_library_processing() {
     fs::create_dir_all(&movie_dir).expect("Failed to create movie dir");
 
     // Scan again - should find only the new movie
-    let scanner5 = Scanner::new(root.clone(), false);
+    let scanner5 = Scanner::new(root.clone(), false, false);
     let movies5 = scanner5
         .scan()
         .expect("Scan after adding new movie should succeed");
@@ -795,7 +795,7 @@ async fn test_idempotency_invalid_done_markers() {
     // No done marker
 
     // Scan - should find movies 2, 3, and 4 (invalid or missing done markers)
-    let scanner = Scanner::new(root.clone(), false);
+    let scanner = Scanner::new(root.clone(), false, false);
     let movies = scanner.scan().expect("Scan should succeed");
     assert_eq!(
         movies.len(),
@@ -822,3 +822,4 @@ async fn test_idempotency_invalid_done_markers() {
         "Should not find Movie 1 (valid marker)"
     );
 }
+

@@ -84,6 +84,7 @@ async fn main() {
         config.mode.to_models_source_mode(),
         config.force,
         config.concurrency,
+        config.single,
     ) {
         Ok(orch) => orch,
         Err(e) => {

@@ -13,19 +13,82 @@ const DONE_MARKER_FILENAME: &str = "done.ext";
 pub struct Scanner {
     root_dir: PathBuf,
     force: bool,
+    single: bool,
 }
 
 impl Scanner {
     /// Create a new Scanner instance
-    pub fn new(root_dir: PathBuf, force: bool) -> Self {
-        Self { root_dir, force }
+    pub fn new(root_dir: PathBuf, force: bool, single: bool) -> Self {
+        Self { root_dir, force, single }
     }
 
     /// Scan the root directory and return a list of movies to process
     pub fn scan(&self) -> Result<Vec<MovieEntry>, ScanError> {
+        // If single mode, treat root_dir as a single movie folder
+        if self.single {
+            return self.scan_single_folder();
+        }
+
+        // Otherwise, scan for multiple movie folders
         let mut movies = Vec::new();
         self.scan_directory(&self.root_dir, &mut movies)?;
         Ok(movies)
+    }
+
+    /// Scan a single movie folder directly
+    fn scan_single_folder(&self) -> Result<Vec<MovieEntry>, ScanError> {
+        // Check if directory exists and is readable
+        if !self.root_dir.exists() {
+            return Err(ScanError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Directory not found: {:?}", self.root_dir),
+            )));
+        }
+
+        if !self.root_dir.is_dir() {
+            return Err(ScanError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Path is not a directory: {:?}", self.root_dir),
+            )));
+        }
+
+        // Try to parse the folder name
+        let folder_name = self.root_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| {
+                ScanError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Invalid folder name: {:?}", self.root_dir),
+                ))
+            })?;
+
+        let (title, year) = Self::parse_folder_name(folder_name).ok_or_else(|| {
+            ScanError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Folder name does not match expected format 'Title (Year)': {}",
+                    folder_name
+                ),
+            ))
+        })?;
+
+        // Check for done marker
+        let has_done_marker = Self::check_done_marker(&self.root_dir);
+
+        // Skip if done marker exists and force flag is not set
+        if has_done_marker && !self.force {
+            log::info!("Skipping {} (done marker found, use --force to reprocess)", folder_name);
+            return Ok(Vec::new());
+        }
+
+        // Return single movie entry
+        Ok(vec![MovieEntry {
+            path: self.root_dir.clone(),
+            title,
+            year,
+            has_done_marker,
+        }])
     }
 
     /// Recursively scan a directory for movie folders
@@ -201,7 +264,7 @@ mod tests {
         // Create an empty temporary directory
         let temp_dir = TempDir::new().unwrap();
 
-        let scanner = Scanner::new(temp_dir.path().to_path_buf(), false);
+        let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
         let movies = scanner.scan().unwrap();
 
         // Should return empty list
@@ -232,7 +295,7 @@ mod tests {
         let movie3_path = subsubdir.join("Interstellar (2014)");
         fs::create_dir(&movie3_path).unwrap();
 
-        let scanner = Scanner::new(temp_dir.path().to_path_buf(), false);
+        let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
         let movies = scanner.scan().unwrap();
 
         // Should find all 3 movies regardless of nesting
@@ -259,7 +322,7 @@ mod tests {
         // Create one valid movie folder
         fs::create_dir(temp_dir.path().join("Valid Movie (2020)")).unwrap();
 
-        let scanner = Scanner::new(temp_dir.path().to_path_buf(), false);
+        let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
         let movies = scanner.scan().unwrap();
 
         // Should only find the valid movie
@@ -281,7 +344,7 @@ mod tests {
         let marker_path = movie_path.join("done.ext");
         fs::write(&marker_path, "invalid json content").unwrap();
 
-        let scanner = Scanner::new(temp_dir.path().to_path_buf(), false);
+        let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
         let movies = scanner.scan().unwrap();
 
         // Should include the movie since done marker is invalid
@@ -295,7 +358,7 @@ mod tests {
         use std::path::PathBuf;
 
         let nonexistent = PathBuf::from("/nonexistent/path/that/does/not/exist");
-        let scanner = Scanner::new(nonexistent, false);
+        let scanner = Scanner::new(nonexistent, false, false);
 
         let result = scanner.scan();
 
@@ -312,7 +375,7 @@ mod tests {
         let file_path = temp_dir.path().join("not_a_directory.txt");
         fs::write(&file_path, "test content").unwrap();
 
-        let scanner = Scanner::new(file_path, false);
+        let scanner = Scanner::new(file_path, false, false);
         let result = scanner.scan();
 
         // Should return an error
@@ -446,7 +509,7 @@ mod property_tests {
             fs::write(&marker_path, marker_json).unwrap();
 
             // Create scanner with the force flag
-            let scanner = Scanner::new(temp_root.path().to_path_buf(), force_flag);
+            let scanner = Scanner::new(temp_root.path().to_path_buf(), force_flag, false);
 
             // Scan the directory
             let movies = scanner.scan().unwrap();
@@ -513,7 +576,7 @@ mod property_tests {
             }
 
             // Scan the directory
-            let scanner = Scanner::new(temp_root.path().to_path_buf(), false);
+            let scanner = Scanner::new(temp_root.path().to_path_buf(), false, false);
             let movies = scanner.scan().unwrap();
 
             // All movies should be discovered
@@ -538,3 +601,4 @@ mod property_tests {
         }
     }
 }
+

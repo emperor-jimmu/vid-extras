@@ -95,6 +95,7 @@ impl Orchestrator {
         mode: SourceMode,
         force: bool,
         concurrency: usize,
+        single: bool,
     ) -> Result<Self, OrchestratorError> {
         // Validate root directory exists
         if !root_dir.exists() {
@@ -119,9 +120,10 @@ impl Orchestrator {
         info!("  Mode: {}", mode);
         info!("  Force: {}", force);
         info!("  Concurrency: {}", concurrency);
+        info!("  Single folder mode: {}", single);
 
         Ok(Self {
-            scanner: Scanner::new(root_dir, force),
+            scanner: Scanner::new(root_dir, force, single),
             discovery: Arc::new(DiscoveryOrchestrator::new(tmdb_api_key, mode)),
             downloader: Arc::new(Downloader::new(temp_base.clone())),
             converter: Arc::new(Converter::new()),
@@ -496,13 +498,7 @@ mod tests {
     #[test]
     fn test_orchestrator_new_validates_root_dir() {
         let nonexistent = PathBuf::from("/nonexistent/path/that/does/not/exist");
-        let result = Orchestrator::new(
-            nonexistent,
-            "fake_api_key".to_string(),
-            SourceMode::All,
-            false,
-            2,
-        );
+        let result = Orchestrator::new(nonexistent, "fake_api_key".to_string(), SourceMode::All, false, 2, false);
 
         assert!(result.is_err());
     }
@@ -523,13 +519,7 @@ mod tests {
             .unwrap();
 
         // Create orchestrator with custom temp_base
-        let mut orchestrator = Orchestrator::new(
-            root_dir,
-            "fake_api_key".to_string(),
-            SourceMode::All,
-            false,
-            1,
-        )
+        let mut orchestrator = Orchestrator::new(root_dir, "fake_api_key".to_string(), SourceMode::All, false, 1, false)
         .unwrap();
 
         // Override temp_base for testing
@@ -549,13 +539,7 @@ mod tests {
         let root_dir = temp_root.path().join("movies");
         tokio::fs::create_dir(&root_dir).await.unwrap();
 
-        let orchestrator = Orchestrator::new(
-            root_dir,
-            "fake_api_key".to_string(),
-            SourceMode::All,
-            false,
-            1,
-        )
+        let orchestrator = Orchestrator::new(root_dir, "fake_api_key".to_string(), SourceMode::All, false, 1, false)
         .unwrap();
 
         let summary = orchestrator.run().await.unwrap();
@@ -580,23 +564,11 @@ mod tests {
         }
 
         // Test sequential processing (concurrency = 1)
-        let orchestrator_seq = Orchestrator::new(
-            root_dir.clone(),
-            "fake_api_key".to_string(),
-            SourceMode::YoutubeOnly,
-            false,
-            1,
-        )
+        let orchestrator_seq = Orchestrator::new(root_dir.clone(), "fake_api_key".to_string(), SourceMode::YoutubeOnly, false, 1, false)
         .unwrap();
 
         // Test parallel processing (concurrency = 2)
-        let orchestrator_par = Orchestrator::new(
-            root_dir,
-            "fake_api_key".to_string(),
-            SourceMode::YoutubeOnly,
-            false,
-            2,
-        )
+        let orchestrator_par = Orchestrator::new(root_dir, "fake_api_key".to_string(), SourceMode::YoutubeOnly, false, 2, false)
         .unwrap();
 
         // Both should find the same number of movies
@@ -616,13 +588,7 @@ mod tests {
         let temp_base = temp_root.path().join("tmp_downloads");
 
         {
-            let mut orchestrator = Orchestrator::new(
-                root_dir,
-                "fake_api_key".to_string(),
-                SourceMode::All,
-                false,
-                1,
-            )
+            let mut orchestrator = Orchestrator::new(root_dir, "fake_api_key".to_string(), SourceMode::All, false, 1, false)
             .unwrap();
 
             // Override temp_base for testing
@@ -734,26 +700,14 @@ mod tests {
             .unwrap();
 
         // Without force flag - should skip movie2
-        let orchestrator = Orchestrator::new(
-            root_dir.clone(),
-            "fake_api_key".to_string(),
-            SourceMode::YoutubeOnly,
-            false,
-            1,
-        )
+        let orchestrator = Orchestrator::new(root_dir.clone(), "fake_api_key".to_string(), SourceMode::YoutubeOnly, false, 1, false)
         .unwrap();
 
         let movies = orchestrator.scanner.scan().unwrap();
         assert_eq!(movies.len(), 1); // Only movie1 should be found
 
         // With force flag - should process both
-        let orchestrator_force = Orchestrator::new(
-            root_dir,
-            "fake_api_key".to_string(),
-            SourceMode::YoutubeOnly,
-            true,
-            1,
-        )
+        let orchestrator_force = Orchestrator::new(root_dir, "fake_api_key".to_string(), SourceMode::YoutubeOnly, true, 1, false)
         .unwrap();
 
         let movies_force = orchestrator_force.scanner.scan().unwrap();
@@ -776,6 +730,7 @@ mod tests {
                 SourceMode::All,
                 false,
                 concurrency,
+                false,
             )
             .unwrap();
 
@@ -949,7 +904,7 @@ mod property_tests {
                 }
 
                 // First scan - all movies should be found
-                let scanner1 = Scanner::new(root_dir.clone(), false);
+                let scanner1 = Scanner::new(root_dir.clone(), false, false);
                 let movies1 = scanner1.scan().unwrap();
                 prop_assert_eq!(movies1.len(), num_movies, "First scan should find all movies");
 
@@ -967,7 +922,7 @@ mod property_tests {
                 }
 
                 // Second scan without force flag - should skip movies with done markers
-                let scanner2 = Scanner::new(root_dir.clone(), false);
+                let scanner2 = Scanner::new(root_dir.clone(), false, false);
                 let movies2 = scanner2.scan().unwrap();
                 let expected_without_force = num_movies - num_with_markers;
                 prop_assert_eq!(
@@ -985,7 +940,7 @@ mod property_tests {
                 }
 
                 // Third scan with force flag - should find all movies regardless of done markers
-                let scanner3 = Scanner::new(root_dir.clone(), force_flag);
+                let scanner3 = Scanner::new(root_dir.clone(), force_flag, false);
                 let movies3 = scanner3.scan().unwrap();
 
                 if force_flag {
@@ -1003,7 +958,7 @@ mod property_tests {
                 }
 
                 // Verify idempotency: multiple scans with same settings produce same results
-                let scanner4 = Scanner::new(root_dir.clone(), force_flag);
+                let scanner4 = Scanner::new(root_dir.clone(), force_flag, false);
                 let movies4 = scanner4.scan().unwrap();
                 prop_assert_eq!(
                     movies3.len(),
@@ -1016,3 +971,4 @@ mod property_tests {
         }
     }
 }
+
