@@ -53,6 +53,40 @@ Implemented normalized title matching and collection-based filtering for YouTube
 - ❌ Excludes: "REC 2 Behind the Scenes" (collection movie)
 - ❌ Excludes: "[Rec]3 Génesis UK Premiere" (collection movie, normalized match)
 
+### Fallback Sequel Detection (Requirements 5.11)
+**Problem:** When TMDB doesn't provide collection information, sequels were not being filtered out.
+
+**Solution:** Implemented fallback sequel number detection that checks for patterns like "REC 2", "REC3", etc.
+
+**Implementation:**
+- Added `YoutubeDiscoverer::mentions_sequel_number()` to detect sequel numbers 2-19
+- Checks both spaced ("rec 2") and non-spaced ("rec2") patterns using normalization
+- Includes year disambiguation to avoid false positives (e.g., "REC 2007" is not a sequel)
+- Extended range from 2-9 to 2-19 to support longer franchises
+
+**Example:**
+- Movie: "REC (2007)"
+- ✅ Includes: "REC Behind the Scenes" (original movie)
+- ❌ Excludes: "REC 2: CNN" (sequel number detected)
+- ❌ Excludes: "[Rec]3 Génesis" (sequel number detected)
+- ❌ Excludes: "rec15 behind the scenes" (sequel number detected)
+- ✅ Includes: "REC 2007 Trailer" (year, not sequel number)
+
+### Duration Limit Increase (Requirements 5.7, 5.8)
+**Problem:** Some legitimate behind-the-scenes content and making-of videos were being excluded due to the 20-minute duration limit.
+
+**Solution:** Increased maximum video duration from 1200 seconds (20 minutes) to 2400 seconds (40 minutes).
+
+**Implementation:**
+- Updated `YoutubeDiscoverer::is_duration_valid()` to accept videos up to 2400 seconds
+- Updated all related tests to reflect the new 40-minute limit
+- Minimum duration remains 30 seconds to filter out very short clips
+
+**Rationale:**
+- Many comprehensive behind-the-scenes features run 20-40 minutes
+- Maintains filtering of extremely long content (reviews, commentary tracks)
+- Balances completeness with relevance
+
 ## API Changes
 
 ### New Structs
@@ -128,11 +162,12 @@ pub async fn discover_all(&self, movie: &MovieEntry) -> Vec<VideoSource>
 5. `test_contains_movie_title_no_match` - Validates unrelated titles are excluded
 6. `test_mentions_collection_movies_with_normalization` - Validates normalized collection matching
 7. `test_should_include_video_user_reported_cases` - Validates specific user-reported issues
+8. `test_mentions_sequel_number` - Validates sequel number detection for numbers 2-19
 
 ### Updated Tests
 All existing `should_include_video` test calls updated to include movie_title parameter:
 - `test_youtube_should_include_video_valid`
-- `test_youtube_should_include_video_excluded_by_duration`
+- `test_youtube_should_include_video_excluded_by_duration` - Updated to use 2500s (over 40min limit)
 - `test_youtube_should_include_video_excluded_by_keyword`
 - `test_youtube_should_include_video_excluded_as_short`
 - `test_youtube_should_include_video_multiple_exclusions`
@@ -140,10 +175,10 @@ All existing `should_include_video` test calls updated to include movie_title pa
 - `test_youtube_year_filtering_different_year`
 - `test_youtube_year_filtering_no_year`
 - `test_youtube_collection_filtering`
+- `prop_youtube_duration_filtering` - Updated to validate 30s-2400s range
 
 ### Test Results
-- ✅ All 63 discovery unit tests passing (was 56, added 7 new tests)
-- ✅ All 217 total library tests passing
+- ✅ All 219 library tests passing (210 passed, 9 ignored)
 - ✅ No clippy warnings
 - ✅ Code properly formatted with rustfmt
 - ✅ Compiles without errors or warnings
@@ -159,6 +194,8 @@ All existing `should_include_video` test calls updated to include movie_title pa
 
 1. ✅ "What led to Shia Staring at Me" - Now excluded (no movie title match)
 2. ✅ "[Rec]3 Génesis UK Premiere Interviews" - Now excluded (collection movie mention detected via normalization)
+3. ✅ "REC 2: CNN (Escena eliminada)" - Now excluded (sequel number detected)
+4. ✅ Duration limit increased to 40 minutes to include comprehensive behind-the-scenes content
 
 ## Backward Compatibility
 

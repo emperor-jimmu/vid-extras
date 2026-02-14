@@ -215,33 +215,86 @@ impl Downloader {
         dest_dir: &Path,
         expected_title: &str,
     ) -> Result<PathBuf, DownloadError> {
-        let mut entries = fs::read_dir(dest_dir).await?;
+        debug!(
+            "Searching for downloaded file matching: '{}'",
+            expected_title
+        );
 
+        let mut entries = fs::read_dir(dest_dir).await?;
+        let mut candidates = Vec::new();
+
+        // Collect all files in the directory
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             if path.is_file() {
-                // Check if filename contains the expected title (case-insensitive)
-                if let Some(filename) = path.file_name() {
-                    let filename_str = filename.to_string_lossy().to_lowercase();
-                    let title_lower = expected_title.to_lowercase();
+                candidates.push(path);
+            }
+        }
 
-                    // Simple heuristic: if the filename contains part of the title
-                    if filename_str.contains(&title_lower)
-                        || title_lower.contains(&filename_str.replace(".mp4", ""))
-                    {
-                        return Ok(path);
+        debug!("Found {} files in temp directory", candidates.len());
+
+        // If there's only one file, return it (common case)
+        if candidates.len() == 1 {
+            debug!("Only one file found, using: {:?}", candidates[0]);
+            return Ok(candidates[0].clone());
+        }
+
+        // If multiple files, try to find the best match
+        let title_lower = expected_title.to_lowercase();
+        let mut best_match: Option<(PathBuf, usize)> = None;
+
+        for path in &candidates {
+            if let Some(filename) = path.file_name() {
+                let filename_str = filename.to_string_lossy().to_lowercase();
+
+                // Calculate match score based on common words
+                let title_words: Vec<&str> = title_lower.split_whitespace().collect();
+                let mut match_count = 0;
+
+                for word in &title_words {
+                    if word.len() > 3 && filename_str.contains(word) {
+                        match_count += 1;
+                    }
+                }
+
+                debug!("File {:?} has match score: {}", filename, match_count);
+
+                if match_count > 0 {
+                    if let Some((_, current_best)) = &best_match {
+                        if match_count > *current_best {
+                            best_match = Some((path.clone(), match_count));
+                        }
+                    } else {
+                        best_match = Some((path.clone(), match_count));
                     }
                 }
             }
         }
 
-        // If no match found, return the first file in the directory
-        let mut entries = fs::read_dir(dest_dir).await?;
-        if let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            if path.is_file() {
-                return Ok(path);
+        if let Some((path, score)) = best_match {
+            debug!("Best match found with score {}: {:?}", score, path);
+            return Ok(path);
+        }
+
+        // If no good match, return the most recently modified file
+        let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
+        for path in &candidates {
+            if let Ok(metadata) = path.metadata()
+                && let Ok(modified) = metadata.modified()
+            {
+                if let Some((_, current_time)) = &newest {
+                    if modified > *current_time {
+                        newest = Some((path.clone(), modified));
+                    }
+                } else {
+                    newest = Some((path.clone(), modified));
+                }
             }
+        }
+
+        if let Some((path, _)) = newest {
+            warn!("No good filename match, using most recent file: {:?}", path);
+            return Ok(path);
         }
 
         Err(DownloadError::YtDlpFailed(

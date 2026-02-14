@@ -2,7 +2,6 @@
 // Tests complete execution flow, validation failures, and error handling
 // Requirements: 11.1-11.5, 10.5
 
-use std::env;
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;

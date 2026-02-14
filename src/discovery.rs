@@ -579,9 +579,50 @@ impl YoutubeDiscoverer {
         false
     }
 
-    /// Check if duration is within acceptable range (30s - 20min)
+    /// Check if video title mentions a sequel number (e.g., "REC 2", "REC3", "[REC]2")
+    /// This is a fallback for when TMDB doesn't provide collection information
+    fn mentions_sequel_number(video_title: &str, movie_title: &str) -> bool {
+        let normalized_video = Self::normalize_title(video_title);
+        let normalized_video_no_spaces = normalized_video.replace(' ', "");
+        let normalized_movie = Self::normalize_title(movie_title);
+
+        // Look for patterns like "rec 2", "rec2", "rec 3", "rec3", etc.
+        // We check for numbers 2-19 (sequels)
+        for num in 2..=19 {
+            let with_space = format!("{} {}", normalized_movie, num);
+            let without_space = format!("{}{}", normalized_movie, num);
+
+            // Check if the pattern appears in the video title
+            // But make sure it's not part of a year like "(2007)"
+            if normalized_video.contains(&with_space)
+                || normalized_video_no_spaces.contains(&without_space)
+            {
+                // Additional check: make sure the number isn't part of a 4-digit year
+                // by checking if it's followed by more digits
+                let year_pattern = format!("{} {}0", normalized_movie, num);
+                let year_pattern_no_space = format!("{}{}0", normalized_movie, num);
+
+                if normalized_video.contains(&year_pattern)
+                    || normalized_video_no_spaces.contains(&year_pattern_no_space)
+                {
+                    // This looks like a year (e.g., "REC 2007"), not a sequel number
+                    continue;
+                }
+
+                debug!(
+                    "Detected sequel number {} in '{}' (movie: '{}')",
+                    num, video_title, movie_title
+                );
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Check if duration is within acceptable range (30s - 40min)
     fn is_duration_valid(duration_secs: u32) -> bool {
-        (30..=1200).contains(&duration_secs) // 20 minutes = 1200 seconds
+        (30..=2400).contains(&duration_secs) // 40 minutes = 2400 seconds
     }
 
     /// Check if video is a YouTube Short (duration < 60s and vertical aspect ratio)
@@ -624,10 +665,19 @@ impl YoutubeDiscoverer {
             return false;
         }
 
+        // Fallback: Check for sequel numbers even if no collection info available
+        if Self::mentions_sequel_number(video_title, movie_title) {
+            debug!(
+                "Excluding '{}' - mentions sequel number (fallback detection)",
+                video_title
+            );
+            return false;
+        }
+
         // Check duration range
         if !Self::is_duration_valid(duration_secs) {
             debug!(
-                "Excluding '{}' - duration {}s out of range",
+                "Excluding '{}' - duration {}s out of range (30s-2400s)",
                 video_title, duration_secs
             );
             return false;
@@ -1055,11 +1105,11 @@ mod property_tests {
     proptest! {
         #[test]
         fn prop_youtube_duration_filtering(duration_secs in 0u32..3600u32) {
-            // Videos should be excluded if duration < 30s OR duration > 20min (1200s)
-            let should_exclude = !(30..=1200).contains(&duration_secs);
+            // Videos should be excluded if duration < 30s OR duration > 40min (2400s)
+            let should_exclude = !(30..=2400).contains(&duration_secs);
             let is_valid = YoutubeDiscoverer::is_duration_valid(duration_secs);
 
-            // is_duration_valid should return true only for videos in the 30s-1200s range
+            // is_duration_valid should return true only for videos in the 30s-2400s range
             prop_assert_eq!(
                 is_valid,
                 !should_exclude,
@@ -1072,10 +1122,10 @@ mod property_tests {
             // Verify boundary conditions
             if duration_secs < 30 {
                 prop_assert!(!is_valid, "Videos < 30s should be excluded");
-            } else if duration_secs > 1200 {
-                prop_assert!(!is_valid, "Videos > 1200s (20min) should be excluded");
+            } else if duration_secs > 2400 {
+                prop_assert!(!is_valid, "Videos > 2400s (40min) should be excluded");
             } else {
-                prop_assert!(is_valid, "Videos between 30s and 1200s should be included");
+                prop_assert!(is_valid, "Videos between 30s and 2400s should be included");
             }
         }
     }
@@ -1805,12 +1855,13 @@ mod unit_tests {
 
     #[test]
     fn test_youtube_duration_valid_range() {
-        // Test valid durations (30s - 1200s)
+        // Test valid durations (30s - 2400s / 40 minutes)
         assert!(YoutubeDiscoverer::is_duration_valid(30)); // Minimum
         assert!(YoutubeDiscoverer::is_duration_valid(60));
         assert!(YoutubeDiscoverer::is_duration_valid(300)); // 5 minutes
         assert!(YoutubeDiscoverer::is_duration_valid(600)); // 10 minutes
-        assert!(YoutubeDiscoverer::is_duration_valid(1200)); // Maximum (20 minutes)
+        assert!(YoutubeDiscoverer::is_duration_valid(1200)); // 20 minutes
+        assert!(YoutubeDiscoverer::is_duration_valid(2400)); // Maximum (40 minutes)
     }
 
     #[test]
@@ -1824,8 +1875,8 @@ mod unit_tests {
     #[test]
     fn test_youtube_duration_invalid_too_long() {
         // Test durations that are too long
-        assert!(!YoutubeDiscoverer::is_duration_valid(1201));
-        assert!(!YoutubeDiscoverer::is_duration_valid(1500));
+        assert!(!YoutubeDiscoverer::is_duration_valid(2401));
+        assert!(!YoutubeDiscoverer::is_duration_valid(3000));
         assert!(!YoutubeDiscoverer::is_duration_valid(3600));
     }
 
@@ -1896,12 +1947,12 @@ mod unit_tests {
         assert!(!YoutubeDiscoverer::should_include_video(
             "REC Behind the Scenes",
             "REC",
-            1500,
+            2500,
             1920,
             1080,
             2007,
             &[]
-        )); // Too long
+        )); // Too long (over 40 minutes)
     }
 
     #[test]
@@ -2178,4 +2229,87 @@ mod unit_tests {
             &collection
         ));
     }
+}
+
+#[test]
+fn test_mentions_sequel_number() {
+    // Test sequel number detection (fallback when no collection info)
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "REC 2: CNN",
+        "[REC]"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "[Rec]3 Génesis",
+        "[REC]"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "rec2 behind the scenes",
+        "REC"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "REC 4: Apocalypse",
+        "REC"
+    ));
+
+    // Test higher sequel numbers (10-19)
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "REC 10: The Final Chapter",
+        "REC"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "rec15 behind the scenes",
+        "REC"
+    ));
+    assert!(YoutubeDiscoverer::mentions_sequel_number(
+        "[REC]19 Trailer",
+        "[REC]"
+    ));
+
+    // Original movie should not trigger sequel detection
+    assert!(!YoutubeDiscoverer::mentions_sequel_number(
+        "REC Behind the Scenes",
+        "[REC]"
+    ));
+    assert!(!YoutubeDiscoverer::mentions_sequel_number(
+        "REC Official Trailer",
+        "REC"
+    ));
+}
+
+#[test]
+fn test_sequel_detection_without_collection() {
+    // Test that sequel videos are filtered even without collection metadata
+    let empty_collection: Vec<String> = vec![];
+
+    // These should be excluded by sequel number detection
+    assert!(!YoutubeDiscoverer::should_include_video(
+        "REC 2: CNN (Escena eliminada)",
+        "[REC]",
+        120,
+        1920,
+        1080,
+        2007,
+        &empty_collection
+    ));
+
+    assert!(!YoutubeDiscoverer::should_include_video(
+        "[Rec]3 Génesis UK Premiere Interviews",
+        "[REC]",
+        120,
+        1920,
+        1080,
+        2007,
+        &empty_collection
+    ));
+
+    // Original movie content should still be included
+    assert!(YoutubeDiscoverer::should_include_video(
+        "[REC] Official Trailer",
+        "[REC]",
+        120,
+        1920,
+        1080,
+        2007,
+        &empty_collection
+    ));
 }
