@@ -490,7 +490,7 @@ pub struct Converter {
 **Functionality:**
 - Category-to-subdirectory mapping for Jellyfin structure
 - Subdirectory creation if missing
-- File moving to target subdirectories
+- File moving to target subdirectories with cross-drive support
 - Temporary folder cleanup after organization
 - Done marker creation with JSON timestamp (ISO 8601 format)
 - Failed conversion filtering
@@ -558,6 +558,14 @@ pub struct Organizer {
 - 8.5: Subdirectory creation if missing
 - 8.6: Temp folder cleanup after organization
 - 8.7: Done marker creation with timestamp
+
+**Implementation Notes:**
+- Category information is stored in `ConversionResult` for accurate organization
+- Failed conversions are skipped during organization
+- Temp directories are cleaned up after successful file moves
+- Done marker uses package version from Cargo.toml
+- All file operations use async I/O for better performance
+- Cross-drive file moves (Windows error 17) automatically fall back to copy+delete
 
 **Implementation Notes:**
 - Category information is stored in `ConversionResult` for accurate organization

@@ -105,15 +105,42 @@ impl Organizer {
 
         debug!("Moving file: {:?} -> {:?}", source, dest_path);
 
-        fs::rename(source, &dest_path).await.map_err(|e| {
-            OrganizerError::FileMove(format!(
+        // Try rename first (fast, atomic), but fall back to copy+delete for cross-drive moves
+        match fs::rename(source, &dest_path).await {
+            Ok(_) => {
+                info!("Moved file to: {:?}", dest_path);
+                Ok(())
+            }
+            Err(e) if e.raw_os_error() == Some(17) => {
+                // Error 17 on Windows: "The system cannot move the file to a different disk drive"
+                // Fall back to copy + delete
+                debug!(
+                    "Cross-drive move detected, using copy+delete: {:?} -> {:?}",
+                    source, dest_path
+                );
+
+                fs::copy(source, &dest_path).await.map_err(|e| {
+                    OrganizerError::FileMove(format!(
+                        "Failed to copy {:?} to {:?}: {}",
+                        source, dest_path, e
+                    ))
+                })?;
+
+                fs::remove_file(source).await.map_err(|e| {
+                    OrganizerError::FileMove(format!(
+                        "Failed to delete source file {:?} after copy: {}",
+                        source, e
+                    ))
+                })?;
+
+                info!("Copied and deleted file to: {:?}", dest_path);
+                Ok(())
+            }
+            Err(e) => Err(OrganizerError::FileMove(format!(
                 "Failed to move {:?} to {:?}: {}",
                 source, dest_path, e
-            ))
-        })?;
-
-        info!("Moved file to: {:?}", dest_path);
-        Ok(())
+            ))),
+        }
     }
 
     /// Clean up the temporary download directory
