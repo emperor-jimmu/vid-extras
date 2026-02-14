@@ -1,7 +1,7 @@
 // Organizer module - handles file organization into Jellyfin directories
 
 #[allow(unused_imports)]
-use crate::converter::ConversionResult;
+use crate::models::ConversionResult;
 #[allow(unused_imports)]
 use crate::error::OrganizerError;
 use serde::{Deserialize, Serialize};

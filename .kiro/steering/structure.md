@@ -26,8 +26,8 @@ The codebase follows a pipeline architecture with clear separation of concerns:
 - `orchestrator.rs` - Main pipeline coordinator, manages processing flow
 - `scanner.rs` - **[IMPLEMENTED]** Directory traversal, movie discovery, folder name parsing
 - `discovery.rs` - **[IMPLEMENTED]** Multi-source content discovery (TMDB, Archive.org, and YouTube complete; DiscoveryOrchestrator pending)
-- `downloader.rs` - Video downloading via yt-dlp
-- `converter.rs` - Video format conversion with ffmpeg, hardware acceleration detection
+- `downloader.rs` - **[IMPLEMENTED]** Video downloading via yt-dlp
+- `converter.rs` - **[IMPLEMENTED]** Video format conversion with ffmpeg, hardware acceleration detection
 - `organizer.rs` - File organization into Jellyfin structure, done marker management
 - `validation.rs` - **[IMPLEMENTED]** Dependency checking (binaries, API keys, codec support)
 
@@ -395,11 +395,98 @@ pub struct Downloader {
 - Failed downloads are logged but don't prevent other downloads from proceeding
 - yt-dlp is invoked with `--no-playlist` and `--quiet` flags for cleaner output
 
+#### Converter Module (src/converter.rs)
+**Status:** ✅ Fully implemented and tested
+
+**Functionality:**
+- Hardware acceleration detection (NVENC, QSV, Software)
+- FFmpeg command construction with x265/HEVC codec
+- CRF value configuration (24-26 range, default 25)
+- Conversion execution with error handling
+- Original file deletion on successful conversion
+- Failed output deletion and original preservation on failure
+- Support for three hardware acceleration types:
+  - NVENC (NVIDIA hardware encoding with CUDA)
+  - QSV (Intel Quick Sync Video)
+  - Software (libx265 CPU encoding)
+
+**Public API:**
+```rust
+pub struct Converter {
+    // Create a new Converter with auto-detected hardware acceleration
+    pub fn new() -> Self;
+    
+    // Create a new Converter with specified hardware acceleration and CRF
+    pub fn with_config(hw_accel: HardwareAccel, crf: u8) -> Self;
+    
+    // Convert a batch of downloaded videos
+    pub async fn convert_batch(
+        &self,
+        downloads: Vec<DownloadResult>,
+    ) -> Vec<ConversionResult>;
+    
+    // Get the hardware acceleration type being used
+    pub fn hw_accel(&self) -> HardwareAccel;
+    
+    // Get the CRF value being used
+    pub fn crf(&self) -> u8;
+}
+```
+
+**FFmpeg Command Construction:**
+- Software: `ffmpeg -y -i input.mp4 -c:v libx265 -crf 25 -preset medium -c:a copy output.mp4`
+- NVENC: `ffmpeg -y -hwaccel cuda -i input.mp4 -c:v hevc_nvenc -preset p4 -rc vbr -cq 25 -c:a copy output.mp4`
+- QSV: `ffmpeg -y -hwaccel qsv -i input.mp4 -c:v hevc_qsv -global_quality 25 -c:a copy output.mp4`
+
+**Cleanup Strategy:**
+- On success: Deletes original download file, keeps converted output
+- On failure: Deletes failed output file, preserves original for inspection
+
+**Test Coverage:**
+- 15 unit tests covering:
+  - Hardware acceleration detection and configuration
+  - CRF value validation (24-26 range)
+  - FFmpeg command construction for all hardware types
+  - Audio stream copying
+  - Output path generation
+  - File cleanup scenarios
+  - Batch processing with failed downloads
+- 6 property-based tests with 100+ iterations each:
+  - Property 18: FFmpeg Codec Usage
+  - Property 19: CRF Value Range
+  - Property 20: Hardware Acceleration Selection
+  - Property 21: Conversion Success Cleanup
+  - Property 22: Conversion Failure Preservation
+  - Hardware detection validation
+- All tests passing ✅ (23 total tests)
+
+**Dependencies:**
+- Uses `tokio::process::Command` for ffmpeg execution
+- Uses `tokio::fs` for async file operations
+- Uses `log` for structured logging
+- Test dependencies: `proptest`, `tokio`, `tempfile`
+
+**Requirements Validated:**
+- 7.1: FFmpeg x265/HEVC codec usage
+- 7.2: CRF value between 24 and 26
+- 7.3: Hardware acceleration selection (NVENC, QSV, or software fallback)
+- 7.4: Original file deletion on successful conversion
+- 7.5: Failed output deletion on conversion failure
+- 7.6: Original file preservation on conversion failure
+- 7.7: Conversion execution with error handling
+- 11.6: Hardware acceleration fallback to software encoding
+
+**Implementation Notes:**
+- Hardware acceleration is auto-detected by checking ffmpeg encoder support
+- Invalid CRF values (outside 24-26 range) are clamped to default value of 25
+- Failed conversions preserve the original file for manual inspection
+- All hardware acceleration types copy audio streams without re-encoding
+- Output files use `.converted.mp4` extension before final organization
+
 ### Pending Modules
 
 The following modules are defined but not yet implemented:
 - Discovery module - DiscoveryOrchestrator (to coordinate TMDB, Archive.org, and YouTube)
-- Converter module
 - Organizer module
 - Orchestrator module
 - CLI module

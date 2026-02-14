@@ -194,8 +194,8 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Test error scenarios
     - _Requirements: 6.2, 6.4, 6.5_
 
-- [ ] 12. Implement Converter module
-  - [ ] 12.1 Create Converter struct
+- [x] 12. Implement Converter module
+  - [x] 12.1 Create Converter struct
     - Implement hardware acceleration detection (NVENC, QSV, Software)
     - Implement ffmpeg command construction with x265/HEVC codec
     - Implement CRF value configuration (24-26)
@@ -204,27 +204,27 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Implement failed output deletion and original preservation on failure
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 11.6_
   
-  - [ ] 12.2 Write property test for codec usage
+  - [x] 12.2 Write property test for codec usage
     - **Property 18: FFmpeg Codec Usage**
     - **Validates: Requirements 7.1**
   
-  - [ ] 12.3 Write property test for CRF value range
+  - [x] 12.3 Write property test for CRF value range
     - **Property 19: CRF Value Range**
     - **Validates: Requirements 7.2**
   
-  - [ ] 12.4 Write property test for hardware acceleration selection
+  - [x] 12.4 Write property test for hardware acceleration selection
     - **Property 20: Hardware Acceleration Selection**
     - **Validates: Requirements 7.3, 11.6**
   
-  - [ ] 12.5 Write property test for conversion success cleanup
+  - [x] 12.5 Write property test for conversion success cleanup
     - **Property 21: Conversion Success Cleanup**
     - **Validates: Requirements 7.4**
   
-  - [ ] 12.6 Write property test for conversion failure preservation
+  - [x] 12.6 Write property test for conversion failure preservation
     - **Property 22: Conversion Failure Preservation**
     - **Validates: Requirements 7.5, 7.6**
   
-  - [ ] 12.7 Write unit tests for converter
+  - [x] 12.7 Write unit tests for converter
     - Test ffmpeg command construction for different hardware
     - Test CRF value validation
     - Test file cleanup scenarios
