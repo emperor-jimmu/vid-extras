@@ -228,10 +228,10 @@ impl ArchiveOrgDiscoverer {
     }
 
     /// Build Archive.org search query for a movie
-    fn build_query(title: &str) -> String {
+    fn build_query(title: &str, year: u16) -> String {
         format!(
-            "title:\"{}\" AND (subject:\"EPK\" OR subject:\"Making of\")",
-            title
+            "title:\"{}\" AND year:{} AND (subject:\"EPK\" OR subject:\"Making of\")",
+            title, year
         )
     }
 
@@ -253,8 +253,8 @@ impl ArchiveOrgDiscoverer {
     }
 
     /// Search Archive.org for a movie
-    async fn search(&self, title: &str) -> Result<Vec<ArchiveOrgDoc>, DiscoveryError> {
-        let query = Self::build_query(title);
+    async fn search(&self, title: &str, year: u16) -> Result<Vec<ArchiveOrgDoc>, DiscoveryError> {
+        let query = Self::build_query(title, year);
         let url = format!(
             "https://archive.org/advancedsearch.php?q={}&fl[]=identifier&fl[]=title&fl[]=subject&rows=10&output=json",
             urlencoding::encode(&query)
@@ -303,7 +303,7 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
         info!("Discovering Archive.org content for: {}", movie);
 
         // Search for the movie
-        let docs = match self.search(&movie.title).await {
+        let docs = match self.search(&movie.title, movie.year).await {
             Ok(d) => d,
             Err(e) => {
                 error!("Archive.org search failed for {}: {}", movie, e);
@@ -390,6 +390,24 @@ impl YoutubeDiscoverer {
             .any(|keyword| title_lower.contains(&keyword.to_lowercase()))
     }
 
+    /// Check if video title mentions a different year (potential sequel/different movie)
+    fn mentions_different_year(title: &str, expected_year: u16) -> bool {
+        // Look for 4-digit years in the title
+        let year_regex = regex::Regex::new(r"\b(19\d{2}|20\d{2})\b").unwrap();
+
+        for capture in year_regex.captures_iter(title) {
+            if let Some(year_str) = capture.get(1)
+                && let Ok(found_year) = year_str.as_str().parse::<u16>()
+            {
+                // If we find a different year, this might be about a sequel or different movie
+                if found_year != expected_year {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Check if duration is within acceptable range (30s - 20min)
     fn is_duration_valid(duration_secs: u32) -> bool {
         (30..=1200).contains(&duration_secs) // 20 minutes = 1200 seconds
@@ -408,7 +426,13 @@ impl YoutubeDiscoverer {
     }
 
     /// Filter a video based on all criteria
-    fn should_include_video(title: &str, duration_secs: u32, width: u32, height: u32) -> bool {
+    fn should_include_video(
+        title: &str,
+        duration_secs: u32,
+        width: u32,
+        height: u32,
+        expected_year: u16,
+    ) -> bool {
         // Check duration range
         if !Self::is_duration_valid(duration_secs) {
             debug!(
@@ -421,6 +445,15 @@ impl YoutubeDiscoverer {
         // Check for excluded keywords
         if Self::contains_excluded_keywords(title) {
             debug!("Excluding video '{}' - contains excluded keyword", title);
+            return false;
+        }
+
+        // Check if it mentions a different year (potential sequel)
+        if Self::mentions_different_year(title, expected_year) {
+            debug!(
+                "Excluding video '{}' - mentions different year (potential sequel)",
+                title
+            );
             return false;
         }
 
@@ -438,6 +471,7 @@ impl YoutubeDiscoverer {
         &self,
         query: &str,
         category: ContentCategory,
+        expected_year: u16,
     ) -> Result<Vec<VideoSource>, DiscoveryError> {
         // Use yt-dlp with ytsearch5 to get top 5 results
         let search_query = format!("ytsearch5:{}", query);
@@ -485,7 +519,7 @@ impl YoutubeDiscoverer {
                     let height = json["height"].as_u64().unwrap_or(1080) as u32;
 
                     // Apply filtering
-                    if Self::should_include_video(&title, duration, width, height) {
+                    if Self::should_include_video(&title, duration, width, height, expected_year) {
                         sources.push(VideoSource {
                             url,
                             source_type: SourceType::YouTube,
@@ -514,7 +548,7 @@ impl ContentDiscoverer for YoutubeDiscoverer {
         let mut all_sources = Vec::new();
 
         for (query, category) in queries {
-            match self.search_youtube(&query, category).await {
+            match self.search_youtube(&query, category, movie.year).await {
                 Ok(mut sources) => {
                     info!(
                         "Found {} YouTube videos for query: {}",
@@ -700,15 +734,24 @@ mod property_tests {
     proptest! {
         #[test]
         fn prop_archive_org_query_construction(
-            title in "[a-zA-Z0-9 ]{1,50}"
+            title in "[a-zA-Z0-9 ]{1,50}",
+            year in 1900u16..2100u16
         ) {
-            let query = ArchiveOrgDiscoverer::build_query(&title);
+            let query = ArchiveOrgDiscoverer::build_query(&title, year);
 
             // Query must contain the title in quotes
             prop_assert!(
                 query.contains(&format!("title:\"{}\"", title)),
                 "Query should contain title:\"{}\", got: {}",
                 title,
+                query
+            );
+
+            // Query must contain year
+            prop_assert!(
+                query.contains(&format!("year:{}", year)),
+                "Query should contain year:{}, got: {}",
+                year,
                 query
             );
 
@@ -1253,18 +1296,19 @@ mod unit_tests {
     #[test]
     fn test_archive_org_query_string_formatting() {
         // Test query construction with simple title
-        let query = ArchiveOrgDiscoverer::build_query("The Matrix");
+        let query = ArchiveOrgDiscoverer::build_query("The Matrix", 1999);
         assert_eq!(
             query,
-            "title:\"The Matrix\" AND (subject:\"EPK\" OR subject:\"Making of\")"
+            "title:\"The Matrix\" AND year:1999 AND (subject:\"EPK\" OR subject:\"Making of\")"
         );
     }
 
     #[test]
     fn test_archive_org_query_with_special_characters() {
         // Test query construction with special characters
-        let query = ArchiveOrgDiscoverer::build_query("Movie: The Sequel");
+        let query = ArchiveOrgDiscoverer::build_query("Movie: The Sequel", 2010);
         assert!(query.contains("title:\"Movie: The Sequel\""));
+        assert!(query.contains("year:2010"));
         assert!(query.contains("subject:\"EPK\""));
         assert!(query.contains("subject:\"Making of\""));
     }
@@ -1564,7 +1608,6 @@ mod unit_tests {
         assert!(YoutubeDiscoverer::contains_excluded_keywords("ReViEw"));
     }
 
-
     #[test]
     fn test_youtube_duration_valid_range() {
         // Test valid durations (30s - 1200s)
@@ -1627,13 +1670,15 @@ mod unit_tests {
             "Official Trailer",
             120,
             1920,
-            1080
+            1080,
+            2007
         ));
         assert!(YoutubeDiscoverer::should_include_video(
             "Behind the Scenes",
             300,
             1920,
-            1080
+            1080,
+            2007
         ));
     }
 
@@ -1644,13 +1689,15 @@ mod unit_tests {
             "Official Trailer",
             20,
             1920,
-            1080
+            1080,
+            2007
         )); // Too short
         assert!(!YoutubeDiscoverer::should_include_video(
             "Behind the Scenes",
             1500,
             1920,
-            1080
+            1080,
+            2007
         )); // Too long
     }
 
@@ -1661,13 +1708,15 @@ mod unit_tests {
             "Movie Review",
             120,
             1920,
-            1080
+            1080,
+            2007
         ));
         assert!(!YoutubeDiscoverer::should_include_video(
             "Ending Explained",
             300,
             1920,
-            1080
+            1080,
+            2007
         ));
     }
 
@@ -1678,7 +1727,8 @@ mod unit_tests {
             "Quick Clip",
             45,
             1080,
-            1920
+            1920,
+            2007
         )); // Vertical, under 60s
     }
 
@@ -1689,7 +1739,52 @@ mod unit_tests {
             "Movie Review",
             20,
             1080,
-            1920
+            1920,
+            2007
         )); // Keyword + duration + Short
+    }
+
+    #[test]
+    fn test_youtube_year_filtering_same_year() {
+        // Video with same year should be included
+        assert!(YoutubeDiscoverer::should_include_video(
+            "REC (2007) Behind the Scenes",
+            300,
+            1920,
+            1080,
+            2007
+        ));
+    }
+
+    #[test]
+    fn test_youtube_year_filtering_different_year() {
+        // Video mentioning a different year (sequel) should be excluded
+        assert!(!YoutubeDiscoverer::should_include_video(
+            "REC 2 (2009) Fighting Scene",
+            300,
+            1920,
+            1080,
+            2007
+        ));
+    }
+
+    #[test]
+    fn test_youtube_year_filtering_no_year() {
+        // Video without year should be included
+        assert!(YoutubeDiscoverer::should_include_video(
+            "Behind the Scenes Featurette",
+            300,
+            1920,
+            1080,
+            2007
+        ));
+    }
+
+    #[test]
+    fn test_archive_org_query_includes_year() {
+        // Archive.org query should include year to filter results
+        let query = ArchiveOrgDiscoverer::build_query("REC", 2007);
+        assert!(query.contains("year:2007"));
+        assert!(query.contains("title:\"REC\""));
     }
 }

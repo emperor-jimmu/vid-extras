@@ -498,7 +498,14 @@ mod tests {
     #[test]
     fn test_orchestrator_new_validates_root_dir() {
         let nonexistent = PathBuf::from("/nonexistent/path/that/does/not/exist");
-        let result = Orchestrator::new(nonexistent, "fake_api_key".to_string(), SourceMode::All, false, 2, false);
+        let result = Orchestrator::new(
+            nonexistent,
+            "fake_api_key".to_string(),
+            SourceMode::All,
+            false,
+            2,
+            false,
+        );
 
         assert!(result.is_err());
     }
@@ -519,7 +526,14 @@ mod tests {
             .unwrap();
 
         // Create orchestrator with custom temp_base
-        let mut orchestrator = Orchestrator::new(root_dir, "fake_api_key".to_string(), SourceMode::All, false, 1, false)
+        let mut orchestrator = Orchestrator::new(
+            root_dir,
+            "fake_api_key".to_string(),
+            SourceMode::All,
+            false,
+            1,
+            false,
+        )
         .unwrap();
 
         // Override temp_base for testing
@@ -539,7 +553,14 @@ mod tests {
         let root_dir = temp_root.path().join("movies");
         tokio::fs::create_dir(&root_dir).await.unwrap();
 
-        let orchestrator = Orchestrator::new(root_dir, "fake_api_key".to_string(), SourceMode::All, false, 1, false)
+        let orchestrator = Orchestrator::new(
+            root_dir,
+            "fake_api_key".to_string(),
+            SourceMode::All,
+            false,
+            1,
+            false,
+        )
         .unwrap();
 
         let summary = orchestrator.run().await.unwrap();
@@ -564,11 +585,25 @@ mod tests {
         }
 
         // Test sequential processing (concurrency = 1)
-        let orchestrator_seq = Orchestrator::new(root_dir.clone(), "fake_api_key".to_string(), SourceMode::YoutubeOnly, false, 1, false)
+        let orchestrator_seq = Orchestrator::new(
+            root_dir.clone(),
+            "fake_api_key".to_string(),
+            SourceMode::YoutubeOnly,
+            false,
+            1,
+            false,
+        )
         .unwrap();
 
         // Test parallel processing (concurrency = 2)
-        let orchestrator_par = Orchestrator::new(root_dir, "fake_api_key".to_string(), SourceMode::YoutubeOnly, false, 2, false)
+        let orchestrator_par = Orchestrator::new(
+            root_dir,
+            "fake_api_key".to_string(),
+            SourceMode::YoutubeOnly,
+            false,
+            2,
+            false,
+        )
         .unwrap();
 
         // Both should find the same number of movies
@@ -588,7 +623,14 @@ mod tests {
         let temp_base = temp_root.path().join("tmp_downloads");
 
         {
-            let mut orchestrator = Orchestrator::new(root_dir, "fake_api_key".to_string(), SourceMode::All, false, 1, false)
+            let mut orchestrator = Orchestrator::new(
+                root_dir,
+                "fake_api_key".to_string(),
+                SourceMode::All,
+                false,
+                1,
+                false,
+            )
             .unwrap();
 
             // Override temp_base for testing
@@ -700,14 +742,28 @@ mod tests {
             .unwrap();
 
         // Without force flag - should skip movie2
-        let orchestrator = Orchestrator::new(root_dir.clone(), "fake_api_key".to_string(), SourceMode::YoutubeOnly, false, 1, false)
+        let orchestrator = Orchestrator::new(
+            root_dir.clone(),
+            "fake_api_key".to_string(),
+            SourceMode::YoutubeOnly,
+            false,
+            1,
+            false,
+        )
         .unwrap();
 
         let movies = orchestrator.scanner.scan().unwrap();
         assert_eq!(movies.len(), 1); // Only movie1 should be found
 
         // With force flag - should process both
-        let orchestrator_force = Orchestrator::new(root_dir, "fake_api_key".to_string(), SourceMode::YoutubeOnly, true, 1, false)
+        let orchestrator_force = Orchestrator::new(
+            root_dir,
+            "fake_api_key".to_string(),
+            SourceMode::YoutubeOnly,
+            true,
+            1,
+            false,
+        )
         .unwrap();
 
         let movies_force = orchestrator_force.scanner.scan().unwrap();
@@ -971,4 +1027,3 @@ mod property_tests {
         }
     }
 }
-

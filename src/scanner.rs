@@ -19,7 +19,11 @@ pub struct Scanner {
 impl Scanner {
     /// Create a new Scanner instance
     pub fn new(root_dir: PathBuf, force: bool, single: bool) -> Self {
-        Self { root_dir, force, single }
+        Self {
+            root_dir,
+            force,
+            single,
+        }
     }
 
     /// Scan the root directory and return a list of movies to process
@@ -53,7 +57,8 @@ impl Scanner {
         }
 
         // Try to parse the folder name
-        let folder_name = self.root_dir
+        let folder_name = self
+            .root_dir
             .file_name()
             .and_then(|n| n.to_str())
             .ok_or_else(|| {
@@ -78,7 +83,10 @@ impl Scanner {
 
         // Skip if done marker exists and force flag is not set
         if has_done_marker && !self.force {
-            log::info!("Skipping {} (done marker found, use --force to reprocess)", folder_name);
+            log::info!(
+                "Skipping {} (done marker found, use --force to reprocess)",
+                folder_name
+            );
             return Ok(Vec::new());
         }
 
@@ -601,4 +609,3 @@ mod property_tests {
         }
     }
 }
-

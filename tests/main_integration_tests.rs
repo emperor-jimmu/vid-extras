@@ -399,7 +399,8 @@ async fn test_complete_execution_flow() {
         use extras_fetcher::models::SourceMode;
         use extras_fetcher::orchestrator::Orchestrator;
 
-        let orchestrator = Orchestrator::new(root, api_key, SourceMode::YoutubeOnly, false, 1, false);
+        let orchestrator =
+            Orchestrator::new(root, api_key, SourceMode::YoutubeOnly, false, 1, false);
 
         // Orchestrator creation should succeed
         assert!(orchestrator.is_ok());
@@ -821,4 +822,3 @@ async fn test_idempotency_invalid_done_markers() {
         "Should not find Movie 1 (valid marker)"
     );
 }
-

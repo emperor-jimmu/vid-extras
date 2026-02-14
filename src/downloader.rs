@@ -148,7 +148,11 @@ impl Downloader {
                 } else {
                     // yt-dlp failed
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    let error_msg = format!("yt-dlp failed with exit code: {:?}: {}", output.status, stderr.trim());
+                    let error_msg = format!(
+                        "yt-dlp failed with exit code: {:?}: {}",
+                        output.status,
+                        stderr.trim()
+                    );
                     error!("{} for URL: {}", error_msg, source.url);
 
                     // Clean up any partial files
