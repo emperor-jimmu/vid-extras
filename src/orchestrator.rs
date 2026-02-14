@@ -38,7 +38,7 @@ impl Orchestrator {
     #[allow(dead_code)]
     pub fn new(config: CliConfig) -> Result<Self, OrchestratorError> {
         let scanner = Scanner::new(config.root_directory.clone(), config.force);
-        
+
         Ok(Self { config, scanner })
     }
 }

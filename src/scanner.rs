@@ -94,9 +94,9 @@ impl Scanner {
         // Regex pattern: ^(.+?)\s*\((\d{4})\)$
         // Captures: title (non-greedy) and 4-digit year
         let re = Regex::new(r"^(.+?)\s*\((\d{4})\)$").ok()?;
-        
+
         let caps = re.captures(name)?;
-        
+
         let title = caps.get(1)?.as_str().trim().to_string();
         let year_str = caps.get(2)?.as_str();
         let year = year_str.parse::<u16>().ok()?;
@@ -112,7 +112,7 @@ impl Scanner {
     /// Check if a done marker file exists in the given directory
     fn check_done_marker(path: &Path) -> bool {
         let marker_path = path.join(DONE_MARKER_FILENAME);
-        
+
         if !marker_path.exists() {
             return false;
         }
@@ -138,12 +138,12 @@ mod tests {
             Scanner::parse_folder_name("The Matrix (1999)"),
             Some(("The Matrix".to_string(), 1999))
         );
-        
+
         assert_eq!(
             Scanner::parse_folder_name("Inception (2010)"),
             Some(("Inception".to_string(), 2010))
         );
-        
+
         // With extra spaces
         assert_eq!(
             Scanner::parse_folder_name("The Dark Knight  (2008)"),
@@ -155,17 +155,17 @@ mod tests {
     fn test_parse_folder_name_invalid() {
         // No year
         assert_eq!(Scanner::parse_folder_name("No Year Here"), None);
-        
+
         // Only year
         assert_eq!(Scanner::parse_folder_name("(2020)"), None);
-        
+
         // Invalid year format
         assert_eq!(Scanner::parse_folder_name("Movie (abcd)"), None);
-        
+
         // Year with wrong number of digits
         assert_eq!(Scanner::parse_folder_name("Movie (20)"), None);
         assert_eq!(Scanner::parse_folder_name("Movie (20200)"), None);
-        
+
         // Empty string
         assert_eq!(Scanner::parse_folder_name(""), None);
     }
@@ -177,30 +177,33 @@ mod tests {
             Scanner::parse_folder_name("Movie (Part 1) (2020)"),
             Some(("Movie (Part 1)".to_string(), 2020))
         );
-        
+
         // Title with numbers
         assert_eq!(
             Scanner::parse_folder_name("2001: A Space Odyssey (1968)"),
             Some(("2001: A Space Odyssey".to_string(), 1968))
         );
-        
+
         // Title with special characters
         assert_eq!(
             Scanner::parse_folder_name("The Lord of the Rings: The Fellowship of the Ring (2001)"),
-            Some(("The Lord of the Rings: The Fellowship of the Ring".to_string(), 2001))
+            Some((
+                "The Lord of the Rings: The Fellowship of the Ring".to_string(),
+                2001
+            ))
         );
     }
 
     #[test]
     fn test_scan_empty_directory() {
         use tempfile::TempDir;
-        
+
         // Create an empty temporary directory
         let temp_dir = TempDir::new().unwrap();
-        
+
         let scanner = Scanner::new(temp_dir.path().to_path_buf(), false);
         let movies = scanner.scan().unwrap();
-        
+
         // Should return empty list
         assert_eq!(movies.len(), 0);
     }
@@ -209,32 +212,32 @@ mod tests {
     fn test_scan_nested_directory_structure() {
         use std::fs;
         use tempfile::TempDir;
-        
+
         // Create nested directory structure
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create movies at different nesting levels
         let movie1_path = temp_dir.path().join("The Matrix (1999)");
         fs::create_dir(&movie1_path).unwrap();
-        
+
         let subdir = temp_dir.path().join("Action");
         fs::create_dir(&subdir).unwrap();
-        
+
         let movie2_path = subdir.join("Inception (2010)");
         fs::create_dir(&movie2_path).unwrap();
-        
+
         let subsubdir = subdir.join("SciFi");
         fs::create_dir(&subsubdir).unwrap();
-        
+
         let movie3_path = subsubdir.join("Interstellar (2014)");
         fs::create_dir(&movie3_path).unwrap();
-        
+
         let scanner = Scanner::new(temp_dir.path().to_path_buf(), false);
         let movies = scanner.scan().unwrap();
-        
+
         // Should find all 3 movies regardless of nesting
         assert_eq!(movies.len(), 3);
-        
+
         let titles: Vec<&str> = movies.iter().map(|m| m.title.as_str()).collect();
         assert!(titles.contains(&"The Matrix"));
         assert!(titles.contains(&"Inception"));
@@ -245,20 +248,20 @@ mod tests {
     fn test_scan_invalid_folder_names() {
         use std::fs;
         use tempfile::TempDir;
-        
+
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create directories with invalid movie folder names
         fs::create_dir(temp_dir.path().join("Not a Movie")).unwrap();
         fs::create_dir(temp_dir.path().join("(2020)")).unwrap();
         fs::create_dir(temp_dir.path().join("Movie (abcd)")).unwrap();
-        
+
         // Create one valid movie folder
         fs::create_dir(temp_dir.path().join("Valid Movie (2020)")).unwrap();
-        
+
         let scanner = Scanner::new(temp_dir.path().to_path_buf(), false);
         let movies = scanner.scan().unwrap();
-        
+
         // Should only find the valid movie
         assert_eq!(movies.len(), 1);
         assert_eq!(movies[0].title, "Valid Movie");
@@ -269,18 +272,18 @@ mod tests {
     fn test_scan_with_invalid_done_marker() {
         use std::fs;
         use tempfile::TempDir;
-        
+
         let temp_dir = TempDir::new().unwrap();
         let movie_path = temp_dir.path().join("Test Movie (2020)");
         fs::create_dir(&movie_path).unwrap();
-        
+
         // Create an invalid done marker (not valid JSON)
         let marker_path = movie_path.join("done.ext");
         fs::write(&marker_path, "invalid json content").unwrap();
-        
+
         let scanner = Scanner::new(temp_dir.path().to_path_buf(), false);
         let movies = scanner.scan().unwrap();
-        
+
         // Should include the movie since done marker is invalid
         assert_eq!(movies.len(), 1);
         assert_eq!(movies[0].title, "Test Movie");
@@ -290,12 +293,12 @@ mod tests {
     #[test]
     fn test_scan_nonexistent_directory() {
         use std::path::PathBuf;
-        
+
         let nonexistent = PathBuf::from("/nonexistent/path/that/does/not/exist");
         let scanner = Scanner::new(nonexistent, false);
-        
+
         let result = scanner.scan();
-        
+
         // Should return an error
         assert!(result.is_err());
     }
@@ -304,14 +307,14 @@ mod tests {
     fn test_scan_file_instead_of_directory() {
         use std::fs;
         use tempfile::TempDir;
-        
+
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("not_a_directory.txt");
         fs::write(&file_path, "test content").unwrap();
-        
+
         let scanner = Scanner::new(file_path, false);
         let result = scanner.scan();
-        
+
         // Should return an error
         assert!(result.is_err());
     }
@@ -320,9 +323,9 @@ mod tests {
     fn test_check_done_marker_with_valid_marker() {
         use std::fs;
         use tempfile::TempDir;
-        
+
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create a valid done marker
         let done_marker = DoneMarker {
             finished_at: "2024-01-15T10:30:00Z".to_string(),
@@ -331,7 +334,7 @@ mod tests {
         let marker_json = serde_json::to_string(&done_marker).unwrap();
         let marker_path = temp_dir.path().join("done.ext");
         fs::write(&marker_path, marker_json).unwrap();
-        
+
         // Check if done marker exists
         assert!(Scanner::check_done_marker(temp_dir.path()));
     }
@@ -339,9 +342,9 @@ mod tests {
     #[test]
     fn test_check_done_marker_without_marker() {
         use tempfile::TempDir;
-        
+
         let temp_dir = TempDir::new().unwrap();
-        
+
         // No done marker file
         assert!(!Scanner::check_done_marker(temp_dir.path()));
     }
@@ -364,23 +367,23 @@ mod property_tests {
         ) {
             // Trim the title to avoid leading/trailing spaces
             let title_trimmed = title.trim();
-            
+
             // Skip empty titles (invalid case)
             if title_trimmed.is_empty() {
                 return Ok(());
             }
-            
+
             // Construct a folder name in the expected format
             let folder_name = format!("{} ({})", title_trimmed, year);
-            
+
             // Parse the folder name
             let parsed = Scanner::parse_folder_name(&folder_name);
-            
+
             // Should successfully parse
             prop_assert!(parsed.is_some(), "Failed to parse valid folder name: {}", folder_name);
-            
+
             let (parsed_title, parsed_year) = parsed.unwrap();
-            
+
             // Extracted title should match (after trimming)
             prop_assert_eq!(
                 &parsed_title,
@@ -388,7 +391,7 @@ mod property_tests {
                 "Title mismatch for folder: {}",
                 folder_name
             );
-            
+
             // Extracted year should match exactly
             prop_assert_eq!(
                 parsed_year,
@@ -396,7 +399,7 @@ mod property_tests {
                 "Year mismatch for folder: {}",
                 folder_name
             );
-            
+
             // Round-trip: reconstructing the folder name should produce a parseable result
             let reconstructed = format!("{} ({})", parsed_title, parsed_year);
             let reparsed = Scanner::parse_folder_name(&reconstructed);
@@ -421,18 +424,18 @@ mod property_tests {
         ) {
             use std::fs;
             use tempfile::TempDir;
-            
+
             let title_trimmed = title.trim();
             if title_trimmed.is_empty() {
                 return Ok(());
             }
-            
+
             // Create a temporary directory structure
             let temp_root = TempDir::new().unwrap();
             let movie_folder_name = format!("{} ({})", title_trimmed, year);
             let movie_path = temp_root.path().join(&movie_folder_name);
             fs::create_dir(&movie_path).unwrap();
-            
+
             // Create a valid done marker
             let done_marker = DoneMarker {
                 finished_at: "2024-01-15T10:30:00Z".to_string(),
@@ -441,13 +444,13 @@ mod property_tests {
             let marker_json = serde_json::to_string(&done_marker).unwrap();
             let marker_path = movie_path.join("done.ext");
             fs::write(&marker_path, marker_json).unwrap();
-            
+
             // Create scanner with the force flag
             let scanner = Scanner::new(temp_root.path().to_path_buf(), force_flag);
-            
+
             // Scan the directory
             let movies = scanner.scan().unwrap();
-            
+
             if force_flag {
                 // With force flag, the movie should be included even with done marker
                 prop_assert_eq!(
@@ -481,14 +484,14 @@ mod property_tests {
         ) {
             use std::fs;
             use tempfile::TempDir;
-            
+
             // Create a temporary directory structure
             let temp_root = TempDir::new().unwrap();
             let mut expected_movies = Vec::new();
-            
+
             // Create nested directory structure with movies at various levels
             let mut current_path = temp_root.path().to_path_buf();
-            
+
             for level in 0..depth {
                 // Create movies at this level
                 for i in 0..movies_per_level {
@@ -497,10 +500,10 @@ mod property_tests {
                     let movie_folder = format!("{} ({})", title, year);
                     let movie_path = current_path.join(&movie_folder);
                     fs::create_dir(&movie_path).unwrap();
-                    
+
                     expected_movies.push((title.clone(), year));
                 }
-                
+
                 // Create a subdirectory for the next level
                 if level < depth - 1 {
                     let subdir = format!("Level{}", level + 1);
@@ -508,18 +511,18 @@ mod property_tests {
                     fs::create_dir(&current_path).unwrap();
                 }
             }
-            
+
             // Scan the directory
             let scanner = Scanner::new(temp_root.path().to_path_buf(), false);
             let movies = scanner.scan().unwrap();
-            
+
             // All movies should be discovered
             prop_assert_eq!(
                 movies.len(),
                 expected_movies.len(),
                 "Scanner should discover all movies at all nesting levels"
             );
-            
+
             // Verify each expected movie was found
             for (expected_title, expected_year) in &expected_movies {
                 let found = movies.iter().any(|m| {

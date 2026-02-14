@@ -1,8 +1,8 @@
 // Downloader module - handles video downloads using yt-dlp
 
-use crate::models::VideoSource;
 #[allow(unused_imports)]
 use crate::error::DownloadError;
+use crate::models::VideoSource;
 use std::path::PathBuf;
 
 /// Result of a download operation

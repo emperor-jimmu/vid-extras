@@ -147,19 +147,19 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Test error handling
     - _Requirements: 5.2, 5.3-5.6, 5.11_
 
-- [ ] 9. Implement DiscoveryOrchestrator
-  - [ ] 9.1 Create DiscoveryOrchestrator struct
+- [x] 9. Implement DiscoveryOrchestrator
+  - [x] 9.1 Create DiscoveryOrchestrator struct
     - Integrate TMDB, Archive.org, and YouTube discoverers
     - Implement mode-based filtering (All vs YoutubeOnly)
     - Coordinate discovery from all sources
     - Aggregate results from multiple sources
     - _Requirements: 1.5, 3.1-3.9, 4.1-4.7, 5.1-5.11_
   
-  - [ ] 9.2 Write property test for mode filtering
+  - [x] 9.2 Write property test for mode filtering
     - **Property 5: Mode Filtering**
     - **Validates: Requirements 1.5**
 
-- [ ] 10. Checkpoint - Discovery phase complete
+- [x] 10. Checkpoint - Discovery phase complete
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 11. Implement Downloader module

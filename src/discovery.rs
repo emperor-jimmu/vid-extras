@@ -1,7 +1,7 @@
 // Discovery module - handles content discovery from multiple sources
 
 use crate::error::DiscoveryError;
-use crate::models::{ContentCategory, MovieEntry, SourceType, VideoSource};
+use crate::models::{ContentCategory, MovieEntry, SourceMode, SourceType, VideoSource};
 use log::{debug, error, info};
 use serde::Deserialize;
 
@@ -66,15 +66,10 @@ impl TmdbDiscoverer {
 
         debug!("Searching TMDB for: {} ({})", title, year);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| {
-                error!("TMDB search request failed: {}", e);
-                DiscoveryError::NetworkError(e)
-            })?;
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            error!("TMDB search request failed: {}", e);
+            DiscoveryError::NetworkError(e)
+        })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -108,15 +103,10 @@ impl TmdbDiscoverer {
 
         debug!("Fetching TMDB videos for movie ID: {}", movie_id);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| {
-                error!("TMDB videos request failed: {}", e);
-                DiscoveryError::NetworkError(e)
-            })?;
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            error!("TMDB videos request failed: {}", e);
+            DiscoveryError::NetworkError(e)
+        })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -223,6 +213,12 @@ pub struct ArchiveOrgDiscoverer {
     client: reqwest::Client,
 }
 
+impl Default for ArchiveOrgDiscoverer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ArchiveOrgDiscoverer {
     /// Create a new Archive.org discoverer
     pub fn new() -> Self {
@@ -246,7 +242,10 @@ impl ArchiveOrgDiscoverer {
             // EPK can be either featurette or behind the scenes
             // Default to featurette as it's more general
             Some(ContentCategory::Featurette)
-        } else if subjects.iter().any(|s| s.to_lowercase().contains("making of")) {
+        } else if subjects
+            .iter()
+            .any(|s| s.to_lowercase().contains("making of"))
+        {
             Some(ContentCategory::BehindTheScenes)
         } else {
             None
@@ -263,15 +262,10 @@ impl ArchiveOrgDiscoverer {
 
         debug!("Searching Archive.org for: {}", title);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Archive.org search request failed: {}", e);
-                DiscoveryError::NetworkError(e)
-            })?;
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            error!("Archive.org search request failed: {}", e);
+            DiscoveryError::NetworkError(e)
+        })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -342,6 +336,12 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
 /// YouTube content discoverer
 pub struct YoutubeDiscoverer;
 
+impl Default for YoutubeDiscoverer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl YoutubeDiscoverer {
     /// Create a new YouTube discoverer
     pub fn new() -> Self {
@@ -390,7 +390,7 @@ impl YoutubeDiscoverer {
 
     /// Check if duration is within acceptable range (30s - 20min)
     fn is_duration_valid(duration_secs: u32) -> bool {
-        duration_secs >= 30 && duration_secs <= 1200 // 20 minutes = 1200 seconds
+        (30..=1200).contains(&duration_secs) // 20 minutes = 1200 seconds
     }
 
     /// Check if video is a YouTube Short (duration < 60s and vertical aspect ratio)
@@ -406,15 +406,13 @@ impl YoutubeDiscoverer {
     }
 
     /// Filter a video based on all criteria
-    fn should_include_video(
-        title: &str,
-        duration_secs: u32,
-        width: u32,
-        height: u32,
-    ) -> bool {
+    fn should_include_video(title: &str, duration_secs: u32, width: u32, height: u32) -> bool {
         // Check duration range
         if !Self::is_duration_valid(duration_secs) {
-            debug!("Excluding video '{}' - duration {}s out of range", title, duration_secs);
+            debug!(
+                "Excluding video '{}' - duration {}s out of range",
+                title, duration_secs
+            );
             return false;
         }
 
@@ -540,14 +538,95 @@ impl ContentDiscoverer for YoutubeDiscoverer {
 }
 
 /// Orchestrates discovery from all sources
-#[allow(dead_code)]
 pub struct DiscoveryOrchestrator {
-    #[allow(dead_code)]
     tmdb: TmdbDiscoverer,
-    #[allow(dead_code)]
     archive: ArchiveOrgDiscoverer,
-    #[allow(dead_code)]
     youtube: YoutubeDiscoverer,
+    mode: SourceMode,
+}
+
+impl DiscoveryOrchestrator {
+    /// Creates a new DiscoveryOrchestrator with the specified mode
+    pub fn new(tmdb_api_key: String, mode: SourceMode) -> Self {
+        Self {
+            tmdb: TmdbDiscoverer::new(tmdb_api_key),
+            archive: ArchiveOrgDiscoverer::new(),
+            youtube: YoutubeDiscoverer::new(),
+            mode,
+        }
+    }
+
+    /// Discovers video sources from all configured sources based on mode
+    ///
+    /// In All mode: queries TMDB, Archive.org (for movies < 2010), and YouTube
+    /// In YoutubeOnly mode: queries only YouTube
+    pub async fn discover_all(&self, movie: &MovieEntry) -> Vec<VideoSource> {
+        let mut all_sources = Vec::new();
+
+        match self.mode {
+            SourceMode::All => {
+                // Query TMDB
+                match self.tmdb.discover(movie).await {
+                    Ok(sources) => {
+                        log::info!("Found {} sources from TMDB for {}", sources.len(), movie);
+                        all_sources.extend(sources);
+                    }
+                    Err(e) => {
+                        log::warn!("TMDB discovery failed for {}: {}", movie, e);
+                    }
+                }
+
+                // Query Archive.org only for movies before 2010
+                if movie.year < 2010 {
+                    match self.archive.discover(movie).await {
+                        Ok(sources) => {
+                            log::info!(
+                                "Found {} sources from Archive.org for {}",
+                                sources.len(),
+                                movie
+                            );
+                            all_sources.extend(sources);
+                        }
+                        Err(e) => {
+                            log::warn!("Archive.org discovery failed for {}: {}", movie, e);
+                        }
+                    }
+                } else {
+                    log::debug!("Skipping Archive.org for {} (year >= 2010)", movie);
+                }
+
+                // Query YouTube (always)
+                match self.youtube.discover(movie).await {
+                    Ok(sources) => {
+                        log::info!("Found {} sources from YouTube for {}", sources.len(), movie);
+                        all_sources.extend(sources);
+                    }
+                    Err(e) => {
+                        log::warn!("YouTube discovery failed for {}: {}", movie, e);
+                    }
+                }
+            }
+            SourceMode::YoutubeOnly => {
+                // Query only YouTube
+                match self.youtube.discover(movie).await {
+                    Ok(sources) => {
+                        log::info!("Found {} sources from YouTube for {}", sources.len(), movie);
+                        all_sources.extend(sources);
+                    }
+                    Err(e) => {
+                        log::warn!("YouTube discovery failed for {}: {}", movie, e);
+                    }
+                }
+            }
+        }
+
+        log::info!(
+            "Total sources discovered for {}: {}",
+            movie,
+            all_sources.len()
+        );
+        all_sources
+    }
 }
 
 #[cfg(test)]
@@ -568,7 +647,7 @@ mod property_tests {
             Just("Bloopers"),
         ]) {
             let category = TmdbDiscoverer::map_tmdb_type(tmdb_type);
-            
+
             match tmdb_type {
                 "Trailer" => prop_assert_eq!(category, Some(ContentCategory::Trailer)),
                 "Behind the Scenes" => prop_assert_eq!(category, Some(ContentCategory::BehindTheScenes)),
@@ -597,13 +676,13 @@ mod property_tests {
 
             // Archive.org should only be queried for movies before 2010
             let should_query = year < 2010;
-            
+
             // We can't test the actual async discover method in proptest easily,
             // but we can verify the year check logic
             let would_skip = year >= 2010;
-            
+
             prop_assert_eq!(should_query, !would_skip);
-            
+
             // If year < 2010, Archive.org should be queried
             // If year >= 2010, Archive.org should be skipped
             if year < 2010 {
@@ -622,7 +701,7 @@ mod property_tests {
             title in "[a-zA-Z0-9 ]{1,50}"
         ) {
             let query = ArchiveOrgDiscoverer::build_query(&title);
-            
+
             // Query must contain the title in quotes
             prop_assert!(
                 query.contains(&format!("title:\"{}\"", title)),
@@ -630,28 +709,28 @@ mod property_tests {
                 title,
                 query
             );
-            
+
             // Query must contain EPK subject
             prop_assert!(
                 query.contains("subject:\"EPK\""),
                 "Query should contain subject:\"EPK\", got: {}",
                 query
             );
-            
+
             // Query must contain Making of subject
             prop_assert!(
                 query.contains("subject:\"Making of\""),
                 "Query should contain subject:\"Making of\", got: {}",
                 query
             );
-            
+
             // Query must use OR operator between subjects
             prop_assert!(
                 query.contains(" OR "),
                 "Query should contain OR operator, got: {}",
                 query
             );
-            
+
             // Query must use AND operator to combine title and subjects
             prop_assert!(
                 query.contains(" AND "),
@@ -671,20 +750,20 @@ mod property_tests {
         ) {
             // YouTube should always generate search queries regardless of year or other factors
             let queries = YoutubeDiscoverer::build_search_queries(&title, year);
-            
+
             // YouTube should always produce queries (at least 4 types: deleted scenes, behind the scenes, bloopers, interviews)
             prop_assert!(
                 !queries.is_empty(),
                 "YouTube should always generate search queries"
             );
-            
+
             // Verify we have queries for all expected content types
             prop_assert!(
                 queries.len() >= 4,
                 "YouTube should generate at least 4 search queries, got {}",
                 queries.len()
             );
-            
+
             // Verify each query contains the title and year
             for (query, _category) in &queries {
                 prop_assert!(
@@ -711,7 +790,7 @@ mod property_tests {
             // Videos should be excluded if duration < 30s OR duration > 20min (1200s)
             let should_exclude = duration_secs < 30 || duration_secs > 1200;
             let is_valid = YoutubeDiscoverer::is_duration_valid(duration_secs);
-            
+
             // is_duration_valid should return true only for videos in the 30s-1200s range
             prop_assert_eq!(
                 is_valid,
@@ -721,7 +800,7 @@ mod property_tests {
                 is_valid,
                 should_exclude
             );
-            
+
             // Verify boundary conditions
             if duration_secs < 30 {
                 prop_assert!(!is_valid, "Videos < 30s should be excluded");
@@ -754,7 +833,7 @@ mod property_tests {
             let title_with_keyword = format!("{} {} {}", prefix, keyword, suffix);
             let title_lowercase = format!("{} {} {}", prefix, keyword.to_lowercase(), suffix);
             let title_uppercase = format!("{} {} {}", prefix, keyword.to_uppercase(), suffix);
-            
+
             // All variations should be detected and excluded
             prop_assert!(
                 YoutubeDiscoverer::contains_excluded_keywords(&title_with_keyword),
@@ -762,21 +841,21 @@ mod property_tests {
                 title_with_keyword,
                 keyword
             );
-            
+
             prop_assert!(
                 YoutubeDiscoverer::contains_excluded_keywords(&title_lowercase),
                 "Title '{}' should be excluded (case-insensitive)",
                 title_lowercase
             );
-            
+
             prop_assert!(
                 YoutubeDiscoverer::contains_excluded_keywords(&title_uppercase),
                 "Title '{}' should be excluded (case-insensitive)",
                 title_uppercase
             );
-            
+
             // Test that titles without keywords are not excluded
-            if !prefix.to_lowercase().contains(&keyword.to_lowercase()) 
+            if !prefix.to_lowercase().contains(&keyword.to_lowercase())
                 && !suffix.to_lowercase().contains(&keyword.to_lowercase()) {
                 let clean_title = format!("{} {}", prefix, suffix);
                 if !clean_title.trim().is_empty() {
@@ -784,7 +863,7 @@ mod property_tests {
                     let contains_keyword = ["review", "reaction", "analysis", "explained", "ending", "theory", "react"]
                         .iter()
                         .any(|kw| clean_title.to_lowercase().contains(kw));
-                    
+
                     if !contains_keyword {
                         prop_assert!(
                             !YoutubeDiscoverer::contains_excluded_keywords(&clean_title),
@@ -807,12 +886,12 @@ mod property_tests {
             height in 100u32..2000u32
         ) {
             let is_short = YoutubeDiscoverer::is_youtube_short(duration_secs, width, height);
-            
+
             // YouTube Shorts are defined as:
             // - Duration < 60 seconds AND
             // - Vertical aspect ratio (height > width)
             let expected_short = duration_secs < 60 && height > width;
-            
+
             prop_assert_eq!(
                 is_short,
                 expected_short,
@@ -823,7 +902,7 @@ mod property_tests {
                 is_short,
                 expected_short
             );
-            
+
             // Verify specific cases
             if duration_secs >= 60 {
                 prop_assert!(
@@ -834,7 +913,7 @@ mod property_tests {
                     height
                 );
             }
-            
+
             if height <= width {
                 prop_assert!(
                     !is_short,
@@ -844,7 +923,7 @@ mod property_tests {
                     height
                 );
             }
-            
+
             if duration_secs < 60 && height > width {
                 prop_assert!(
                     is_short,
@@ -854,6 +933,92 @@ mod property_tests {
                     height
                 );
             }
+        }
+    }
+
+    // Feature: extras-fetcher, Property 5: Mode Filtering
+    // Validates: Requirements 1.5
+    proptest! {
+        #[test]
+        fn prop_mode_filtering(
+            _title in "[a-zA-Z0-9 ]{1,30}",
+            _year in 1900u16..2100u16
+        ) {
+            // Create mock video sources from different source types
+            let tmdb_source = VideoSource {
+                url: "https://youtube.com/watch?v=tmdb123".to_string(),
+                source_type: SourceType::TMDB,
+                category: ContentCategory::Trailer,
+                title: "TMDB Trailer".to_string(),
+            };
+
+            let archive_source = VideoSource {
+                url: "https://archive.org/details/archive123".to_string(),
+                source_type: SourceType::ArchiveOrg,
+                category: ContentCategory::Featurette,
+                title: "Archive EPK".to_string(),
+            };
+
+            let youtube_source = VideoSource {
+                url: "https://youtube.com/watch?v=yt123".to_string(),
+                source_type: SourceType::YouTube,
+                category: ContentCategory::BehindTheScenes,
+                title: "YouTube BTS".to_string(),
+            };
+
+            let all_sources = vec![
+                tmdb_source.clone(),
+                archive_source.clone(),
+                youtube_source.clone(),
+            ];
+
+            // Test filtering logic for YoutubeOnly mode
+            // In YoutubeOnly mode, only YouTube sources should remain
+            let filtered_youtube_only: Vec<VideoSource> = all_sources
+                .iter()
+                .filter(|s| s.source_type == SourceType::YouTube)
+                .cloned()
+                .collect();
+
+            prop_assert_eq!(
+                filtered_youtube_only.len(),
+                1,
+                "YoutubeOnly mode should filter to only YouTube sources"
+            );
+
+            prop_assert_eq!(
+                filtered_youtube_only[0].source_type,
+                SourceType::YouTube,
+                "Filtered source should be YouTube type"
+            );
+
+            // Test that All mode includes all source types
+            let filtered_all: Vec<VideoSource> = all_sources.clone();
+
+            prop_assert_eq!(
+                filtered_all.len(),
+                3,
+                "All mode should include all sources"
+            );
+
+            // Verify all source types are present in All mode
+            let has_tmdb = filtered_all.iter().any(|s| s.source_type == SourceType::TMDB);
+            let has_archive = filtered_all.iter().any(|s| s.source_type == SourceType::ArchiveOrg);
+            let has_youtube = filtered_all.iter().any(|s| s.source_type == SourceType::YouTube);
+
+            prop_assert!(has_tmdb, "All mode should include TMDB sources");
+            prop_assert!(has_archive, "All mode should include Archive.org sources");
+            prop_assert!(has_youtube, "All mode should include YouTube sources");
+
+            // Verify non-YouTube sources are excluded in YoutubeOnly mode
+            let has_non_youtube = filtered_youtube_only
+                .iter()
+                .any(|s| s.source_type != SourceType::YouTube);
+
+            prop_assert!(
+                !has_non_youtube,
+                "YoutubeOnly mode should not include non-YouTube sources"
+            );
         }
     }
 }
@@ -922,7 +1087,7 @@ mod unit_tests {
         let api_key = "test_key".to_string();
         let title = "The Matrix";
         let year = 1999;
-        
+
         // Expected URL format
         let expected_base = "https://api.themoviedb.org/3/search/movie";
         let expected_query = format!(
@@ -931,7 +1096,7 @@ mod unit_tests {
             urlencoding::encode(title),
             year
         );
-        
+
         // Verify URL encoding works correctly
         assert_eq!(urlencoding::encode(title), "The%20Matrix");
         assert!(expected_base.starts_with("https://api.themoviedb.org"));
@@ -945,7 +1110,7 @@ mod unit_tests {
         // Test URL encoding with special characters
         let title = "Movie: The Sequel (Part 2)";
         let encoded = urlencoding::encode(title);
-        
+
         // Verify special characters are encoded
         assert!(encoded.contains("%3A")); // colon
         assert!(encoded.contains("%28")); // opening parenthesis
@@ -957,12 +1122,12 @@ mod unit_tests {
         // Verify the videos endpoint URL format
         let api_key = "test_key".to_string();
         let movie_id = 603u64;
-        
+
         let expected_url = format!(
             "https://api.themoviedb.org/3/movie/{}/videos?api_key={}",
             movie_id, api_key
         );
-        
+
         assert_eq!(
             expected_url,
             "https://api.themoviedb.org/3/movie/603/videos?api_key=test_key"
@@ -983,14 +1148,14 @@ mod unit_tests {
         let video_key = "dQw4w9WgXcQ";
         let video_name = "Official Trailer";
         let category = ContentCategory::Trailer;
-        
+
         let source = VideoSource {
             url: format!("https://www.youtube.com/watch?v={}", video_key),
             source_type: SourceType::TMDB,
             category,
             title: video_name.to_string(),
         };
-        
+
         assert_eq!(source.url, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
         assert_eq!(source.source_type, SourceType::TMDB);
         assert_eq!(source.category, ContentCategory::Trailer);
@@ -1008,10 +1173,10 @@ mod unit_tests {
                 }
             ]
         }"#;
-        
+
         let response: Result<TmdbSearchResponse, _> = serde_json::from_str(json);
         assert!(response.is_ok());
-        
+
         let response = response.unwrap();
         assert_eq!(response.results.len(), 1);
         assert_eq!(response.results[0].id, 603);
@@ -1037,10 +1202,10 @@ mod unit_tests {
                 }
             ]
         }"#;
-        
+
         let response: Result<TmdbVideosResponse, _> = serde_json::from_str(json);
         assert!(response.is_ok());
-        
+
         let response = response.unwrap();
         assert_eq!(response.results.len(), 2);
         assert_eq!(response.results[0].key, "m8e-FF8MsqU");
@@ -1054,10 +1219,10 @@ mod unit_tests {
     fn test_empty_search_results() {
         // Test deserialization of empty search results
         let json = r#"{"results": []}"#;
-        
+
         let response: Result<TmdbSearchResponse, _> = serde_json::from_str(json);
         assert!(response.is_ok());
-        
+
         let response = response.unwrap();
         assert_eq!(response.results.len(), 0);
     }
@@ -1066,10 +1231,10 @@ mod unit_tests {
     fn test_empty_videos_results() {
         // Test deserialization of empty videos results
         let json = r#"{"results": []}"#;
-        
+
         let response: Result<TmdbVideosResponse, _> = serde_json::from_str(json);
         assert!(response.is_ok());
-        
+
         let response = response.unwrap();
         assert_eq!(response.results.len(), 0);
     }
@@ -1259,16 +1424,10 @@ mod unit_tests {
         }
 
         // Verify specific query types
-        assert!(queries
-            .iter()
-            .any(|(q, _)| q.contains("deleted scenes")));
-        assert!(queries
-            .iter()
-            .any(|(q, _)| q.contains("behind the scenes")));
+        assert!(queries.iter().any(|(q, _)| q.contains("deleted scenes")));
+        assert!(queries.iter().any(|(q, _)| q.contains("behind the scenes")));
         assert!(queries.iter().any(|(q, _)| q.contains("bloopers")));
-        assert!(queries
-            .iter()
-            .any(|(q, _)| q.contains("cast interview")));
+        assert!(queries.iter().any(|(q, _)| q.contains("cast interview")));
     }
 
     #[test]

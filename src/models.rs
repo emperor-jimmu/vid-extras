@@ -64,7 +64,11 @@ pub struct DownloadResult {
 impl fmt::Display for DownloadResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.success {
-            write!(f, "Downloaded: {} -> {:?}", self.source.title, self.local_path)
+            write!(
+                f,
+                "Downloaded: {} -> {:?}",
+                self.source.title, self.local_path
+            )
         } else {
             write!(
                 f,
@@ -92,7 +96,11 @@ pub struct ConversionResult {
 impl fmt::Display for ConversionResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.success {
-            write!(f, "Converted: {:?} -> {:?}", self.input_path, self.output_path)
+            write!(
+                f,
+                "Converted: {:?} -> {:?}",
+                self.input_path, self.output_path
+            )
         } else {
             write!(
                 f,
@@ -236,8 +244,14 @@ mod tests {
     fn test_content_category_subdirectory() {
         assert_eq!(ContentCategory::Trailer.subdirectory(), "trailers");
         assert_eq!(ContentCategory::Featurette.subdirectory(), "featurettes");
-        assert_eq!(ContentCategory::BehindTheScenes.subdirectory(), "behind the scenes");
-        assert_eq!(ContentCategory::DeletedScene.subdirectory(), "deleted scenes");
+        assert_eq!(
+            ContentCategory::BehindTheScenes.subdirectory(),
+            "behind the scenes"
+        );
+        assert_eq!(
+            ContentCategory::DeletedScene.subdirectory(),
+            "deleted scenes"
+        );
     }
 
     #[test]
@@ -277,22 +291,22 @@ mod property_tests {
                 "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
                 year, month, day, hour, minute, second
             );
-            
+
             let marker = DoneMarker {
                 finished_at: timestamp.clone(),
                 version: version.clone(),
             };
-            
+
             // Serialize to JSON
             let json = serde_json::to_string(&marker).unwrap();
-            
+
             // Deserialize from JSON
             let deserialized: DoneMarker = serde_json::from_str(&json).unwrap();
-            
+
             // Verify round-trip preserves data
             prop_assert_eq!(&marker.finished_at, &deserialized.finished_at);
             prop_assert_eq!(&marker.version, &deserialized.version);
-            
+
             // Verify ISO 8601 format is valid
             // The timestamp should be parseable as RFC 3339 (which is compatible with ISO 8601)
             prop_assert!(
