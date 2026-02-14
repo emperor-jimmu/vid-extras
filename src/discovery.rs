@@ -380,6 +380,8 @@ impl YoutubeDiscoverer {
             "Ending",
             "Theory",
             "React",
+            "Bloopers",
+            "Gag Reel",
         ];
 
         let title_lower = title.to_lowercase();
@@ -788,7 +790,7 @@ mod property_tests {
         #[test]
         fn prop_youtube_duration_filtering(duration_secs in 0u32..3600u32) {
             // Videos should be excluded if duration < 30s OR duration > 20min (1200s)
-            let should_exclude = duration_secs < 30 || duration_secs > 1200;
+            let should_exclude = !(30..=1200).contains(&duration_secs);
             let is_valid = YoutubeDiscoverer::is_duration_valid(duration_secs);
 
             // is_duration_valid should return true only for videos in the 30s-1200s range
@@ -1514,6 +1516,26 @@ mod unit_tests {
     }
 
     #[test]
+    fn test_youtube_keyword_filtering_bloopers() {
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Movie Bloopers"
+        ));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "bloopers compilation"
+        ));
+    }
+
+    #[test]
+    fn test_youtube_keyword_filtering_gag_reel() {
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "Gag Reel Compilation"
+        ));
+        assert!(YoutubeDiscoverer::contains_excluded_keywords(
+            "gag reel funny moments"
+        ));
+    }
+
+    #[test]
     fn test_youtube_keyword_filtering_no_match() {
         // These should NOT be filtered
         assert!(!YoutubeDiscoverer::contains_excluded_keywords(
@@ -1541,6 +1563,7 @@ mod unit_tests {
         assert!(YoutubeDiscoverer::contains_excluded_keywords("Review"));
         assert!(YoutubeDiscoverer::contains_excluded_keywords("ReViEw"));
     }
+
 
     #[test]
     fn test_youtube_duration_valid_range() {

@@ -27,7 +27,6 @@ impl Downloader {
     }
 
     /// Create a new Downloader with custom timeout
-    #[allow(dead_code)]
     pub fn with_timeout(temp_base: PathBuf, timeout_secs: u64) -> Self {
         Self {
             temp_base,
@@ -149,8 +148,8 @@ impl Downloader {
                 } else {
                     // yt-dlp failed
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    let error_msg = format!("yt-dlp failed with exit code: {:?}", output.status);
-                    error!("{}: {}", error_msg, stderr);
+                    let error_msg = format!("yt-dlp failed with exit code: {:?}: {}", output.status, stderr.trim());
+                    error!("{} for URL: {}", error_msg, source.url);
 
                     // Clean up any partial files
                     self.cleanup_partial_files(dest_dir, &source.title).await;
@@ -520,7 +519,8 @@ mod property_tests {
             let runtime = tokio::runtime::Runtime::new().unwrap();
             runtime.block_on(async {
                 let temp_base = TempDir::new().unwrap();
-                let downloader = Downloader::new(temp_base.path().to_path_buf());
+                // Use a very short timeout (2 seconds) for this test to avoid hanging
+                let downloader = Downloader::with_timeout(temp_base.path().to_path_buf(), 2);
 
                 // Create multiple sources with invalid URLs (will fail)
                 let sources: Vec<VideoSource> = (0..num_sources)

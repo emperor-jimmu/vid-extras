@@ -4,11 +4,11 @@
 
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 use tempfile::TempDir;
 
 /// Helper to create a test movie directory structure
-fn create_test_movie_structure(root: &PathBuf) -> std::io::Result<()> {
+fn create_test_movie_structure(root: &Path) -> std::io::Result<()> {
     let movie_dir = root.join("Test Movie (2020)");
     fs::create_dir_all(&movie_dir)?;
 
@@ -22,7 +22,7 @@ fn create_test_movie_structure(root: &PathBuf) -> std::io::Result<()> {
 }
 
 /// Helper to create a movie with done marker
-fn create_movie_with_done_marker(root: &PathBuf) -> std::io::Result<()> {
+fn create_movie_with_done_marker(root: &Path) -> std::io::Result<()> {
     let movie_dir = root.join("Completed Movie (2019)");
     fs::create_dir_all(&movie_dir)?;
 
@@ -56,8 +56,7 @@ fn test_validation_missing_ytdlp() {
     // If not, it should fail with a descriptive error
     match validator.validate_dependencies() {
         Ok(_) => {
-            // Dependencies are available
-            assert!(true);
+            // Dependencies are available - test passes
         }
         Err(e) => {
             // Verify error message is descriptive
@@ -84,7 +83,9 @@ fn test_validation_missing_ffmpeg() {
 
     // Similar to above - we verify the validator works
     match validator.validate_dependencies() {
-        Ok(_) => assert!(true),
+        Ok(_) => {
+            // Dependencies are available - test passes
+        }
         Err(e) => {
             let error_msg = e.to_string();
             assert!(
@@ -150,8 +151,7 @@ fn test_validation_ffmpeg_hevc_support() {
     // If ffmpeg is installed, check if HEVC support is detected
     match validator.validate_dependencies() {
         Ok(_) => {
-            // HEVC support is available
-            assert!(true);
+            // HEVC support is available - test passes
         }
         Err(e) => {
             let error_msg = e.to_string();
@@ -356,8 +356,7 @@ fn test_graceful_error_handling() {
     // Should return Result, not panic
     match result {
         Ok(_) => {
-            // Dependencies available
-            assert!(true);
+            // Dependencies available - test passes
         }
         Err(e) => {
             // Error is descriptive

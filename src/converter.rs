@@ -427,11 +427,11 @@ mod tests {
     fn test_check_encoder_support() {
         // This test verifies the encoder checking logic works
         // It should return true for libx265 (software encoding) on any system with ffmpeg
-        let has_libx265 = Converter::check_encoder_support("libx265");
+        let _has_libx265 = Converter::check_encoder_support("libx265");
 
         // We can't guarantee what encoders are available, but we can verify
         // the function returns a boolean and doesn't panic
-        assert!(has_libx265 || !has_libx265); // Always true, just checking it runs
+        // Test passes if no panic occurs
     }
 
     #[test]

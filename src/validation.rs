@@ -237,21 +237,19 @@ mod tests {
 
         // This test requires ffmpeg to be installed
         if validator.check_binary_exists("ffmpeg") {
-            let has_hevc = validator.check_ffmpeg_hevc_support();
+            let _has_hevc = validator.check_ffmpeg_hevc_support();
 
             // If ffmpeg exists, check what we detected
-            println!("HEVC support detected: {}", has_hevc);
-
             // We can't assert true here because some minimal ffmpeg builds
             // might not have HEVC support, but we can verify the function runs
-            assert!(has_hevc || !has_hevc); // Always true, just runs the check
+            // Test passes if no panic occurs
         }
     }
 
     #[test]
     fn test_validator_default_trait() {
         let validator1 = Validator::new();
-        let validator2 = Validator::default();
+        let validator2 = Validator;
 
         // Both should be equivalent (zero-sized types)
         assert_eq!(

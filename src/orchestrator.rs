@@ -771,7 +771,7 @@ mod property_tests {
             // we verify the contract: download_all takes a Vec and processes sequentially
 
             prop_assert!(num_sources > 0);
-            prop_assert!(year >= 2000 && year < 2025);
+            prop_assert!((2000..2025).contains(&year));
             prop_assert!(!title.trim().is_empty());
 
             // The sequential nature is guaranteed by the implementation:
@@ -910,13 +910,13 @@ mod property_tests {
 
                 // Add done markers to half the movies
                 let num_with_markers = num_movies / 2;
-                for i in 0..num_with_markers {
+                for movie_path in movie_paths.iter().take(num_with_markers) {
                     let done_marker = crate::models::DoneMarker {
                         finished_at: "2024-01-15T10:30:00Z".to_string(),
                         version: "0.1.0".to_string(),
                     };
                     let marker_json = serde_json::to_string(&done_marker).unwrap();
-                    tokio::fs::write(movie_paths[i].join("done.ext"), marker_json)
+                    tokio::fs::write(movie_path.join("done.ext"), marker_json)
                         .await
                         .unwrap();
                 }
