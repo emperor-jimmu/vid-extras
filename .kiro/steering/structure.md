@@ -23,9 +23,9 @@ The codebase follows a pipeline architecture with clear separation of concerns:
 - `cli.rs` - Command-line interface, argument parsing, configuration
 - `error.rs` - Centralized error types using thiserror (one enum per module)
 - `models.rs` - Shared data structures (MovieEntry, VideoSource, DoneMarker, enums)
-- `orchestrator.rs` - Main pipeline coordinator, manages processing flow
+- `orchestrator.rs` - **[IMPLEMENTED]** Main pipeline coordinator, manages processing flow
 - `scanner.rs` - **[IMPLEMENTED]** Directory traversal, movie discovery, folder name parsing
-- `discovery.rs` - **[IMPLEMENTED]** Multi-source content discovery (TMDB, Archive.org, and YouTube complete; DiscoveryOrchestrator pending)
+- `discovery.rs` - **[IMPLEMENTED]** Multi-source content discovery (TMDB, Archive.org, YouTube, and DiscoveryOrchestrator)
 - `downloader.rs` - **[IMPLEMENTED]** Video downloading via yt-dlp
 - `converter.rs` - **[IMPLEMENTED]** Video format conversion with ffmpeg, hardware acceleration detection
 - `organizer.rs` - **[IMPLEMENTED]** File organization into Jellyfin structure, done marker management
@@ -565,9 +565,126 @@ pub struct Organizer {
 - Done marker uses package version from Cargo.toml
 - All file operations use async I/O for better performance
 
+#### Discovery Module - DiscoveryOrchestrator (src/discovery.rs)
+**Status:** ✅ Fully implemented and tested
+
+**Functionality:**
+- Coordinates discovery from all three sources (TMDB, Archive.org, YouTube)
+- Mode-based filtering (All vs YoutubeOnly)
+- Aggregates results from multiple sources
+- Graceful error handling (failures in one source don't stop others)
+- Logging for each discovery phase
+
+**Public API:**
+```rust
+pub struct DiscoveryOrchestrator {
+    // Creates a new DiscoveryOrchestrator with the specified mode
+    pub fn new(tmdb_api_key: String, mode: SourceMode) -> Self;
+    
+    // Discovers video sources from all configured sources based on mode
+    pub async fn discover_all(&self, movie: &MovieEntry) -> Vec<VideoSource>;
+}
+```
+
+**Test Coverage:**
+- 1 property-based test with 100+ iterations:
+  - Property 5: Mode Filtering
+- All tests passing ✅
+
+**Requirements Validated:**
+- 1.5: Mode-based source filtering
+- 3.1-3.9: TMDB integration
+- 4.1-4.7: Archive.org integration
+- 5.1-5.11: YouTube integration
+
+**Implementation Notes:**
+- In All mode: queries TMDB, Archive.org (for movies < 2010), and YouTube
+- In YoutubeOnly mode: queries only YouTube
+- Errors from individual sources are logged but don't stop the overall discovery process
+- Results are aggregated into a single Vec<VideoSource>
+
+#### Orchestrator Module (src/orchestrator.rs)
+**Status:** ✅ Fully implemented and tested
+
+**Functionality:**
+- Coordinates all 5 processing phases (Scan, Discovery, Download, Conversion, Organization)
+- Sequential movie processing (concurrency = 1)
+- Parallel movie processing with configurable concurrency limit
+- Semaphore-based concurrency enforcement using tokio
+- Error isolation between movies (failures don't stop processing)
+- Temp folder cleanup on exit (Drop trait)
+- Pre-existing temp cleanup before processing
+- Processing summary statistics generation
+
+**Public API:**
+```rust
+pub struct Orchestrator {
+    // Create a new Orchestrator with the given configuration
+    pub fn new(
+        root_dir: PathBuf,
+        tmdb_api_key: String,
+        mode: SourceMode,
+        force: bool,
+        concurrency: usize,
+    ) -> Result<Self, OrchestratorError>;
+    
+    // Run the orchestrator and process all movies
+    pub async fn run(&self) -> Result<ProcessingSummary, OrchestratorError>;
+}
+
+pub struct ProcessingSummary {
+    pub total_movies: usize,
+    pub successful: usize,
+    pub failed: usize,
+    pub total_downloads: usize,
+    pub total_conversions: usize,
+}
+```
+
+**Test Coverage:**
+- 14 unit/integration tests covering:
+  - Empty directory handling
+  - Sequential vs parallel processing
+  - Drop trait cleanup behavior
+  - Done marker handling (with and without force flag)
+  - Concurrency validation
+  - Processing summary aggregation
+  - Movie result creation and error handling
+  - Pre-existing temp cleanup
+- 5 property-based tests with 100+ iterations each:
+  - Property 27: Sequential Downloads Within Movie
+  - Property 28: Concurrency Limit Enforcement
+  - Property 29: Error Isolation Between Movies
+  - Property 30: Temp Folder Cleanup on Exit
+  - Property 31: Pre-existing Temp Cleanup
+- All tests passing ✅ (19 total tests)
+
+**Dependencies:**
+- Uses `tokio::sync::Semaphore` for concurrency control
+- Uses `Arc` for shared ownership in parallel processing
+- Uses `tokio::spawn` for parallel task execution
+- Uses `log` for structured logging
+- Test dependencies: `proptest`, `tokio`, `tempfile`
+
+**Requirements Validated:**
+- 9.1: Sequential downloads within a movie
+- 9.2: Parallel movie processing
+- 9.3: Concurrency limit parameter
+- 9.4: Concurrency limit enforcement
+- 9.5: Sequential processing when disabled
+- 10.1: Detailed error logging
+- 10.2: Error isolation between movies
+- 10.3: Temp folder cleanup on exit
+- 10.4: Pre-existing temp cleanup
+
+**Implementation Notes:**
+- Uses Arc-based shared ownership for parallel processing
+- Semaphore ensures at most N movies are processed simultaneously
+- Each movie is processed independently with error isolation
+- Drop trait guarantees cleanup even on panic
+- Temp directories use format: `tmp_downloads/{movie_title}_{year}/`
+
 ### Pending Modules
 
 The following modules are defined but not yet implemented:
-- Discovery module - DiscoveryOrchestrator (to coordinate TMDB, Archive.org, and YouTube)
-- Orchestrator module
 - CLI module
