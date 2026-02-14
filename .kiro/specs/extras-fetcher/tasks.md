@@ -50,23 +50,23 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Test nested directory structures
     - _Requirements: 1.7_
 
-- [ ] 4. Implement Validation module
-  - [ ] 4.1 Create Validator struct with dependency checking
+- [x] 4. Implement Validation module
+  - [x] 4.1 Create Validator struct with dependency checking
     - Implement binary existence checks (yt-dlp, ffmpeg)
     - Implement ffmpeg HEVC support detection
     - Implement TMDB API key validation from environment
     - Return descriptive errors for missing dependencies
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
   
-  - [ ] 4.2 Write property test for dependency validation
+  - [x] 4.2 Write property test for dependency validation
     - **Property 32: Dependency Validation at Startup**
     - **Validates: Requirements 11.1, 11.2, 11.4**
   
-  - [ ] 4.3 Write property test for missing dependency error reporting
+  - [x] 4.3 Write property test for missing dependency error reporting
     - **Property 34: Missing Dependency Error Reporting**
     - **Validates: Requirements 11.5, 10.5**
   
-  - [ ] 4.4 Write unit tests for validation scenarios
+  - [x] 4.4 Write unit tests for validation scenarios
     - Test with missing binaries
     - Test with invalid API key
     - Test ffmpeg codec detection
