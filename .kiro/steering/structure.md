@@ -29,7 +29,7 @@ The codebase follows a pipeline architecture with clear separation of concerns:
 - `downloader.rs` - Video downloading via yt-dlp
 - `converter.rs` - Video format conversion with ffmpeg, hardware acceleration detection
 - `organizer.rs` - File organization into Jellyfin structure, done marker management
-- `validation.rs` - Dependency checking (binaries, API keys, codec support)
+- `validation.rs` - **[IMPLEMENTED]** Dependency checking (binaries, API keys, codec support)
 
 ## Processing Pipeline
 
@@ -91,10 +91,61 @@ pub struct Scanner {
 - Uses `serde_json` for done marker validation
 - Test dependencies: `proptest`, `tempfile`
 
+#### Validation Module (src/validation.rs)
+**Status:** ✅ Fully implemented and tested
+
+**Functionality:**
+- System dependency verification (yt-dlp, ffmpeg binaries)
+- FFmpeg HEVC codec support detection (libx265, hevc_nvenc, hevc_qsv)
+- TMDB API key validation from environment variables
+- Descriptive error reporting for missing dependencies
+- Zero-sized type for efficient validation checks
+
+**Public API:**
+```rust
+pub struct Validator;
+
+impl Validator {
+    // Create a new Validator instance
+    pub fn new() -> Self;
+    
+    // Validate all dependencies and return TMDB API key if successful
+    pub fn validate_dependencies(&self) -> Result<String, ValidationError>;
+    
+    // Check if a binary exists in system PATH
+    fn check_binary_exists(&self, name: &str) -> bool;
+    
+    // Check if ffmpeg supports HEVC encoding
+    fn check_ffmpeg_hevc_support(&self) -> bool;
+    
+    // Check if TMDB API key is configured
+    fn check_tmdb_api_key(&self) -> Result<String, ValidationError>;
+}
+```
+
+**Test Coverage:**
+- 11 unit tests covering all validation scenarios
+- 4 property-based tests with 100+ iterations each:
+  - Property 32: Dependency Validation at Startup
+  - Property 34: Missing Dependency Error Reporting
+- All tests passing ✅
+
+**Dependencies:**
+- Uses `std::process::Command` for binary verification
+- Uses `std::env` for environment variable access
+- Test dependencies: `proptest`
+
+**Requirements Validated:**
+- 11.1: yt-dlp binary verification
+- 11.2: ffmpeg binary verification
+- 11.3: ffmpeg HEVC support detection
+- 11.4: TMDB API key validation
+- 11.5: Descriptive error messages
+- 10.5: Clear error reporting
+
 ### Pending Modules
 
 The following modules are defined but not yet implemented:
-- Validation module
 - Discovery module (TMDB, Archive.org, YouTube)
 - Downloader module
 - Converter module
