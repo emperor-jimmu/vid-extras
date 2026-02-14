@@ -326,14 +326,79 @@ impl ContentDiscoverer for YoutubeDiscoverer {
 - 5.10: YouTube Shorts exclusion
 - 5.11: Graceful error handling
 
-**Pending Implementation:**
-- DiscoveryOrchestrator (to coordinate all three sources)
+#### Downloader Module (src/downloader.rs)
+**Status:** ✅ Fully implemented and tested
+
+**Functionality:**
+- Temporary directory creation and management (/tmp_downloads/{movie_id}/)
+- yt-dlp command execution for video downloads
+- Exit code verification and error handling
+- Partial file cleanup on download failure
+- Configurable timeout handling (default: 5 minutes)
+- Error logging and continuation (failed downloads don't stop processing)
+- Sequential download processing within a movie
+- Pre-existing temp directory cleanup
+
+**Public API:**
+```rust
+pub struct Downloader {
+    // Creates downloader with temporary base directory
+    pub fn new(temp_base: PathBuf) -> Self;
+    
+    // Creates downloader with custom timeout
+    pub fn with_timeout(temp_base: PathBuf, timeout_secs: u64) -> Self;
+    
+    // Downloads all videos for a movie, returns results for each
+    pub async fn download_all(
+        &self,
+        movie_id: &str,
+        sources: Vec<VideoSource>,
+    ) -> Vec<DownloadResult>;
+}
+```
+
+**Test Coverage:**
+- 8 unit tests covering:
+  - Temp directory creation and management
+  - Pre-existing directory cleanup
+  - Empty source handling
+  - Temp directory creation failures
+  - Partial file cleanup
+  - Custom timeout configuration
+  - Downloaded file detection
+- 4 property-based tests with reduced iterations for faster execution:
+  - Property 14: Temporary Directory Creation (20 cases)
+  - Property 15: Download Failure Cleanup (20 cases)
+  - Property 16: Download Error Continuation (20 cases)
+  - Property 17: Network Timeout Graceful Handling (10 cases)
+- All tests passing ✅
+
+**Dependencies:**
+- Uses `tokio::process::Command` for yt-dlp execution
+- Uses `tokio::fs` for async file operations
+- Uses `tokio::time::timeout` for download timeouts
+- Uses `log` for structured logging
+- Test dependencies: `proptest`, `tokio`, `tempfile`
+
+**Requirements Validated:**
+- 6.1: Temporary directory creation
+- 6.2: yt-dlp command execution
+- 6.3: Exit code verification
+- 6.4: Partial file cleanup on failure
+- 6.5: Error continuation (failed downloads don't stop processing)
+- 6.6: Timeout handling
+- 6.7: Sequential download processing
+
+**Implementation Notes:**
+- Downloads are processed sequentially within a movie to avoid overwhelming the network
+- Temp directories are cleaned up before starting new downloads
+- Failed downloads are logged but don't prevent other downloads from proceeding
+- yt-dlp is invoked with `--no-playlist` and `--quiet` flags for cleaner output
 
 ### Pending Modules
 
 The following modules are defined but not yet implemented:
 - Discovery module - DiscoveryOrchestrator (to coordinate TMDB, Archive.org, and YouTube)
-- Downloader module
 - Converter module
 - Organizer module
 - Orchestrator module

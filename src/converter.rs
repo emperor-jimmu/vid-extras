@@ -1,7 +1,7 @@
 // Converter module - handles video conversion to x265 format
 
 #[allow(unused_imports)]
-use crate::downloader::DownloadResult;
+use crate::models::DownloadResult;
 #[allow(unused_imports)]
 use crate::error::ConversionError;
 use std::path::PathBuf;

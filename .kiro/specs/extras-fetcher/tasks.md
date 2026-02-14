@@ -162,8 +162,8 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
 - [x] 10. Checkpoint - Discovery phase complete
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. Implement Downloader module
-  - [ ] 11.1 Create Downloader struct
+- [x] 11. Implement Downloader module
+  - [x] 11.1 Create Downloader struct
     - Implement temporary directory creation (/tmp_downloads/{movie_id}/)
     - Implement yt-dlp command execution for downloads
     - Implement exit code verification
@@ -172,23 +172,23 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Implement error logging and continuation
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7_
   
-  - [ ] 11.2 Write property test for temp directory creation
+  - [x] 11.2 Write property test for temp directory creation
     - **Property 14: Temporary Directory Creation**
     - **Validates: Requirements 6.1**
   
-  - [ ] 11.3 Write property test for download failure cleanup
+  - [x] 11.3 Write property test for download failure cleanup
     - **Property 15: Download Failure Cleanup**
     - **Validates: Requirements 6.4**
   
-  - [ ] 11.4 Write property test for error continuation
+  - [x] 11.4 Write property test for error continuation
     - **Property 16: Download Error Continuation**
     - **Validates: Requirements 6.5**
   
-  - [ ] 11.5 Write property test for timeout handling
+  - [x] 11.5 Write property test for timeout handling
     - **Property 17: Network Timeout Graceful Handling**
     - **Validates: Requirements 6.6**
   
-  - [ ] 11.6 Write unit tests for downloader
+  - [x] 11.6 Write unit tests for downloader
     - Test yt-dlp command construction
     - Test temp directory management
     - Test error scenarios

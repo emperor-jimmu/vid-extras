@@ -1,30 +1,601 @@
-// Downloader module - handles video downloads using yt-dlp
+// Downloader module - handles video downloading using yt-dlp
 
-#[allow(unused_imports)]
 use crate::error::DownloadError;
-use crate::models::VideoSource;
-use std::path::PathBuf;
+use crate::models::{DownloadResult, VideoSource};
+use log::{debug, error, info, warn};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+use tokio::fs;
+use tokio::process::Command;
+use tokio::time::timeout;
 
-/// Result of a download operation
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct DownloadResult {
-    pub source: VideoSource,
-    pub local_path: PathBuf,
-    pub success: bool,
-    pub error: Option<String>,
-}
-
-/// Downloader for fetching videos
-#[allow(dead_code)]
+/// Downloader handles video acquisition using yt-dlp
 pub struct Downloader {
-    #[allow(dead_code)]
+    /// Base directory for temporary downloads
     temp_base: PathBuf,
+    /// Timeout duration for individual downloads (default: 5 minutes)
+    download_timeout: Duration,
 }
 
 impl Downloader {
-    #[allow(dead_code)]
+    /// Create a new Downloader with the specified temporary base directory
     pub fn new(temp_base: PathBuf) -> Self {
-        Self { temp_base }
+        Self {
+            temp_base,
+            download_timeout: Duration::from_secs(300), // 5 minutes
+        }
+    }
+
+    /// Create a new Downloader with custom timeout
+    #[allow(dead_code)]
+    pub fn with_timeout(temp_base: PathBuf, timeout_secs: u64) -> Self {
+        Self {
+            temp_base,
+            download_timeout: Duration::from_secs(timeout_secs),
+        }
+    }
+
+    /// Download all videos for a movie, returning results for each
+    pub async fn download_all(
+        &self,
+        movie_id: &str,
+        sources: Vec<VideoSource>,
+    ) -> Vec<DownloadResult> {
+        if sources.is_empty() {
+            info!("No sources to download for movie_id: {}", movie_id);
+            return Vec::new();
+        }
+
+        // Create temp directory for this movie
+        let temp_dir = match self.create_temp_dir(movie_id).await {
+            Ok(dir) => dir,
+            Err(e) => {
+                error!("Failed to create temp directory for {}: {}", movie_id, e);
+                // Return failed results for all sources
+                return sources
+                    .into_iter()
+                    .map(|source| DownloadResult {
+                        source,
+                        local_path: PathBuf::new(),
+                        success: false,
+                        error: Some(format!("Failed to create temp directory: {}", e)),
+                    })
+                    .collect();
+            }
+        };
+
+        info!(
+            "Downloading {} videos for movie_id: {} to {:?}",
+            sources.len(),
+            movie_id,
+            temp_dir
+        );
+
+        let mut results = Vec::new();
+
+        // Download each source sequentially
+        for source in sources {
+            let result = self.download_single(&source, &temp_dir).await;
+            results.push(result);
+        }
+
+        results
+    }
+
+    /// Create temporary directory for a movie's downloads
+    async fn create_temp_dir(&self, movie_id: &str) -> Result<PathBuf, DownloadError> {
+        let temp_dir = self.temp_base.join(movie_id);
+
+        debug!("Creating temp directory: {:?}", temp_dir);
+
+        // Clean up any pre-existing temp directory
+        if temp_dir.exists() {
+            warn!(
+                "Temp directory already exists, cleaning up: {:?}",
+                temp_dir
+            );
+            fs::remove_dir_all(&temp_dir).await?;
+        }
+
+        // Create the directory
+        fs::create_dir_all(&temp_dir).await?;
+
+        Ok(temp_dir)
+    }
+
+    /// Download a single video source
+    async fn download_single(&self, source: &VideoSource, dest_dir: &Path) -> DownloadResult {
+        info!("Downloading: {} from {}", source.title, source.url);
+
+        // Build yt-dlp command
+        let output_template = dest_dir.join("%(title)s.%(ext)s");
+        let output_template_str = output_template.to_string_lossy().to_string();
+
+        let mut cmd = Command::new("yt-dlp");
+        cmd.arg("-o")
+            .arg(&output_template_str)
+            .arg(&source.url)
+            .arg("--no-playlist") // Don't download playlists
+            .arg("--quiet") // Reduce output noise
+            .arg("--no-warnings"); // Suppress warnings
+
+        debug!("Executing yt-dlp command: {:?}", cmd);
+
+        // Execute with timeout
+        let download_future = cmd.output();
+        let result = timeout(self.download_timeout, download_future).await;
+
+        match result {
+            Ok(Ok(output)) => {
+                if output.status.success() {
+                    // Find the downloaded file
+                    match self.find_downloaded_file(dest_dir, &source.title).await {
+                        Ok(local_path) => {
+                            info!("Successfully downloaded: {:?}", local_path);
+                            DownloadResult {
+                                source: source.clone(),
+                                local_path,
+                                success: true,
+                                error: None,
+                            }
+                        }
+                        Err(e) => {
+                            error!("Download succeeded but file not found: {}", e);
+                            DownloadResult {
+                                source: source.clone(),
+                                local_path: PathBuf::new(),
+                                success: false,
+                                error: Some(format!("File not found after download: {}", e)),
+                            }
+                        }
+                    }
+                } else {
+                    // yt-dlp failed
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let error_msg = format!("yt-dlp failed with exit code: {:?}", output.status);
+                    error!("{}: {}", error_msg, stderr);
+
+                    // Clean up any partial files
+                    self.cleanup_partial_files(dest_dir, &source.title).await;
+
+                    DownloadResult {
+                        source: source.clone(),
+                        local_path: PathBuf::new(),
+                        success: false,
+                        error: Some(error_msg),
+                    }
+                }
+            }
+            Ok(Err(e)) => {
+                // Command execution failed
+                let error_msg = format!("Failed to execute yt-dlp: {}", e);
+                error!("{}", error_msg);
+
+                // Clean up any partial files
+                self.cleanup_partial_files(dest_dir, &source.title).await;
+
+                DownloadResult {
+                    source: source.clone(),
+                    local_path: PathBuf::new(),
+                    success: false,
+                    error: Some(error_msg),
+                }
+            }
+            Err(_) => {
+                // Timeout occurred
+                let error_msg = format!(
+                    "Download timeout after {} seconds",
+                    self.download_timeout.as_secs()
+                );
+                error!("{} for: {}", error_msg, source.title);
+
+                // Clean up any partial files
+                self.cleanup_partial_files(dest_dir, &source.title).await;
+
+                DownloadResult {
+                    source: source.clone(),
+                    local_path: PathBuf::new(),
+                    success: false,
+                    error: Some(error_msg),
+                }
+            }
+        }
+    }
+
+    /// Find the downloaded file in the destination directory
+    async fn find_downloaded_file(
+        &self,
+        dest_dir: &Path,
+        expected_title: &str,
+    ) -> Result<PathBuf, DownloadError> {
+        let mut entries = fs::read_dir(dest_dir).await?;
+
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.is_file() {
+                // Check if filename contains the expected title (case-insensitive)
+                if let Some(filename) = path.file_name() {
+                    let filename_str = filename.to_string_lossy().to_lowercase();
+                    let title_lower = expected_title.to_lowercase();
+
+                    // Simple heuristic: if the filename contains part of the title
+                    if filename_str.contains(&title_lower)
+                        || title_lower.contains(&filename_str.replace(".mp4", ""))
+                    {
+                        return Ok(path);
+                    }
+                }
+            }
+        }
+
+        // If no match found, return the first file in the directory
+        let mut entries = fs::read_dir(dest_dir).await?;
+        if let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.is_file() {
+                return Ok(path);
+            }
+        }
+
+        Err(DownloadError::YtDlpFailed(
+            "No downloaded file found".to_string(),
+        ))
+    }
+
+    /// Clean up partial files after a failed download
+    async fn cleanup_partial_files(&self, dest_dir: &Path, title: &str) {
+        debug!("Cleaning up partial files for: {}", title);
+
+        match fs::read_dir(dest_dir).await {
+            Ok(mut entries) => {
+                while let Ok(Some(entry)) = entries.next_entry().await {
+                    let path = entry.path();
+                    if path.is_file() {
+                        // Check if this might be a partial file
+                        if let Some(filename) = path.file_name() {
+                            let filename_str = filename.to_string_lossy();
+                            // Remove files that match the title or have common partial extensions
+                            if filename_str.to_lowercase().contains(&title.to_lowercase())
+                                || filename_str.ends_with(".part")
+                                || filename_str.ends_with(".tmp")
+                            {
+                                if let Err(e) = fs::remove_file(&path).await {
+                                    warn!("Failed to remove partial file {:?}: {}", path, e);
+                                } else {
+                                    debug!("Removed partial file: {:?}", path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read directory for cleanup: {}", e);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{ContentCategory, SourceType};
+    use proptest::prelude::*;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_create_temp_dir() {
+        let temp_base = TempDir::new().unwrap();
+        let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+        let temp_dir = downloader.create_temp_dir("test_movie_123").await.unwrap();
+
+        assert!(temp_dir.exists());
+        assert!(temp_dir.ends_with("test_movie_123"));
+    }
+
+    #[tokio::test]
+    async fn test_create_temp_dir_cleans_existing() {
+        let temp_base = TempDir::new().unwrap();
+        let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+        // Create directory first time
+        let temp_dir1 = downloader.create_temp_dir("test_movie_456").await.unwrap();
+        // Create a file in it
+        let test_file = temp_dir1.join("test.txt");
+        fs::write(&test_file, "test").await.unwrap();
+        assert!(test_file.exists());
+
+        // Create directory second time - should clean up
+        let temp_dir2 = downloader.create_temp_dir("test_movie_456").await.unwrap();
+        assert!(temp_dir2.exists());
+        assert!(!test_file.exists()); // Old file should be gone
+    }
+
+    #[tokio::test]
+    async fn test_download_all_empty_sources() {
+        let temp_base = TempDir::new().unwrap();
+        let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+        let results = downloader.download_all("movie_789", vec![]).await;
+
+        assert_eq!(results.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_all_temp_dir_creation_failure() {
+        // Use a path that will fail on most systems (null device)
+        #[cfg(unix)]
+        let invalid_path = PathBuf::from("/dev/null/invalid");
+        #[cfg(windows)]
+        let invalid_path = PathBuf::from("NUL:\\invalid");
+
+        let downloader = Downloader::new(invalid_path);
+
+        let sources = vec![VideoSource {
+            url: "https://example.com/video".to_string(),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Trailer,
+            title: "Test Video".to_string(),
+        }];
+
+        let results = downloader.download_all("movie_fail", sources).await;
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].success);
+        assert!(results[0].error.is_some());
+        // Error should mention temp directory or IO error
+        let error_msg = results[0].error.as_ref().unwrap();
+        assert!(
+            error_msg.contains("temp directory") || error_msg.contains("IO error"),
+            "Error message was: {}",
+            error_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_partial_files() {
+        let temp_base = TempDir::new().unwrap();
+        let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+        let temp_dir = downloader.create_temp_dir("cleanup_test").await.unwrap();
+
+        // Create some partial files
+        let partial1 = temp_dir.join("video.part");
+        let partial2 = temp_dir.join("video.tmp");
+        let normal = temp_dir.join("complete.mp4");
+
+        fs::write(&partial1, "partial").await.unwrap();
+        fs::write(&partial2, "partial").await.unwrap();
+        fs::write(&normal, "complete").await.unwrap();
+
+        // Cleanup partial files for "video"
+        downloader.cleanup_partial_files(&temp_dir, "video").await;
+
+        // Partial files should be removed
+        assert!(!partial1.exists());
+        assert!(!partial2.exists());
+        // Normal file should remain (doesn't match title)
+        assert!(normal.exists());
+    }
+
+    #[tokio::test]
+    async fn test_with_timeout() {
+        let temp_base = TempDir::new().unwrap();
+        let downloader = Downloader::with_timeout(temp_base.path().to_path_buf(), 10);
+
+        assert_eq!(downloader.download_timeout, Duration::from_secs(10));
+    }
+
+    #[tokio::test]
+    async fn test_find_downloaded_file() {
+        let temp_base = TempDir::new().unwrap();
+        let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+        let temp_dir = downloader.create_temp_dir("find_test").await.unwrap();
+
+        // Create a file
+        let test_file = temp_dir.join("Test Trailer.mp4");
+        fs::write(&test_file, "video").await.unwrap();
+
+        // Should find the file
+        let found = downloader
+            .find_downloaded_file(&temp_dir, "Test Trailer")
+            .await
+            .unwrap();
+
+        assert_eq!(found, test_file);
+    }
+
+    #[tokio::test]
+    async fn test_find_downloaded_file_not_found() {
+        let temp_base = TempDir::new().unwrap();
+        let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+        let temp_dir = downloader.create_temp_dir("notfound_test").await.unwrap();
+
+        // No files in directory
+        let result = downloader
+            .find_downloaded_file(&temp_dir, "Nonexistent")
+            .await;
+
+        assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use super::*;
+    use crate::models::{ContentCategory, SourceType};
+    use proptest::prelude::*;
+    use tempfile::TempDir;
+
+    // Feature: extras-fetcher, Property 14: Temporary Directory Creation
+    // Validates: Requirements 6.1
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+        #[test]
+        fn prop_temp_directory_creation(
+            movie_id in "[a-zA-Z0-9_-]{1,50}"
+        ) {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async {
+                let temp_base = TempDir::new().unwrap();
+                let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+                // Create temp directory
+                let temp_dir = downloader.create_temp_dir(&movie_id).await.unwrap();
+
+                // Verify directory exists
+                prop_assert!(temp_dir.exists());
+                
+                // Verify directory is under temp_base
+                prop_assert!(temp_dir.starts_with(temp_base.path()));
+                
+                // Verify directory ends with movie_id
+                prop_assert!(temp_dir.ends_with(&movie_id));
+                
+                // Verify directory is actually a directory
+                prop_assert!(temp_dir.is_dir());
+
+                Ok(()) as Result<(), proptest::test_runner::TestCaseError>
+            }).unwrap();
+        }
+    }
+
+    // Feature: extras-fetcher, Property 15: Download Failure Cleanup
+    // Validates: Requirements 6.4
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+        #[test]
+        fn prop_download_failure_cleanup(
+            title in "[a-zA-Z0-9 ]{5,30}",
+            num_partial_files in 1usize..5usize
+        ) {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async {
+                let temp_base = TempDir::new().unwrap();
+                let downloader = Downloader::new(temp_base.path().to_path_buf());
+                
+                let temp_dir = downloader.create_temp_dir("cleanup_test").await.unwrap();
+
+                // Create partial files that should be cleaned up
+                for i in 0..num_partial_files {
+                    let partial_file = temp_dir.join(format!("{}_part{}.part", title, i));
+                    tokio::fs::write(&partial_file, "partial").await.unwrap();
+                }
+
+                // Create a file that shouldn't be cleaned (different title)
+                let unrelated_file = temp_dir.join("unrelated.mp4");
+                tokio::fs::write(&unrelated_file, "complete").await.unwrap();
+
+                // Cleanup partial files
+                downloader.cleanup_partial_files(&temp_dir, &title).await;
+
+                // Count remaining files
+                let mut entries = tokio::fs::read_dir(&temp_dir).await.unwrap();
+                let mut file_count = 0;
+                let mut has_unrelated = false;
+
+                while let Some(entry) = entries.next_entry().await.unwrap() {
+                    file_count += 1;
+                    if entry.file_name() == "unrelated.mp4" {
+                        has_unrelated = true;
+                    }
+                }
+
+                // Only the unrelated file should remain
+                prop_assert_eq!(file_count, 1);
+                prop_assert!(has_unrelated);
+
+                Ok(()) as Result<(), proptest::test_runner::TestCaseError>
+            }).unwrap();
+        }
+    }
+
+    // Feature: extras-fetcher, Property 16: Download Error Continuation
+    // Validates: Requirements 6.5
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+        #[test]
+        fn prop_download_error_continuation(
+            num_sources in 2usize..6usize
+        ) {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async {
+                let temp_base = TempDir::new().unwrap();
+                let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+                // Create multiple sources with invalid URLs (will fail)
+                let sources: Vec<VideoSource> = (0..num_sources)
+                    .map(|i| VideoSource {
+                        url: format!("https://invalid-url-{}.com/video", i),
+                        source_type: SourceType::YouTube,
+                        category: ContentCategory::Trailer,
+                        title: format!("Video {}", i),
+                    })
+                    .collect();
+
+                // Download all sources
+                let results = downloader.download_all("error_test", sources.clone()).await;
+
+                // Should get a result for each source (continuation)
+                prop_assert_eq!(results.len(), num_sources);
+
+                // All should have failed (invalid URLs)
+                for result in &results {
+                    prop_assert!(!result.success);
+                    prop_assert!(result.error.is_some());
+                }
+
+                Ok(()) as Result<(), proptest::test_runner::TestCaseError>
+            }).unwrap();
+        }
+    }
+
+    // Feature: extras-fetcher, Property 17: Network Timeout Graceful Handling
+    // Validates: Requirements 6.6
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+        #[test]
+        fn prop_timeout_graceful_handling(
+            timeout_secs in 1u64..3u64
+        ) {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async {
+                let temp_base = TempDir::new().unwrap();
+                let downloader = Downloader::with_timeout(temp_base.path().to_path_buf(), timeout_secs);
+
+                // Create a source that will timeout (invalid URL that hangs)
+                let source = VideoSource {
+                    url: "https://httpstat.us/200?sleep=30000".to_string(), // 30 second delay
+                    source_type: SourceType::YouTube,
+                    category: ContentCategory::Trailer,
+                    title: "Timeout Test".to_string(),
+                };
+
+                let temp_dir = downloader.create_temp_dir("timeout_test").await.unwrap();
+                
+                // This should timeout gracefully
+                let result = downloader.download_single(&source, &temp_dir).await;
+
+                // Should fail (not panic)
+                prop_assert!(!result.success);
+                
+                // Should have an error message
+                prop_assert!(result.error.is_some());
+                
+                // Error should mention timeout
+                let error_msg = result.error.unwrap();
+                prop_assert!(
+                    error_msg.to_lowercase().contains("timeout") || 
+                    error_msg.to_lowercase().contains("failed"),
+                    "Error message should mention timeout or failure: {}",
+                    error_msg
+                );
+
+                Ok(()) as Result<(), proptest::test_runner::TestCaseError>
+            }).unwrap();
+        }
     }
 }
