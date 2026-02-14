@@ -14,10 +14,10 @@
 - `colored` (2.1) - Terminal output formatting
 - `log` (0.4) + `env_logger` (0.11) - Logging infrastructure
 - `urlencoding` (2.1) - URL encoding for API requests
+- `chrono` (0.4) - Date/time handling for ISO 8601 timestamps
 
 ## Testing
 - `proptest` (1.5) - Property-based testing framework
-- `chrono` (0.4) - Date/time handling for tests
 - `tempfile` (3.13) - Temporary file/directory creation for tests
 
 ## External Tools

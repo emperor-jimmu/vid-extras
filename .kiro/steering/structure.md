@@ -28,7 +28,7 @@ The codebase follows a pipeline architecture with clear separation of concerns:
 - `discovery.rs` - **[IMPLEMENTED]** Multi-source content discovery (TMDB, Archive.org, and YouTube complete; DiscoveryOrchestrator pending)
 - `downloader.rs` - **[IMPLEMENTED]** Video downloading via yt-dlp
 - `converter.rs` - **[IMPLEMENTED]** Video format conversion with ffmpeg, hardware acceleration detection
-- `organizer.rs` - File organization into Jellyfin structure, done marker management
+- `organizer.rs` - **[IMPLEMENTED]** File organization into Jellyfin structure, done marker management
 - `validation.rs` - **[IMPLEMENTED]** Dependency checking (binaries, API keys, codec support)
 
 ## Processing Pipeline
@@ -483,10 +483,91 @@ pub struct Converter {
 - All hardware acceleration types copy audio streams without re-encoding
 - Output files use `.converted.mp4` extension before final organization
 
+#### Organizer Module (src/organizer.rs)
+**Status:** ✅ Fully implemented and tested
+
+**Functionality:**
+- Category-to-subdirectory mapping for Jellyfin structure
+- Subdirectory creation if missing
+- File moving to target subdirectories
+- Temporary folder cleanup after organization
+- Done marker creation with JSON timestamp (ISO 8601 format)
+- Failed conversion filtering
+- Multi-category organization support
+
+**Public API:**
+```rust
+pub struct Organizer {
+    // Create a new Organizer for a specific movie folder
+    pub fn new(movie_path: PathBuf) -> Self;
+    
+    // Organize converted files into appropriate subdirectories and create done marker
+    pub async fn organize(
+        &self,
+        conversions: Vec<ConversionResult>,
+        temp_dir: &Path,
+    ) -> Result<(), OrganizerError>;
+}
+```
+
+**Subdirectory Mapping:**
+- Trailer → `/trailers`
+- Featurette → `/featurettes`
+- BehindTheScenes → `/behind the scenes`
+- DeletedScene → `/deleted scenes`
+
+**Done Marker Format:**
+```json
+{
+  "finished_at": "2024-01-15T10:30:00Z",
+  "version": "0.1.0"
+}
+```
+
+**Test Coverage:**
+- 9 unit tests covering:
+  - Subdirectory creation (missing and existing)
+  - File moving operations
+  - Temp directory cleanup
+  - Done marker creation and JSON format
+  - Failed conversion handling
+  - Multiple category organization
+  - Nonexistent directory handling
+  - Integration test with full workflow
+- 4 property-based tests with 100+ iterations each:
+  - Property 23: Content Category to Subdirectory Mapping
+  - Property 24: Subdirectory Creation
+  - Property 25: Temp Folder Cleanup on Success
+  - Property 26: Done Marker Creation on Completion
+- All tests passing ✅ (14 total tests)
+
+**Dependencies:**
+- Uses `tokio::fs` for async file operations
+- Uses `chrono` for ISO 8601 timestamp generation
+- Uses `serde_json` for done marker serialization
+- Uses `log` for structured logging
+- Test dependencies: `proptest`, `tokio`, `tempfile`
+
+**Requirements Validated:**
+- 2.1: Done marker creation on completion
+- 8.1: Trailer subdirectory mapping
+- 8.2: Featurette subdirectory mapping
+- 8.3: Behind-the-scenes subdirectory mapping
+- 8.4: Deleted scene subdirectory mapping
+- 8.5: Subdirectory creation if missing
+- 8.6: Temp folder cleanup after organization
+- 8.7: Done marker creation with timestamp
+
+**Implementation Notes:**
+- Category information is stored in `ConversionResult` for accurate organization
+- Failed conversions are skipped during organization
+- Temp directories are cleaned up after successful file moves
+- Done marker uses package version from Cargo.toml
+- All file operations use async I/O for better performance
+
 ### Pending Modules
 
 The following modules are defined but not yet implemented:
 - Discovery module - DiscoveryOrchestrator (to coordinate TMDB, Archive.org, and YouTube)
-- Organizer module
 - Orchestrator module
 - CLI module

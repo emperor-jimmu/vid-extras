@@ -87,6 +87,8 @@ pub struct ConversionResult {
     pub input_path: PathBuf,
     /// Path to output file
     pub output_path: PathBuf,
+    /// Content category for organization
+    pub category: ContentCategory,
     /// Whether conversion succeeded
     pub success: bool,
     /// Error message if conversion failed
@@ -169,7 +171,7 @@ impl fmt::Display for SourceType {
 }
 
 /// Content category for organizing extras
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContentCategory {
     /// Movie trailers
     Trailer,

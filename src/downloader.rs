@@ -90,10 +90,7 @@ impl Downloader {
 
         // Clean up any pre-existing temp directory
         if temp_dir.exists() {
-            warn!(
-                "Temp directory already exists, cleaning up: {:?}",
-                temp_dir
-            );
+            warn!("Temp directory already exists, cleaning up: {:?}", temp_dir);
             fs::remove_dir_all(&temp_dir).await?;
         }
 
@@ -280,7 +277,6 @@ impl Downloader {
 mod tests {
     use super::*;
     use crate::models::{ContentCategory, SourceType};
-    use proptest::prelude::*;
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -448,13 +444,13 @@ mod property_tests {
 
                 // Verify directory exists
                 prop_assert!(temp_dir.exists());
-                
+
                 // Verify directory is under temp_base
                 prop_assert!(temp_dir.starts_with(temp_base.path()));
-                
+
                 // Verify directory ends with movie_id
                 prop_assert!(temp_dir.ends_with(&movie_id));
-                
+
                 // Verify directory is actually a directory
                 prop_assert!(temp_dir.is_dir());
 
@@ -476,7 +472,7 @@ mod property_tests {
             runtime.block_on(async {
                 let temp_base = TempDir::new().unwrap();
                 let downloader = Downloader::new(temp_base.path().to_path_buf());
-                
+
                 let temp_dir = downloader.create_temp_dir("cleanup_test").await.unwrap();
 
                 // Create partial files that should be cleaned up
@@ -575,20 +571,20 @@ mod property_tests {
                 };
 
                 let temp_dir = downloader.create_temp_dir("timeout_test").await.unwrap();
-                
+
                 // This should timeout gracefully
                 let result = downloader.download_single(&source, &temp_dir).await;
 
                 // Should fail (not panic)
                 prop_assert!(!result.success);
-                
+
                 // Should have an error message
                 prop_assert!(result.error.is_some());
-                
+
                 // Error should mention timeout
                 let error_msg = result.error.unwrap();
                 prop_assert!(
-                    error_msg.to_lowercase().contains("timeout") || 
+                    error_msg.to_lowercase().contains("timeout") ||
                     error_msg.to_lowercase().contains("failed"),
                     "Error message should mention timeout or failure: {}",
                     error_msg

@@ -230,8 +230,8 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Test file cleanup scenarios
     - _Requirements: 7.1, 7.2, 7.3_
 
-- [ ] 13. Implement Organizer module
-  - [ ] 13.1 Create Organizer struct
+- [x] 13. Implement Organizer module
+  - [x] 13.1 Create Organizer struct
     - Implement category-to-subdirectory mapping
     - Implement subdirectory creation if missing
     - Implement file moving to target subdirectories
@@ -239,23 +239,23 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Implement done marker creation with JSON timestamp
     - _Requirements: 8.1-8.7, 2.1_
   
-  - [ ] 13.2 Write property test for category mapping
+  - [x] 13.2 Write property test for category mapping
     - **Property 23: Content Category to Subdirectory Mapping**
     - **Validates: Requirements 8.1-8.4**
   
-  - [ ] 13.3 Write property test for subdirectory creation
+  - [x] 13.3 Write property test for subdirectory creation
     - **Property 24: Subdirectory Creation**
     - **Validates: Requirements 8.5**
   
-  - [ ] 13.4 Write property test for temp folder cleanup
+  - [x] 13.4 Write property test for temp folder cleanup
     - **Property 25: Temp Folder Cleanup on Success**
     - **Validates: Requirements 8.6**
   
-  - [ ] 13.5 Write property test for done marker creation
+  - [x] 13.5 Write property test for done marker creation
     - **Property 26: Done Marker Creation on Completion**
     - **Validates: Requirements 2.1, 8.7**
   
-  - [ ] 13.6 Write unit tests for organizer
+  - [x] 13.6 Write unit tests for organizer
     - Test file moving operations
     - Test directory creation
     - Test done marker JSON format

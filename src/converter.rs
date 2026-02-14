@@ -22,7 +22,7 @@ impl Converter {
     pub fn new() -> Self {
         let hw_accel = Self::detect_hardware_accel();
         info!("Detected hardware acceleration: {}", hw_accel);
-        
+
         Self {
             hw_accel,
             crf: 25, // Default CRF value in the middle of the range
@@ -43,10 +43,7 @@ impl Converter {
     }
 
     /// Convert a batch of downloaded videos
-    pub async fn convert_batch(
-        &self,
-        downloads: Vec<DownloadResult>,
-    ) -> Vec<ConversionResult> {
+    pub async fn convert_batch(&self, downloads: Vec<DownloadResult>) -> Vec<ConversionResult> {
         let mut results = Vec::new();
 
         for download in downloads {
@@ -68,7 +65,7 @@ impl Converter {
     /// Convert a single video file
     async fn convert_single(&self, download: &DownloadResult) -> ConversionResult {
         let input_path = &download.local_path;
-        
+
         // Generate output path with .mp4 extension
         let output_path = input_path.with_extension("converted.mp4");
 
@@ -82,38 +79,34 @@ impl Converter {
             Ok(_) => {
                 // Conversion succeeded - delete original file
                 if let Err(e) = fs::remove_file(input_path).await {
+                    warn!("Failed to delete original file {:?}: {}", input_path, e);
+                }
+
+                ConversionResult {
+                    input_path: input_path.clone(),
+                    output_path: output_path.clone(),
+                    category: download.source.category,
+                    success: true,
+                    error: None,
+                }
+            }
+            Err(e) => {
+                error!("Conversion failed for {}: {}", download.source.title, e);
+
+                // Conversion failed - delete failed output, keep original
+                if output_path.exists()
+                    && let Err(del_err) = fs::remove_file(&output_path).await
+                {
                     warn!(
-                        "Failed to delete original file {:?}: {}",
-                        input_path, e
+                        "Failed to delete failed output {:?}: {}",
+                        output_path, del_err
                     );
                 }
 
                 ConversionResult {
                     input_path: input_path.clone(),
                     output_path: output_path.clone(),
-                    success: true,
-                    error: None,
-                }
-            }
-            Err(e) => {
-                error!(
-                    "Conversion failed for {}: {}",
-                    download.source.title, e
-                );
-
-                // Conversion failed - delete failed output, keep original
-                if output_path.exists() {
-                    if let Err(del_err) = fs::remove_file(&output_path).await {
-                        warn!(
-                            "Failed to delete failed output {:?}: {}",
-                            output_path, del_err
-                        );
-                    }
-                }
-
-                ConversionResult {
-                    input_path: input_path.clone(),
-                    output_path: output_path.clone(),
+                    category: download.source.category,
                     success: false,
                     error: Some(e.to_string()),
                 }
@@ -122,11 +115,7 @@ impl Converter {
     }
 
     /// Execute ffmpeg conversion command
-    async fn execute_conversion(
-        &self,
-        input: &Path,
-        output: &Path,
-    ) -> Result<(), ConversionError> {
+    async fn execute_conversion(&self, input: &Path, output: &Path) -> Result<(), ConversionError> {
         let mut cmd = self.build_ffmpeg_command(input, output);
 
         debug!("Executing ffmpeg command: {:?}", cmd);
@@ -136,7 +125,7 @@ impl Converter {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| ConversionError::Io(e))?;
+            .map_err(ConversionError::Io)?;
 
         if !output_result.status.success() {
             let stderr = String::from_utf8_lossy(&output_result.stderr);
@@ -153,7 +142,7 @@ impl Converter {
     /// Build ffmpeg command based on hardware acceleration type
     fn build_ffmpeg_command(&self, input: &Path, output: &Path) -> Command {
         let mut cmd = Command::new("ffmpeg");
-        
+
         // Overwrite output files without asking
         cmd.arg("-y");
 
@@ -241,7 +230,6 @@ impl Default for Converter {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,10 +289,7 @@ mod tests {
     #[test]
     fn test_build_ffmpeg_command_software() {
         let converter = Converter::with_config(HardwareAccel::Software, 25);
-        let cmd = converter.build_ffmpeg_command(
-            Path::new("input.mp4"),
-            Path::new("output.mp4"),
-        );
+        let cmd = converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
 
         let cmd_str = format!("{:?}", cmd);
         assert!(cmd_str.contains("libx265"));
@@ -315,10 +300,7 @@ mod tests {
     #[test]
     fn test_build_ffmpeg_command_nvenc() {
         let converter = Converter::with_config(HardwareAccel::Nvenc, 25);
-        let cmd = converter.build_ffmpeg_command(
-            Path::new("input.mp4"),
-            Path::new("output.mp4"),
-        );
+        let cmd = converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
 
         let cmd_str = format!("{:?}", cmd);
         assert!(cmd_str.contains("hevc_nvenc"));
@@ -329,10 +311,7 @@ mod tests {
     #[test]
     fn test_build_ffmpeg_command_qsv() {
         let converter = Converter::with_config(HardwareAccel::Qsv, 25);
-        let cmd = converter.build_ffmpeg_command(
-            Path::new("input.mp4"),
-            Path::new("output.mp4"),
-        );
+        let cmd = converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
 
         let cmd_str = format!("{:?}", cmd);
         assert!(cmd_str.contains("hevc_qsv"));
@@ -383,24 +362,26 @@ mod tests {
     #[test]
     fn test_ffmpeg_command_includes_overwrite_flag() {
         let converter = Converter::with_config(HardwareAccel::Software, 25);
-        let cmd = converter.build_ffmpeg_command(
-            Path::new("input.mp4"),
-            Path::new("output.mp4"),
-        );
+        let cmd = converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
 
         let cmd_str = format!("{:?}", cmd);
-        assert!(cmd_str.contains("-y"), "Command should include -y flag to overwrite output files");
+        assert!(
+            cmd_str.contains("-y"),
+            "Command should include -y flag to overwrite output files"
+        );
     }
 
     #[test]
     fn test_ffmpeg_command_copies_audio() {
         // All hardware acceleration types should copy audio
-        for hw_accel in [HardwareAccel::Nvenc, HardwareAccel::Qsv, HardwareAccel::Software] {
+        for hw_accel in [
+            HardwareAccel::Nvenc,
+            HardwareAccel::Qsv,
+            HardwareAccel::Software,
+        ] {
             let converter = Converter::with_config(hw_accel, 25);
-            let cmd = converter.build_ffmpeg_command(
-                Path::new("input.mp4"),
-                Path::new("output.mp4"),
-            );
+            let cmd =
+                converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
 
             let cmd_str = format!("{:?}", cmd);
             assert!(
@@ -430,9 +411,13 @@ mod tests {
         };
 
         let expected_output = input_path.with_extension("converted.mp4");
-        
+
         // Verify the expected output path format
-        assert!(expected_output.to_string_lossy().ends_with(".converted.mp4"));
+        assert!(
+            expected_output
+                .to_string_lossy()
+                .ends_with(".converted.mp4")
+        );
     }
 
     #[test]
@@ -440,7 +425,7 @@ mod tests {
         // This test verifies the encoder checking logic works
         // It should return true for libx265 (software encoding) on any system with ffmpeg
         let has_libx265 = Converter::check_encoder_support("libx265");
-        
+
         // We can't guarantee what encoders are available, but we can verify
         // the function returns a boolean and doesn't panic
         assert!(has_libx265 || !has_libx265); // Always true, just checking it runs
@@ -449,7 +434,7 @@ mod tests {
     #[test]
     fn test_detect_hardware_accel_returns_valid_type() {
         let hw_accel = Converter::detect_hardware_accel();
-        
+
         // Should return one of the three valid types
         assert!(matches!(
             hw_accel,
@@ -565,7 +550,7 @@ mod property_tests {
             crf in 24u8..=26u8
         ) {
             let converter = Converter::with_config(hw_accel, crf);
-            
+
             // Verify CRF is in the valid range
             prop_assert!(
                 converter.crf() >= 24 && converter.crf() <= 26,
@@ -607,7 +592,7 @@ mod property_tests {
             ]
         ) {
             let converter = Converter::with_config(hw_accel, invalid_crf);
-            
+
             // Invalid CRF values should be clamped to default (25)
             prop_assert_eq!(
                 converter.crf(),
@@ -630,7 +615,7 @@ mod property_tests {
             ]
         ) {
             let converter = Converter::with_config(hw_accel, 25);
-            
+
             // Verify the converter uses the specified hardware acceleration
             prop_assert_eq!(
                 converter.hw_accel(),
@@ -685,7 +670,7 @@ mod property_tests {
         #[test]
         fn prop_hardware_detection_returns_valid_type(_dummy in 0u8..10u8) {
             let hw_accel = Converter::detect_hardware_accel();
-            
+
             // Should return one of the three valid types
             prop_assert!(
                 matches!(
