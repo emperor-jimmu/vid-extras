@@ -562,6 +562,7 @@ pub struct Organizer {
 **Implementation Notes:**
 - Category information is stored in `ConversionResult` for accurate organization
 - Failed conversions are skipped during organization
+- Output files are verified to exist before moving (defensive check)
 - Temp directories are cleaned up after successful file moves
 - Done marker uses package version from Cargo.toml
 - All file operations use async I/O for better performance

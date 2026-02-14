@@ -46,6 +46,15 @@ impl Organizer {
                 continue;
             }
 
+            // Verify the output file actually exists before trying to move it
+            if !conversion.output_path.exists() {
+                warn!(
+                    "Skipping conversion with missing output file: {:?}",
+                    conversion.output_path
+                );
+                continue;
+            }
+
             // Use the category from the conversion result
             files_by_category
                 .entry(conversion.category)
