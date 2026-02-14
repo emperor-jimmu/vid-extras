@@ -82,9 +82,9 @@ impl Downloader {
                 "Download progress [{}/{}]: {} from {}",
                 progress, total, source.title, source.url
             );
-            
+
             let result = self.download_single(&source, &temp_dir).await;
-            
+
             if result.success {
                 info!("✓ Downloaded [{}/{}]: {}", progress, total, source.title);
             } else {
@@ -96,7 +96,7 @@ impl Downloader {
                     result.error.as_deref().unwrap_or("Unknown error")
                 );
             }
-            
+
             results.push(result);
         }
 
@@ -139,7 +139,7 @@ impl Downloader {
         let mut hasher = DefaultHasher::new();
         source.url.hash(&mut hasher);
         let url_hash = hasher.finish();
-        
+
         // Build yt-dlp command with unique filename to prevent collisions
         // Format: "title_HASH.ext" where HASH is first 8 chars of URL hash
         let output_template = dest_dir.join(format!("%(title)s_{:08x}.%(ext)s", url_hash));
@@ -168,7 +168,10 @@ impl Downloader {
             Ok(Ok(output)) => {
                 if output.status.success() {
                     // Find the downloaded file
-                    match self.find_downloaded_file(dest_dir, &source.title, url_hash).await {
+                    match self
+                        .find_downloaded_file(dest_dir, &source.title, url_hash)
+                        .await
+                    {
                         Ok(local_path) => {
                             info!("Successfully downloaded: {:?}", local_path);
                             DownloadResult {
@@ -277,8 +280,11 @@ impl Downloader {
         }
 
         // Fallback: if no file with hash found, use the old fuzzy matching logic
-        warn!("No file found with hash suffix {}, falling back to fuzzy matching", hash_suffix);
-        
+        warn!(
+            "No file found with hash suffix {}, falling back to fuzzy matching",
+            hash_suffix
+        );
+
         let mut entries = fs::read_dir(dest_dir).await?;
         let mut candidates = Vec::new();
 

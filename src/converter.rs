@@ -177,7 +177,7 @@ impl Converter {
                 cmd.arg("-hwaccel").arg("cuda");
                 cmd.arg("-i").arg(input);
                 cmd.arg("-c:v").arg("hevc_nvenc");
-                cmd.arg("-preset").arg("p2"); // Faster preset for faster speed
+                cmd.arg("-preset").arg("p3"); // Faster preset for faster speed
                 cmd.arg("-rc").arg("vbr");
                 cmd.arg("-cq").arg(self.crf.to_string());
                 cmd.arg("-c:a").arg("copy");

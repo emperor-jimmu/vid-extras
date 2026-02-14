@@ -134,11 +134,11 @@ impl TmdbDiscoverer {
         if let Some(movie) = search_result.results.first() {
             let movie_id = movie.id;
             info!("Found TMDB movie: {} (ID: {})", movie.title, movie_id);
-            
+
             // Fetch full movie details to get collection information
             // The search API doesn't return belongs_to_collection, so we need a second call
             let collection = self.fetch_movie_details(movie_id).await?;
-            
+
             if let Some(ref coll) = collection {
                 info!(
                     "Movie belongs to collection: {} (ID: {})",
@@ -147,7 +147,7 @@ impl TmdbDiscoverer {
             } else {
                 info!("No collection found for: {} ({})", title, year);
             }
-            
+
             Ok(Some((movie_id, collection)))
         } else {
             info!("No TMDB results found for: {} ({})", title, year);
@@ -156,7 +156,10 @@ impl TmdbDiscoverer {
     }
 
     /// Fetch movie details to get collection information
-    async fn fetch_movie_details(&self, movie_id: u64) -> Result<Option<TmdbCollection>, DiscoveryError> {
+    async fn fetch_movie_details(
+        &self,
+        movie_id: u64,
+    ) -> Result<Option<TmdbCollection>, DiscoveryError> {
         let url = format!(
             "https://api.themoviedb.org/3/movie/{}?api_key={}",
             movie_id, self.api_key
@@ -576,7 +579,7 @@ impl YoutubeDiscoverer {
             .replace('³', " 3")
             .replace('⁴', " 4")
             .replace('⁵', " 5");
-        
+
         // Convert Roman numerals at word boundaries (must be surrounded by spaces or at end)
         // We need to be careful to only match standalone Roman numerals
         let roman_patterns = [
@@ -585,11 +588,11 @@ impl YoutubeDiscoverer {
             (" IV ", " 4 "),
             (" V ", " 5 "),
         ];
-        
+
         for (roman, arabic) in &roman_patterns {
             title = title.replace(roman, arabic);
         }
-        
+
         // Handle Roman numerals at the end of the string
         if title.ends_with(" II") {
             title = title.strip_suffix(" II").unwrap().to_string() + " 2";
@@ -600,7 +603,7 @@ impl YoutubeDiscoverer {
         } else if title.ends_with(" V") {
             title = title.strip_suffix(" V").unwrap().to_string() + " 5";
         }
-        
+
         // Then apply standard normalization
         title
             .to_lowercase()
@@ -1057,6 +1060,15 @@ impl DiscoveryOrchestrator {
     ///
     /// In All mode: queries TMDB, Archive.org (for movies < 2010), and YouTube
     /// In YoutubeOnly mode: queries only YouTube
+    ///
+    /// Applies content limits per category:
+    /// - Trailers: max 4
+    /// - Deleted Scenes: max 8
+    /// - Interviews: max 8
+    /// - Featurettes: max 10
+    /// - Behind the Scenes: max 10
+    ///
+    /// When limits are exceeded, prioritizes TMDB > Archive.org > YouTube
     pub async fn discover_all(&self, movie: &MovieEntry) -> Vec<VideoSource> {
         let mut all_sources = Vec::new();
 
@@ -1124,11 +1136,24 @@ impl DiscoveryOrchestrator {
         let initial_count = all_sources.len();
         all_sources.sort_by(|a, b| a.url.cmp(&b.url));
         all_sources.dedup_by(|a, b| a.url == b.url);
-        
+
         if all_sources.len() < initial_count {
             log::info!(
                 "Removed {} duplicate URL(s) for {}",
                 initial_count - all_sources.len(),
+                movie
+            );
+        }
+
+        // Apply content limits per category
+        let before_limit = all_sources.len();
+        all_sources = Self::apply_content_limits(all_sources);
+
+        if all_sources.len() < before_limit {
+            log::info!(
+                "Applied content limits, reduced from {} to {} sources for {}",
+                before_limit,
+                all_sources.len(),
                 movie
             );
         }
@@ -1139,6 +1164,49 @@ impl DiscoveryOrchestrator {
             all_sources.len()
         );
         all_sources
+    }
+
+    /// Apply content limits per category, prioritizing TMDB > Archive.org > YouTube
+    fn apply_content_limits(sources: Vec<VideoSource>) -> Vec<VideoSource> {
+        use ContentCategory::*;
+        use std::collections::HashMap;
+
+        // Define limits per category
+        let limits: HashMap<ContentCategory, usize> = [
+            (Trailer, 4),
+            (DeletedScene, 8),
+            (Interview, 8),
+            (Featurette, 10),
+            (BehindTheScenes, 10),
+        ]
+        .iter()
+        .cloned()
+        .collect();
+
+        // Group sources by category
+        let mut by_category: HashMap<ContentCategory, Vec<VideoSource>> = HashMap::new();
+        for source in sources {
+            by_category.entry(source.category).or_default().push(source);
+        }
+
+        // Apply limits to each category, prioritizing by source type
+        let mut limited_sources = Vec::new();
+        for (category, mut sources) in by_category {
+            let limit = limits.get(&category).copied().unwrap_or(usize::MAX);
+
+            // Sort by source priority: TMDB (0) > Archive.org (1) > YouTube (2)
+            sources.sort_by_key(|s| match s.source_type {
+                SourceType::TMDB => 0,
+                SourceType::ArchiveOrg => 1,
+                SourceType::YouTube => 2,
+            });
+
+            // Take only up to the limit
+            sources.truncate(limit);
+            limited_sources.extend(sources);
+        }
+
+        limited_sources
     }
 }
 
@@ -2641,7 +2709,7 @@ fn test_sequel_detection_without_collection() {
 #[tokio::test]
 async fn test_discovery_orchestrator_deduplicates_urls() {
     use std::path::PathBuf;
-    
+
     // Test that duplicate URLs from different sources are deduplicated
     let tmdb_api_key = "test_key".to_string();
     let orchestrator = DiscoveryOrchestrator::new(tmdb_api_key, SourceMode::All);
@@ -2667,4 +2735,325 @@ async fn test_discovery_orchestrator_deduplicates_urls() {
             source.url
         );
     }
+}
+
+#[test]
+fn test_content_limits_trailers() {
+    // Create 6 trailer sources from different providers
+    let sources = vec![
+        VideoSource {
+            url: "https://youtube.com/1".to_string(),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Trailer,
+            title: "Trailer 1".to_string(),
+        },
+        VideoSource {
+            url: "https://youtube.com/2".to_string(),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Trailer,
+            title: "Trailer 2".to_string(),
+        },
+        VideoSource {
+            url: "https://tmdb.com/1".to_string(),
+            source_type: SourceType::TMDB,
+            category: ContentCategory::Trailer,
+            title: "Trailer 3".to_string(),
+        },
+        VideoSource {
+            url: "https://tmdb.com/2".to_string(),
+            source_type: SourceType::TMDB,
+            category: ContentCategory::Trailer,
+            title: "Trailer 4".to_string(),
+        },
+        VideoSource {
+            url: "https://archive.org/1".to_string(),
+            source_type: SourceType::ArchiveOrg,
+            category: ContentCategory::Trailer,
+            title: "Trailer 5".to_string(),
+        },
+        VideoSource {
+            url: "https://youtube.com/3".to_string(),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Trailer,
+            title: "Trailer 6".to_string(),
+        },
+    ];
+
+    let limited = DiscoveryOrchestrator::apply_content_limits(sources);
+
+    // Should have exactly 4 trailers (the limit)
+    assert_eq!(limited.len(), 4);
+
+    // All should be trailers
+    assert!(
+        limited
+            .iter()
+            .all(|s| s.category == ContentCategory::Trailer)
+    );
+
+    // Should prioritize TMDB sources
+    let tmdb_count = limited
+        .iter()
+        .filter(|s| s.source_type == SourceType::TMDB)
+        .count();
+    assert_eq!(tmdb_count, 2, "Should include both TMDB trailers");
+
+    // Should include Archive.org before YouTube
+    let archive_count = limited
+        .iter()
+        .filter(|s| s.source_type == SourceType::ArchiveOrg)
+        .count();
+    assert_eq!(archive_count, 1, "Should include Archive.org trailer");
+
+    // Should include 1 YouTube trailer to reach the limit of 4
+    let youtube_count = limited
+        .iter()
+        .filter(|s| s.source_type == SourceType::YouTube)
+        .count();
+    assert_eq!(youtube_count, 1, "Should include 1 YouTube trailer");
+}
+
+#[test]
+fn test_content_limits_deleted_scenes() {
+    // Create 10 deleted scene sources
+    let sources: Vec<VideoSource> = (0..10)
+        .map(|i| VideoSource {
+            url: format!("https://youtube.com/{}", i),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::DeletedScene,
+            title: format!("Deleted Scene {}", i),
+        })
+        .collect();
+
+    let limited = DiscoveryOrchestrator::apply_content_limits(sources);
+
+    // Should have exactly 8 deleted scenes (the limit)
+    assert_eq!(limited.len(), 8);
+    assert!(
+        limited
+            .iter()
+            .all(|s| s.category == ContentCategory::DeletedScene)
+    );
+}
+
+#[test]
+fn test_content_limits_interviews() {
+    // Create 12 interview sources
+    let sources: Vec<VideoSource> = (0..12)
+        .map(|i| VideoSource {
+            url: format!("https://youtube.com/{}", i),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Interview,
+            title: format!("Interview {}", i),
+        })
+        .collect();
+
+    let limited = DiscoveryOrchestrator::apply_content_limits(sources);
+
+    // Should have exactly 8 interviews (the limit)
+    assert_eq!(limited.len(), 8);
+    assert!(
+        limited
+            .iter()
+            .all(|s| s.category == ContentCategory::Interview)
+    );
+}
+
+#[test]
+fn test_content_limits_featurettes() {
+    // Create 15 featurette sources
+    let sources: Vec<VideoSource> = (0..15)
+        .map(|i| VideoSource {
+            url: format!("https://youtube.com/{}", i),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Featurette,
+            title: format!("Featurette {}", i),
+        })
+        .collect();
+
+    let limited = DiscoveryOrchestrator::apply_content_limits(sources);
+
+    // Should have exactly 10 featurettes (the limit)
+    assert_eq!(limited.len(), 10);
+    assert!(
+        limited
+            .iter()
+            .all(|s| s.category == ContentCategory::Featurette)
+    );
+}
+
+#[test]
+fn test_content_limits_behind_the_scenes() {
+    // Create 15 behind-the-scenes sources
+    let sources: Vec<VideoSource> = (0..15)
+        .map(|i| VideoSource {
+            url: format!("https://youtube.com/{}", i),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::BehindTheScenes,
+            title: format!("Behind the Scenes {}", i),
+        })
+        .collect();
+
+    let limited = DiscoveryOrchestrator::apply_content_limits(sources);
+
+    // Should have exactly 10 behind-the-scenes videos (the limit)
+    assert_eq!(limited.len(), 10);
+    assert!(
+        limited
+            .iter()
+            .all(|s| s.category == ContentCategory::BehindTheScenes)
+    );
+}
+
+#[test]
+fn test_content_limits_mixed_categories() {
+    // Create sources across multiple categories
+    let mut sources = Vec::new();
+
+    // 6 trailers (limit: 4)
+    for i in 0..6 {
+        sources.push(VideoSource {
+            url: format!("https://youtube.com/trailer{}", i),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Trailer,
+            title: format!("Trailer {}", i),
+        });
+    }
+
+    // 10 deleted scenes (limit: 8)
+    for i in 0..10 {
+        sources.push(VideoSource {
+            url: format!("https://youtube.com/deleted{}", i),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::DeletedScene,
+            title: format!("Deleted Scene {}", i),
+        });
+    }
+
+    // 5 interviews (limit: 8, under limit)
+    for i in 0..5 {
+        sources.push(VideoSource {
+            url: format!("https://youtube.com/interview{}", i),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Interview,
+            title: format!("Interview {}", i),
+        });
+    }
+
+    let limited = DiscoveryOrchestrator::apply_content_limits(sources);
+
+    // Should have 4 trailers + 8 deleted scenes + 5 interviews = 17 total
+    assert_eq!(limited.len(), 17);
+
+    let trailer_count = limited
+        .iter()
+        .filter(|s| s.category == ContentCategory::Trailer)
+        .count();
+    let deleted_count = limited
+        .iter()
+        .filter(|s| s.category == ContentCategory::DeletedScene)
+        .count();
+    let interview_count = limited
+        .iter()
+        .filter(|s| s.category == ContentCategory::Interview)
+        .count();
+
+    assert_eq!(trailer_count, 4, "Should limit trailers to 4");
+    assert_eq!(deleted_count, 8, "Should limit deleted scenes to 8");
+    assert_eq!(
+        interview_count, 5,
+        "Should keep all 5 interviews (under limit)"
+    );
+}
+
+#[test]
+fn test_content_limits_source_priority() {
+    // Create sources with different priorities for the same category
+    let sources = vec![
+        VideoSource {
+            url: "https://youtube.com/1".to_string(),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Featurette,
+            title: "YouTube Featurette 1".to_string(),
+        },
+        VideoSource {
+            url: "https://youtube.com/2".to_string(),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Featurette,
+            title: "YouTube Featurette 2".to_string(),
+        },
+        VideoSource {
+            url: "https://tmdb.com/1".to_string(),
+            source_type: SourceType::TMDB,
+            category: ContentCategory::Featurette,
+            title: "TMDB Featurette 1".to_string(),
+        },
+        VideoSource {
+            url: "https://archive.org/1".to_string(),
+            source_type: SourceType::ArchiveOrg,
+            category: ContentCategory::Featurette,
+            title: "Archive Featurette 1".to_string(),
+        },
+        VideoSource {
+            url: "https://tmdb.com/2".to_string(),
+            source_type: SourceType::TMDB,
+            category: ContentCategory::Featurette,
+            title: "TMDB Featurette 2".to_string(),
+        },
+    ];
+
+    let limited = DiscoveryOrchestrator::apply_content_limits(sources);
+
+    // With 5 sources and limit of 10, all should be included
+    assert_eq!(limited.len(), 5);
+
+    // Verify priority by checking that TMDB sources are included
+    let tmdb_count = limited
+        .iter()
+        .filter(|s| s.source_type == SourceType::TMDB)
+        .count();
+    assert_eq!(tmdb_count, 2, "Should include both TMDB sources");
+
+    let archive_count = limited
+        .iter()
+        .filter(|s| s.source_type == SourceType::ArchiveOrg)
+        .count();
+    assert_eq!(archive_count, 1, "Should include Archive.org source");
+
+    let youtube_count = limited
+        .iter()
+        .filter(|s| s.source_type == SourceType::YouTube)
+        .count();
+    assert_eq!(youtube_count, 2, "Should include YouTube sources");
+}
+
+#[test]
+fn test_content_limits_empty_input() {
+    let sources: Vec<VideoSource> = vec![];
+    let limited = DiscoveryOrchestrator::apply_content_limits(sources);
+    assert_eq!(limited.len(), 0, "Empty input should return empty output");
+}
+
+#[test]
+fn test_content_limits_under_limit() {
+    // Create 2 trailers when limit is 4
+    let sources = vec![
+        VideoSource {
+            url: "https://youtube.com/1".to_string(),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Trailer,
+            title: "Trailer 1".to_string(),
+        },
+        VideoSource {
+            url: "https://youtube.com/2".to_string(),
+            source_type: SourceType::YouTube,
+            category: ContentCategory::Trailer,
+            title: "Trailer 2".to_string(),
+        },
+    ];
+
+    let limited = DiscoveryOrchestrator::apply_content_limits(sources);
+
+    // Should keep all sources when under limit
+    assert_eq!(limited.len(), 2);
 }

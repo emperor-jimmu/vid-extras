@@ -79,8 +79,8 @@ Added detailed download progress indicators:
 FFmpeg NVENC conversions were taking too long due to using the p4 (medium) preset, which is balanced but not optimized for speed when processing thousands of movies.
 
 ### Solution
-Changed NVENC preset from p4 to p2 for maximum encoding speed:
-- p4 (medium) → p2 (faster) - significantly faster encoding
+Changed NVENC preset from p4 to p3 for maximum encoding speed:
+- p4 (medium) → p3 (faster) - significantly faster encoding
 - Quality difference is minimal for extras content
 - Better suited for batch processing large libraries
 - According to [FFmpeg NVENC documentation](https://gist.github.com/nico-lab/c2d192cbb793dfd241c1eafeb52a21c3), p1 is the fastest preset

@@ -201,7 +201,21 @@ The extras_fetcher is a Rust-based automation utility designed to enrich Jellyfi
 7. WHEN errors occur, THE Extras_Fetcher SHALL display error messages in red with clear context
 8. WHEN verbose logging is needed, THE Extras_Fetcher SHALL support a --verbose flag for detailed output
 
-### Requirement 14: Language and Tooling Standards
+### Requirement 14: Content Quantity Limitations
+
+**User Story:** As a library curator, I want reasonable limits on the number of extras per category, so that my library doesn't become cluttered with excessive content.
+
+#### Acceptance Criteria
+
+1. WHEN discovering trailers, THE Extras_Fetcher SHALL limit results to a maximum of 4 trailers per movie
+2. WHEN discovering deleted scenes, THE Extras_Fetcher SHALL limit results to a maximum of 8 deleted scenes per movie
+3. WHEN discovering interviews, THE Extras_Fetcher SHALL limit results to a maximum of 8 interviews per movie
+4. WHEN discovering featurettes, THE Extras_Fetcher SHALL limit results to a maximum of 10 featurettes per movie
+5. WHEN discovering behind-the-scenes content, THE Extras_Fetcher SHALL limit results to a maximum of 10 behind-the-scenes videos per movie
+6. WHEN multiple sources provide content for the same category, THE Extras_Fetcher SHALL apply limits after aggregating all sources
+7. WHEN limits are exceeded, THE Extras_Fetcher SHALL prioritize content from TMDB over Archive.org over YouTube
+
+### Requirement 15: Language and Tooling Standards
 
 **User Story:** As a Rust developer, I want the codebase to use modern Rust standards and leverage available development tools, so that the code is maintainable and follows best practices.
 
