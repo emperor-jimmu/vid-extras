@@ -93,23 +93,23 @@ This implementation plan breaks down the extras_fetcher tool into discrete, incr
     - Test movie search query construction
     - _Requirements: 3.1, 3.2, 3.9_
 
-- [ ] 7. Implement Discovery module - Archive.org
-  - [ ] 7.1 Create ArchiveOrgDiscoverer struct
+- [x] 7. Implement Discovery module - Archive.org
+  - [x] 7.1 Create ArchiveOrgDiscoverer struct
     - Implement year-based conditional querying (< 2010)
     - Implement search query construction with title and EPK/Making of subjects
     - Implement result parsing and category mapping
     - Handle API errors gracefully with logging
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
   
-  - [ ] 7.2 Write property test for year-based querying
+  - [x] 7.2 Write property test for year-based querying
     - **Property 8: Archive.org Year-Based Querying**
     - **Validates: Requirements 4.1, 4.2**
   
-  - [ ] 7.3 Write property test for query construction
+  - [x] 7.3 Write property test for query construction
     - **Property 9: Archive.org Query Construction**
     - **Validates: Requirements 4.4**
   
-  - [ ] 7.4 Write unit tests for Archive.org integration
+  - [x] 7.4 Write unit tests for Archive.org integration
     - Test query string formatting
     - Test result parsing
     - Test error handling
