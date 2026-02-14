@@ -67,25 +67,47 @@ impl Converter {
     async fn convert_single(&self, download: &DownloadResult) -> ConversionResult {
         let input_path = &download.local_path;
 
-        // Generate output path with .mp4 extension
-        let output_path = input_path.with_extension("converted.mp4");
+        // Generate temporary output path to avoid overwriting input during conversion
+        // Use a .tmp.mp4 extension during conversion, then rename to final .mp4
+        let temp_output_path = input_path.with_extension("tmp.mp4");
+        let final_output_path = input_path.with_extension("mp4");
 
         info!(
             "Converting {} using {}",
             download.source.title, self.hw_accel
         );
 
-        // Build and execute ffmpeg command
-        match self.execute_conversion(input_path, &output_path).await {
+        // Build and execute ffmpeg command to temporary output
+        match self.execute_conversion(input_path, &temp_output_path).await {
             Ok(_) => {
-                // Conversion succeeded - delete original file
-                if let Err(e) = fs::remove_file(input_path).await {
+                // Conversion succeeded - rename temp to final output
+                if let Err(e) = fs::rename(&temp_output_path, &final_output_path).await {
+                    error!(
+                        "Failed to rename temp output {:?} to {:?}: {}",
+                        temp_output_path, final_output_path, e
+                    );
+                    // Clean up temp file
+                    let _ = fs::remove_file(&temp_output_path).await;
+                    
+                    return ConversionResult {
+                        input_path: input_path.clone(),
+                        output_path: final_output_path.clone(),
+                        category: download.source.category,
+                        success: false,
+                        error: Some(format!("Failed to rename output: {}", e)),
+                    };
+                }
+
+                // Delete original file only after successful rename
+                if input_path != &final_output_path
+                    && let Err(e) = fs::remove_file(input_path).await
+                {
                     warn!("Failed to delete original file {:?}: {}", input_path, e);
                 }
 
                 ConversionResult {
                     input_path: input_path.clone(),
-                    output_path: output_path.clone(),
+                    output_path: final_output_path.clone(),
                     category: download.source.category,
                     success: true,
                     error: None,
@@ -94,19 +116,21 @@ impl Converter {
             Err(e) => {
                 error!("Conversion failed for {}: {}", download.source.title, e);
 
-                // Conversion failed - delete failed output, keep original
-                if output_path.exists()
-                    && let Err(del_err) = fs::remove_file(&output_path).await
+                // Conversion failed - delete failed temp output, keep original
+                if temp_output_path.exists()
+                    && let Err(del_err) = fs::remove_file(&temp_output_path).await
                 {
                     warn!(
-                        "Failed to delete failed output {:?}: {}",
-                        output_path, del_err
+                        "Failed to delete failed temp output {:?}: {}",
+                        temp_output_path, del_err
                     );
                 }
 
+                // Note: If input and output paths are the same (e.g., both .mp4),
+                // we don't delete anything since the original must be preserved
                 ConversionResult {
                     input_path: input_path.clone(),
-                    output_path: output_path.clone(),
+                    output_path: final_output_path.clone(),
                     category: download.source.category,
                     success: false,
                     error: Some(e.to_string()),
@@ -413,14 +437,10 @@ mod tests {
             error: None,
         };
 
-        let expected_output = input_path.with_extension("converted.mp4");
+        let expected_output = input_path.with_extension("mp4");
 
         // Verify the expected output path format
-        assert!(
-            expected_output
-                .to_string_lossy()
-                .ends_with(".converted.mp4")
-        );
+        assert!(expected_output.to_string_lossy().ends_with(".mp4"));
     }
 
     #[test]
@@ -482,8 +502,8 @@ mod tests {
         // but we can check that the output path is constructed correctly
         let result = converter.convert_single(&download).await;
 
-        // Output path should be input with .converted.mp4 extension
-        let expected_output = input_path.with_extension("converted.mp4");
+        // Output path should be input with .mp4 extension
+        let expected_output = input_path.with_extension("mp4");
         assert_eq!(result.output_path, expected_output);
     }
 }
@@ -724,11 +744,14 @@ mod property_tests {
                     "Original file should exist after failed conversion"
                 );
 
-                // On failure, output file should be deleted
-                prop_assert!(
-                    !result.output_path.exists(),
-                    "Failed output file should be deleted"
-                );
+                // On failure, if output path is different from input, it should be deleted
+                // If they're the same (e.g., both .mp4), the file should still exist
+                if result.output_path != input_path {
+                    prop_assert!(
+                        !result.output_path.exists(),
+                        "Failed output file should be deleted when different from input"
+                    );
+                }
 
                 Ok(())
             })?;
@@ -783,11 +806,14 @@ mod property_tests {
                     "Original file must be preserved after failed conversion"
                 );
 
-                // On failure, failed output file should be deleted
-                prop_assert!(
-                    !result.output_path.exists(),
-                    "Failed output file should be deleted, not left behind"
-                );
+                // On failure, if output path is different from input, it should be deleted
+                // If they're the same (e.g., both .mp4), the file should still exist
+                if result.output_path != input_path {
+                    prop_assert!(
+                        !result.output_path.exists(),
+                        "Failed output file should be deleted when different from input"
+                    );
+                }
 
                 Ok(())
             })?;

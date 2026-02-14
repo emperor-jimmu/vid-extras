@@ -302,10 +302,10 @@ mod tests {
         fs::create_dir(&temp_dir).await.unwrap();
 
         // Create test conversion results
-        let trailer_file = temp_dir.join("trailer.converted.mp4");
+        let trailer_file = temp_dir.join("trailer.mp4");
         fs::write(&trailer_file, b"trailer content").await.unwrap();
 
-        let featurette_file = temp_dir.join("featurette.converted.mp4");
+        let featurette_file = temp_dir.join("featurette.mp4");
         fs::write(&featurette_file, b"featurette content")
             .await
             .unwrap();
@@ -335,10 +335,10 @@ mod tests {
         assert!(movie_path.join("featurettes").exists());
 
         // Verify files were moved
-        assert!(movie_path.join("trailers/trailer.converted.mp4").exists());
+        assert!(movie_path.join("trailers/trailer.mp4").exists());
         assert!(
             movie_path
-                .join("featurettes/featurette.converted.mp4")
+                .join("featurettes/featurette.mp4")
                 .exists()
         );
 
@@ -358,7 +358,7 @@ mod tests {
         let temp_dir = temp.path().join("tmp_downloads");
         fs::create_dir(&temp_dir).await.unwrap();
 
-        let success_file = temp_dir.join("success.converted.mp4");
+        let success_file = temp_dir.join("success.mp4");
         fs::write(&success_file, b"success content").await.unwrap();
 
         let conversions = vec![
@@ -371,7 +371,7 @@ mod tests {
             },
             ConversionResult {
                 input_path: temp_dir.join("failed.mp4"),
-                output_path: temp_dir.join("failed.converted.mp4"),
+                output_path: temp_dir.join("failed.mp4"),
                 category: ContentCategory::Featurette,
                 success: false,
                 error: Some("Conversion failed".to_string()),
@@ -383,7 +383,7 @@ mod tests {
 
         // Only successful conversion should be organized
         assert!(movie_path.join("trailers").exists());
-        assert!(movie_path.join("trailers/success.converted.mp4").exists());
+        assert!(movie_path.join("trailers/success.mp4").exists());
 
         // Failed conversion should not create subdirectory
         assert!(!movie_path.join("featurettes").exists());
@@ -399,10 +399,10 @@ mod tests {
         fs::create_dir(&temp_dir).await.unwrap();
 
         // Create files for different categories
-        let trailer = temp_dir.join("trailer.converted.mp4");
-        let featurette = temp_dir.join("featurette.converted.mp4");
-        let behind = temp_dir.join("behind.converted.mp4");
-        let deleted = temp_dir.join("deleted.converted.mp4");
+        let trailer = temp_dir.join("trailer.mp4");
+        let featurette = temp_dir.join("featurette.mp4");
+        let behind = temp_dir.join("behind.mp4");
+        let deleted = temp_dir.join("deleted.mp4");
 
         fs::write(&trailer, b"trailer").await.unwrap();
         fs::write(&featurette, b"featurette").await.unwrap();
@@ -450,20 +450,16 @@ mod tests {
         assert!(movie_path.join("deleted scenes").exists());
 
         // Verify all files were moved
-        assert!(movie_path.join("trailers/trailer.converted.mp4").exists());
+        assert!(movie_path.join("trailers/trailer.mp4").exists());
+        assert!(movie_path.join("featurettes/featurette.mp4").exists());
         assert!(
             movie_path
-                .join("featurettes/featurette.converted.mp4")
+                .join("behind the scenes/behind.mp4")
                 .exists()
         );
         assert!(
             movie_path
-                .join("behind the scenes/behind.converted.mp4")
-                .exists()
-        );
-        assert!(
-            movie_path
-                .join("deleted scenes/deleted.converted.mp4")
+                .join("deleted scenes/deleted.mp4")
                 .exists()
         );
     }
@@ -631,7 +627,7 @@ mod property_tests {
                 // Create conversion results
                 let mut conversions = vec![];
                 for i in 0..num_conversions {
-                    let output_file = temp_dir.join(format!("file_{}.converted.mp4", i));
+                    let output_file = temp_dir.join(format!("file_{}.mp4", i));
                     tokio::fs::write(&output_file, b"test content").await.unwrap();
 
                     conversions.push(ConversionResult {
