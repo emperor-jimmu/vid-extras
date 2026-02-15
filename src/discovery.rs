@@ -909,8 +909,8 @@ impl YoutubeDiscoverer {
         expected_year: u16,
         collection_titles: &[String],
     ) -> Result<Vec<VideoSource>, DiscoveryError> {
-        // Use yt-dlp with ytsearch10 to get top 10 results
-        let search_query = format!("ytsearch10:{}", query);
+        // Use yt-dlp with ytsearch5 to get top 10 results
+        let search_query = format!("ytsearch5:{}", query);
 
         debug!("Searching YouTube with query: {}", query);
 
