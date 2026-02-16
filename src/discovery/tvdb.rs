@@ -89,11 +89,21 @@ pub struct TvdbEpisodesPage {
     pub next: Option<String>,
 }
 
-/// Login response containing Bearer token
+/// Inner data structure containing the token
 #[derive(Debug, Deserialize)]
-pub struct TvdbLoginResponse {
+pub struct TvdbLoginData {
     /// Bearer token for authenticated requests
     pub token: String,
+}
+
+/// Login response from TheTVDB API v4
+#[derive(Debug, Deserialize)]
+pub struct TvdbLoginResponse {
+    /// Nested data object containing the token
+    pub data: TvdbLoginData,
+    /// Status of the response (included for API compatibility)
+    #[allow(dead_code)]
+    pub status: String,
 }
 
 /// Search response containing results
@@ -158,7 +168,7 @@ impl TvdbClient {
         })?;
 
         debug!("Successfully authenticated with TheTVDB API");
-        Ok(login_response.token)
+        Ok(login_response.data.token)
     }
 
     /// Ensure we have a valid token, re-authenticating if needed
@@ -367,10 +377,11 @@ mod tests {
 
     #[test]
     fn test_tvdb_login_response_deserialization() {
-        let json = r#"{"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"}"#;
+        let json = r#"{"data": {"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"}, "status": "success"}"#;
 
         let response: TvdbLoginResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.token, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9");
+        assert_eq!(response.data.token, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9");
+        assert_eq!(response.status, "success");
     }
 
     #[test]
