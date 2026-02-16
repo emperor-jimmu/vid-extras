@@ -102,29 +102,29 @@ The plan is organized into discrete, incremental tasks that build upon each othe
 - [x] 7. Checkpoint - Ensure discovery tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Implement series organizer module
-  - [ ] 8.1 Create SeriesOrganizer struct in src/organizer.rs
+- [x] 8. Implement series organizer module
+  - [x] 8.1 Create SeriesOrganizer struct in src/organizer.rs
     - Add organize_extras method for series extras
     - Support series-level extras (no season number)
     - Support season-specific extras (with season number)
     - Create subdirectories based on ContentCategory
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 2.3, 2.4_
-  - [ ] 8.2 Write property test for season number interpretation
+  - [x] 8.2 Write property test for season number interpretation
     - **Property 3: Season Number Interpretation**
     - **Validates: Requirements 2.3, 2.4**
-  - [ ] 8.3 Write property test for content category to subdirectory mapping
+  - [x] 8.3 Write property test for content category to subdirectory mapping
     - **Property 9: Content Category to Subdirectory Mapping**
     - **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7**
-  - [ ] 8.4 Add organize_specials method for Season 0 episodes
+  - [x] 8.4 Add organize_specials method for Season 0 episodes
     - Create Season 00 folder
     - Format filenames as "{Series Name} - S00E{num} - {title}.mp4"
     - Zero-pad episode numbers
     - Sanitize filenames (remove invalid characters)
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
-  - [ ] 8.5 Write property test for Season 0 file naming format
+  - [x] 8.5 Write property test for Season 0 file naming format
     - **Property 10: Season 0 File Naming Format**
     - **Validates: Requirements 8.1, 8.2, 8.3, 8.4**
-  - [ ] 8.6 Write unit tests for series organizer
+  - [x] 8.6 Write unit tests for series organizer
     - Test subdirectory creation
     - Test file moving with cross-drive support
     - Test filename sanitization
@@ -138,10 +138,10 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Implement cache validation (check age)
     - Support force flag to bypass cache
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5_
-  - [ ]\* 9.2 Write property test for metadata cache freshness
+  - [ ] 9.2 Write property test for metadata cache freshness
     - **Property 14: Metadata Cache Freshness**
     - **Validates: Requirements 14.1, 14.2, 14.3, 14.4**
-  - [ ]\* 9.3 Write unit tests for cache module
+  - [ ] 9.3 Write unit tests for cache module
     - Test cache creation and reading
     - Test TTL expiration
     - Test force flag behavior
