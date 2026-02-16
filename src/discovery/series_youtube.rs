@@ -127,7 +127,7 @@ impl YoutubeSeriesDiscoverer {
         query: &str,
         series_title: &str,
         category: ContentCategory,
-        season_number: Option<u8>,
+        _season_number: Option<u8>,
     ) -> Result<Vec<SeriesExtra>, DiscoveryError> {
         let search_query = format!("ytsearch5:{}", query);
 
@@ -178,13 +178,15 @@ impl YoutubeSeriesDiscoverer {
                         // Extract actual season number from title
                         let extracted_seasons = title_matching::extract_season_numbers(&title);
 
-                        // If title mentions specific seasons, use those; otherwise use the search season
+                        // If title mentions specific seasons, use those; otherwise treat as
+                        // series-level content (None) so it gets placed in the show root folder
+                        // rather than a season subfolder.
                         let final_season = if !extracted_seasons.is_empty() {
                             // Use the first extracted season (most specific match)
                             Some(extracted_seasons[0])
                         } else {
-                            // No season in title, use the season we're searching for
-                            season_number
+                            // No season in title — this is general series content
+                            None
                         };
 
                         sources.push(SeriesExtra {

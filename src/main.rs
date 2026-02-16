@@ -98,8 +98,8 @@ async fn main() {
         }
     };
 
-    // Execute the orchestrator and process all movies
-    log::info!("Starting movie processing pipeline");
+    // Execute the orchestrator
+    log::info!("Starting processing pipeline");
     let summary = match orchestrator.run().await {
         Ok(sum) => {
             log::info!("Processing pipeline completed");
@@ -121,13 +121,13 @@ async fn main() {
     // Exit with appropriate code
     if summary.failed_movies > 0 || summary.failed_series > 0 {
         log::warn!(
-            "Processing completed with {} movie failures and {} series failures",
+            "Processing completed with {} movie failure(s) and {} series failure(s)",
             summary.failed_movies,
             summary.failed_series
         );
         std::process::exit(1);
     } else {
-        log::info!("All movies processed successfully");
+        log::info!("All items processed successfully");
         std::process::exit(0);
     }
 }

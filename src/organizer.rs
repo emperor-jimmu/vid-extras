@@ -377,6 +377,27 @@ impl SeriesOrganizer {
     }
 
     /// Ensure a subdirectory exists for the given content category
+    /// Resolve the on-disk season folder for a given season number.
+    ///
+    /// Checks common naming variants (e.g. "Season 2", "Season 02") and returns
+    /// the first match. Falls back to zero-padded format if none exists yet.
+    fn resolve_season_folder(&self, season: u8) -> PathBuf {
+        let candidates = [
+            format!("Season {}", season),
+            format!("Season {:02}", season),
+        ];
+
+        for candidate in &candidates {
+            let path = self.series_path.join(candidate);
+            if path.is_dir() {
+                return path;
+            }
+        }
+
+        // No existing folder found — use zero-padded format as default
+        self.series_path.join(format!("Season {:02}", season))
+    }
+
     async fn ensure_subdirectory(
         &self,
         category: ContentCategory,
@@ -385,10 +406,8 @@ impl SeriesOrganizer {
         let subdir_name = category.subdirectory();
 
         let subdir_path = if let Some(s) = season {
-            // Season-specific subdirectory
-            self.series_path
-                .join(format!("Season {:02}", s))
-                .join(subdir_name)
+            // Use the existing season folder on disk if present
+            self.resolve_season_folder(s).join(subdir_name)
         } else {
             // Series-level subdirectory
             self.series_path.join(subdir_name)
