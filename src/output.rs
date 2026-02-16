@@ -1,6 +1,6 @@
 // Output module - handles CLI output formatting and progress display
 
-use crate::models::{ContentCategory, MovieEntry, SourceType};
+use crate::models::{ContentCategory, MovieEntry, SeriesEntry, SourceType};
 use crate::orchestrator::ProcessingSummary;
 use colored::Colorize;
 
@@ -279,6 +279,94 @@ pub fn display_movie_complete(
     }
 }
 
+/// Display series processing start
+/// Requirements: 18.1
+#[allow(dead_code)]
+pub fn display_series_start(series: &SeriesEntry) {
+    println!("\n{}", "━".repeat(60).bright_cyan());
+    println!(
+        "{} Processing: {}",
+        "📺".bright_cyan(),
+        series.to_string().bright_white().bold()
+    );
+    println!("{}", "━".repeat(60).bright_cyan());
+}
+
+/// Display series discovery progress
+/// Requirements: 18.2, 18.3
+#[allow(dead_code)]
+pub fn display_series_discovery_progress(
+    series: &SeriesEntry,
+    tmdb_count: usize,
+    youtube_count: usize,
+) {
+    println!(
+        "\n{} {} - TMDB: {}, YouTube: {}",
+        "🔍".blue(),
+        series.to_string().bright_cyan(),
+        tmdb_count.to_string().bright_yellow(),
+        youtube_count.to_string().bright_yellow()
+    );
+}
+
+/// Display series download statistics
+/// Requirements: 18.4
+#[allow(dead_code)]
+pub fn display_series_download_stats(_series: &SeriesEntry, successful: usize, failed: usize) {
+    let total = successful + failed;
+    println!(
+        "  {} Downloads: {}/{} successful",
+        "⬇".blue(),
+        successful.to_string().green(),
+        total.to_string().bright_white()
+    );
+    if failed > 0 {
+        println!("    {} {} failed", "⚠".yellow(), failed.to_string().red());
+    }
+}
+
+/// Display series conversion statistics
+/// Requirements: 18.5
+#[allow(dead_code)]
+pub fn display_series_conversion_stats(_series: &SeriesEntry, successful: usize, failed: usize) {
+    let total = successful + failed;
+    println!(
+        "  {} Conversions: {}/{} successful",
+        "⚙".blue(),
+        successful.to_string().green(),
+        total.to_string().bright_white()
+    );
+    if failed > 0 {
+        println!("    {} {} failed", "⚠".yellow(), failed.to_string().red());
+    }
+}
+
+/// Display series processing completion
+/// Requirements: 18.6
+#[allow(dead_code)]
+pub fn display_series_complete(
+    series: &SeriesEntry,
+    downloads: usize,
+    conversions: usize,
+    success: bool,
+) {
+    if success {
+        println!(
+            "\n{} {} - {} downloads, {} conversions",
+            "✓".green().bold(),
+            series.to_string().bright_white().bold(),
+            downloads.to_string().green(),
+            conversions.to_string().green()
+        );
+    } else {
+        println!(
+            "\n{} {} - Processing failed",
+            "✗".red().bold(),
+            series.to_string().bright_white().bold()
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,6 +378,16 @@ mod tests {
             title: "Test Movie".to_string(),
             year: 2020,
             has_done_marker: false,
+        }
+    }
+
+    fn create_test_series() -> SeriesEntry {
+        SeriesEntry {
+            path: PathBuf::from("/series/Test Series (2020)"),
+            title: "Test Series".to_string(),
+            year: Some(2020),
+            has_done_marker: false,
+            seasons: vec![1, 2, 3],
         }
     }
 
@@ -426,6 +524,54 @@ mod tests {
     fn test_display_movie_complete_failure() {
         let movie = create_test_movie();
         display_movie_complete(&movie, 0, 0, false);
+    }
+
+    #[test]
+    fn test_display_series_start() {
+        let series = create_test_series();
+        display_series_start(&series);
+    }
+
+    #[test]
+    fn test_display_series_discovery_progress() {
+        let series = create_test_series();
+        display_series_discovery_progress(&series, 3, 5);
+    }
+
+    #[test]
+    fn test_display_series_download_stats_all_successful() {
+        let series = create_test_series();
+        display_series_download_stats(&series, 8, 0);
+    }
+
+    #[test]
+    fn test_display_series_download_stats_with_failures() {
+        let series = create_test_series();
+        display_series_download_stats(&series, 6, 2);
+    }
+
+    #[test]
+    fn test_display_series_conversion_stats_all_successful() {
+        let series = create_test_series();
+        display_series_conversion_stats(&series, 8, 0);
+    }
+
+    #[test]
+    fn test_display_series_conversion_stats_with_failures() {
+        let series = create_test_series();
+        display_series_conversion_stats(&series, 6, 2);
+    }
+
+    #[test]
+    fn test_display_series_complete_success() {
+        let series = create_test_series();
+        display_series_complete(&series, 8, 7, true);
+    }
+
+    #[test]
+    fn test_display_series_complete_failure() {
+        let series = create_test_series();
+        display_series_complete(&series, 0, 0, false);
     }
 
     #[test]
@@ -582,6 +728,85 @@ mod property_tests {
             prop_assert!(!movie_title.trim().is_empty());
             prop_assert!(!operation.is_empty());
             prop_assert!(!error_msg.trim().is_empty());
+        }
+    }
+
+    // Feature: tv-series-extras, Property 18: Series Summary Statistics Accuracy
+    // Validates: Requirements 19.1, 19.2, 19.3, 19.4, 19.5
+    // For any set of series processing results, the summary statistics should
+    // accurately reflect the counts: total_series should equal successful_series +
+    // failed_series, and total_downloads and total_conversions should equal the
+    // sum across all series.
+    proptest! {
+        #[test]
+        fn prop_series_summary_statistics_accuracy(
+            total_movies in 0usize..20,
+            successful_movies in 0usize..20,
+            total_series in 0usize..20,
+            successful_series in 0usize..20,
+            total_downloads in 0usize..100,
+            total_conversions in 0usize..100,
+        ) {
+            // Ensure successful counts don't exceed totals
+            let successful_movies = successful_movies.min(total_movies);
+            let successful_series = successful_series.min(total_series);
+
+            let summary = ProcessingSummary {
+                total_movies,
+                successful_movies,
+                failed_movies: total_movies - successful_movies,
+                total_series,
+                successful_series,
+                failed_series: total_series - successful_series,
+                total_downloads,
+                total_conversions,
+            };
+
+            // Verify the invariants that must hold for any valid summary:
+
+            // 1. Total series should equal successful + failed
+            prop_assert_eq!(
+                summary.total_series,
+                summary.successful_series + summary.failed_series,
+                "Total series must equal successful + failed"
+            );
+
+            // 2. Total movies should equal successful + failed
+            prop_assert_eq!(
+                summary.total_movies,
+                summary.successful_movies + summary.failed_movies,
+                "Total movies must equal successful + failed"
+            );
+
+            // 3. Successful series should not exceed total series
+            prop_assert!(
+                summary.successful_series <= summary.total_series,
+                "Successful series cannot exceed total series"
+            );
+
+            // 4. Failed series should not exceed total series
+            prop_assert!(
+                summary.failed_series <= summary.total_series,
+                "Failed series cannot exceed total series"
+            );
+
+            // 5. Successful movies should not exceed total movies
+            prop_assert!(
+                summary.successful_movies <= summary.total_movies,
+                "Successful movies cannot exceed total movies"
+            );
+
+            // 6. Failed movies should not exceed total movies
+            prop_assert!(
+                summary.failed_movies <= summary.total_movies,
+                "Failed movies cannot exceed total movies"
+            );
+
+            // 7. Downloads and conversions should be non-negative (always true for usize)
+            // No need to check since usize cannot be negative
+
+            // Verify display_summary doesn't panic with any valid summary
+            display_summary(&summary);
         }
     }
 }

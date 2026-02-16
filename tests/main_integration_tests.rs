@@ -380,11 +380,18 @@ async fn test_complete_execution_flow() {
 
     // Step 3: If validation succeeded, try to create orchestrator
     if let Ok(api_key) = validation_result {
-        use extras_fetcher::models::SourceMode;
+        use extras_fetcher::models::{ProcessingMode, SourceMode};
         use extras_fetcher::orchestrator::Orchestrator;
 
-        let orchestrator =
-            Orchestrator::new(root, api_key, SourceMode::YoutubeOnly, false, 1, false);
+        let orchestrator = Orchestrator::new(
+            root,
+            api_key,
+            SourceMode::YoutubeOnly,
+            false,
+            1,
+            false,
+            ProcessingMode::Both,
+        );
 
         // Orchestrator creation should succeed
         assert!(orchestrator.is_ok());

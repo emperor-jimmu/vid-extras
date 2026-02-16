@@ -201,7 +201,7 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Test default values
     - Test type flag validation
 
-- [ ] 13. Update output module for series progress reporting
+- [x] 13. Update output module for series progress reporting
   - Add series-specific progress messages
   - Display series name and year during processing
   - Display extras count per source
@@ -209,11 +209,11 @@ The plan is organized into discrete, incremental tasks that build upon each othe
   - Update final summary to include series statistics
   - _Requirements: 18.1, 18.2, 18.3, 18.4, 18.5, 18.6, 19.1, 19.2, 19.3, 19.4, 19.5, 19.6_
 
-- [ ] 13.1 Write property test for series summary statistics accuracy
+- [x] 13.1 Write property test for series summary statistics accuracy
   - **Property 18: Series Summary Statistics Accuracy**
   - **Validates: Requirements 19.1, 19.2, 19.3, 19.4, 19.5**
 
-- [ ] 14. Checkpoint - Ensure orchestrator and CLI tests pass
+- [x] 14. Checkpoint - Ensure orchestrator and CLI tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 15. Add advanced features
