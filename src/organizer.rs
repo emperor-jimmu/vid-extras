@@ -196,11 +196,13 @@ impl Organizer {
 }
 
 /// SeriesOrganizer handles file organization for TV series into Jellyfin-compatible structure
+#[allow(dead_code)]
 pub struct SeriesOrganizer {
     /// Path to the series folder
     series_path: PathBuf,
 }
 
+#[allow(dead_code)]
 impl SeriesOrganizer {
     /// Create a new SeriesOrganizer for a specific series folder
     pub fn new(series_path: PathBuf) -> Self {
@@ -290,12 +292,14 @@ impl SeriesOrganizer {
         );
 
         let season_00_dir = self.series_path.join("Season 00");
-        tokio::fs::create_dir_all(&season_00_dir).await.map_err(|e| {
-            OrganizerError::SubdirectoryCreation(format!(
-                "Failed to create Season 00 folder: {}",
-                e
-            ))
-        })?;
+        tokio::fs::create_dir_all(&season_00_dir)
+            .await
+            .map_err(|e| {
+                OrganizerError::SubdirectoryCreation(format!(
+                    "Failed to create Season 00 folder: {}",
+                    e
+                ))
+            })?;
 
         for special in specials {
             if let Some(local_path) = special.local_path {
@@ -307,7 +311,10 @@ impl SeriesOrganizer {
 
                 let target_path = season_00_dir.join(&filename);
 
-                debug!("Moving special episode: {:?} -> {:?}", local_path, target_path);
+                debug!(
+                    "Moving special episode: {:?} -> {:?}",
+                    local_path, target_path
+                );
 
                 // Try rename first (fast, atomic), but fall back to copy+delete for cross-drive moves
                 match tokio::fs::rename(&local_path, &target_path).await {
@@ -321,12 +328,14 @@ impl SeriesOrganizer {
                             local_path, target_path
                         );
 
-                        tokio::fs::copy(&local_path, &target_path).await.map_err(|e| {
-                            OrganizerError::FileMove(format!(
-                                "Failed to copy {:?} to {:?}: {}",
-                                local_path, target_path, e
-                            ))
-                        })?;
+                        tokio::fs::copy(&local_path, &target_path)
+                            .await
+                            .map_err(|e| {
+                                OrganizerError::FileMove(format!(
+                                    "Failed to copy {:?} to {:?}: {}",
+                                    local_path, target_path, e
+                                ))
+                            })?;
 
                         tokio::fs::remove_file(&local_path).await.map_err(|e| {
                             OrganizerError::FileMove(format!(
@@ -341,7 +350,7 @@ impl SeriesOrganizer {
                         return Err(OrganizerError::FileMove(format!(
                             "Failed to move {:?} to {:?}: {}",
                             local_path, target_path, e
-                        )))
+                        )));
                     }
                 }
             }
@@ -790,11 +799,18 @@ mod tests {
         }];
 
         let organizer = SeriesOrganizer::new(series_path.clone());
-        organizer.organize_extras(conversions, Some(1)).await.unwrap();
+        organizer
+            .organize_extras(conversions, Some(1))
+            .await
+            .unwrap();
 
         // Verify season-specific subdirectory was created
         assert!(series_path.join("Season 01/behind the scenes").exists());
-        assert!(series_path.join("Season 01/behind the scenes/behind.mp4").exists());
+        assert!(
+            series_path
+                .join("Season 01/behind the scenes/behind.mp4")
+                .exists()
+        );
     }
 
     #[tokio::test]
@@ -825,7 +841,11 @@ mod tests {
 
         // Verify Season 00 folder was created
         assert!(series_path.join("Season 00").exists());
-        assert!(series_path.join("Season 00/Breaking Bad - S00E01 - Pilot.mp4").exists());
+        assert!(
+            series_path
+                .join("Season 00/Breaking Bad - S00E01 - Pilot.mp4")
+                .exists()
+        );
     }
 
     #[tokio::test]

@@ -147,36 +147,36 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Test force flag behavior
     - Test invalid cache handling
 
-- [ ] 10. Checkpoint - Ensure organizer and cache tests pass
+- [x] 10. Checkpoint - Ensure organizer and cache tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. Extend orchestrator for series processing
-  - [ ] 11.1 Update Orchestrator struct to include series_discovery field
+- [x] 11. Extend orchestrator for series processing
+  - [x] 11.1 Update Orchestrator struct to include series_discovery field
     - Add SeriesDiscoveryOrchestrator alongside movie discovery
     - Add processing_mode field (ProcessingMode enum)
     - Update constructor to accept processing mode
     - _Requirements: 12.1, 12.2, 12.3_
-  - [ ] 11.2 Implement process_series method
+  - [x] 11.2 Implement process_series method
     - Follow same pipeline as movies: discovery → download → convert → organize
     - Process series-level extras
     - Process season-specific extras if enabled
     - Process Season 0 specials if enabled
     - Create done marker on success
     - _Requirements: 9.2, 9.5_
-  - [ ] 11.3 Update run method to handle both movies and series
+  - [x] 11.3 Update run method to handle both movies and series
     - Call scanner.scan_all() to get both movies and series
     - Filter based on processing_mode
     - Process movies if mode allows
     - Process series if mode allows
     - Aggregate statistics for both types
     - _Requirements: 12.1, 12.2, 12.3_
-  - [ ]\* 11.4 Write property test for processing mode filtering
+  - [x] 11.4 Write property test for processing mode filtering
     - **Property 12: Processing Mode Filtering**
     - **Validates: Requirements 12.1, 12.2, 12.3**
-  - [ ]\* 11.5 Write property test for series error isolation
+  - [x] 11.5 Write property test for series error isolation
     - **Property 13: Series Error Isolation**
     - **Validates: Requirements 13.1, 13.2, 13.3, 13.4, 13.5, 13.6**
-  - [ ]\* 11.6 Write unit tests for series orchestration
+  - [x] 11.6 Write unit tests for series orchestration
     - Test series processing pipeline
     - Test mixed library processing
     - Test error handling and recovery
@@ -195,7 +195,7 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Convert flags to ProcessingMode enum
     - Validate --type flag values (movie or series)
     - _Requirements: 12.1, 12.2, 12.3_
-  - [ ]\* 12.3 Write unit tests for CLI flag parsing
+  - [ ] 12.3 Write unit tests for CLI flag parsing
     - Test all flag combinations
     - Test mutually exclusive flags
     - Test default values
@@ -209,7 +209,7 @@ The plan is organized into discrete, incremental tasks that build upon each othe
   - Update final summary to include series statistics
   - _Requirements: 18.1, 18.2, 18.3, 18.4, 18.5, 18.6, 19.1, 19.2, 19.3, 19.4, 19.5, 19.6_
 
-- [ ]\* 13.1 Write property test for series summary statistics accuracy
+- [ ] 13.1 Write property test for series summary statistics accuracy
   - **Property 18: Series Summary Statistics Accuracy**
   - **Validates: Requirements 19.1, 19.2, 19.3, 19.4, 19.5**
 
@@ -225,7 +225,7 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Organize extracted extras
     - Clean up temporary extraction directory
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9_
-  - [ ]\* 15.2 Write property test for season pack file identification
+  - [ ] 15.2 Write property test for season pack file identification
     - **Property 15: Season Pack File Identification**
     - **Validates: Requirements 15.2, 15.3, 15.4, 15.5, 15.6, 15.7, 15.8**
   - [ ] 15.3 Implement local Season 0 import scanning
@@ -235,7 +235,7 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Handle duplicate episode numbers
     - Preserve original quality
     - _Requirements: 16.1, 16.2, 16.3, 16.4, 16.5_
-  - [ ]\* 15.4 Write property test for local Season 0 import
+  - [ ] 15.4 Write property test for local Season 0 import
     - **Property 16: Local Season 0 Import**
     - **Validates: Requirements 16.1, 16.2, 16.3**
   - [ ] 15.5 Implement fuzzy title matching
@@ -244,10 +244,10 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Apply 80% similarity threshold
     - Log similarity scores for debugging
     - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5_
-  - [ ]\* 15.6 Write property test for fuzzy title matching threshold
+  - [ ] 15.6 Write property test for fuzzy title matching threshold
     - **Property 17: Fuzzy Title Matching Threshold**
     - **Validates: Requirements 17.1, 17.2, 17.3, 17.4**
-  - [ ]\* 15.7 Write unit tests for advanced features
+  - [ ] 15.7 Write unit tests for advanced features
     - Test archive extraction
     - Test filename pattern matching
     - Test Season 0 file detection

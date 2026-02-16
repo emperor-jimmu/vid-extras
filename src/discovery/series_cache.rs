@@ -27,6 +27,7 @@ pub struct SeriesMetadataCache {
     ttl_days: i64,
 }
 
+#[allow(dead_code)]
 impl SeriesMetadataCache {
     /// Create a new cache manager for a series
     pub fn new(series_path: &Path) -> Self {
@@ -40,7 +41,10 @@ impl SeriesMetadataCache {
     /// Create a new cache manager with custom TTL
     pub fn with_ttl(series_path: &Path, ttl_days: i64) -> Self {
         let cache_dir = series_path.join(".cache");
-        Self { cache_dir, ttl_days }
+        Self {
+            cache_dir,
+            ttl_days,
+        }
     }
 
     /// Get cache file path for a series
@@ -166,10 +170,7 @@ mod tests {
             cached_at: Utc::now().to_rfc3339(),
         };
 
-        cache
-            .set("Breaking Bad", metadata.clone())
-            .await
-            .unwrap();
+        cache.set("Breaking Bad", metadata.clone()).await.unwrap();
 
         let retrieved = cache.get("Breaking Bad", false).await.unwrap();
         assert!(retrieved.is_some());
@@ -189,10 +190,7 @@ mod tests {
             cached_at: old_time.to_rfc3339(),
         };
 
-        cache
-            .set("Breaking Bad", metadata)
-            .await
-            .unwrap();
+        cache.set("Breaking Bad", metadata).await.unwrap();
 
         // Should return None because cache is expired
         let retrieved = cache.get("Breaking Bad", false).await.unwrap();
@@ -210,10 +208,7 @@ mod tests {
             cached_at: Utc::now().to_rfc3339(),
         };
 
-        cache
-            .set("Breaking Bad", metadata)
-            .await
-            .unwrap();
+        cache.set("Breaking Bad", metadata).await.unwrap();
 
         // With force=true, should return None even if cache exists
         let retrieved = cache.get("Breaking Bad", true).await.unwrap();
@@ -246,10 +241,7 @@ mod tests {
             cached_at: Utc::now().to_rfc3339(),
         };
 
-        cache
-            .set("Breaking Bad", metadata)
-            .await
-            .unwrap();
+        cache.set("Breaking Bad", metadata).await.unwrap();
 
         cache.clear("Breaking Bad").await.unwrap();
 
@@ -274,14 +266,8 @@ mod tests {
             cached_at: Utc::now().to_rfc3339(),
         };
 
-        cache
-            .set("Breaking Bad", metadata1)
-            .await
-            .unwrap();
-        cache
-            .set("Game of Thrones", metadata2)
-            .await
-            .unwrap();
+        cache.set("Breaking Bad", metadata1).await.unwrap();
+        cache.set("Game of Thrones", metadata2).await.unwrap();
 
         cache.clear_all().await.unwrap();
 

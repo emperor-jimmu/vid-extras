@@ -310,6 +310,17 @@ impl fmt::Display for SeriesExtra {
     }
 }
 
+impl From<SeriesExtra> for VideoSource {
+    fn from(extra: SeriesExtra) -> Self {
+        VideoSource {
+            url: extra.url,
+            source_type: extra.source_type,
+            category: extra.category,
+            title: extra.title,
+        }
+    }
+}
+
 /// Represents a Season 0 special episode
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpecialEpisode {

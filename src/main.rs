@@ -13,6 +13,7 @@ mod scanner;
 mod validation;
 
 use cli::{display_banner, display_config, parse_args};
+use models::ProcessingMode;
 use orchestrator::Orchestrator;
 use output::display_summary;
 use validation::Validator;
@@ -85,6 +86,7 @@ async fn main() {
         config.force,
         config.concurrency,
         config.single,
+        ProcessingMode::Both,
     ) {
         Ok(orch) => orch,
         Err(e) => {
