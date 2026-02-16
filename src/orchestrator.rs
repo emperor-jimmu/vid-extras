@@ -571,7 +571,7 @@ impl Orchestrator {
         temp_base: PathBuf,
         season_extras: bool,
         specials: bool,
-        _specials_folder: String,
+        specials_folder: String,
     ) -> SeriesResult {
         info!("Processing series: {}", series);
 
@@ -601,24 +601,26 @@ impl Orchestrator {
             }
         }
 
-        // Discover Season 0 specials if enabled
-        if specials {
+        // Discover Season 0 specials if enabled (keep separate from regular extras)
+        let season_zero_extras = if specials {
             info!("Discovering Season 0 specials for {}", series);
-            let season_zero_extras = series_discovery.discover_season_zero(&series).await;
+            let specials_extras = series_discovery.discover_season_zero(&series).await;
             info!(
                 "Found {} Season 0 specials for {}",
-                season_zero_extras.len(),
+                specials_extras.len(),
                 series
             );
-            all_extras.extend(season_zero_extras);
-        }
+            specials_extras
+        } else {
+            Vec::new()
+        };
 
-        if all_extras.is_empty() {
+        if all_extras.is_empty() && season_zero_extras.is_empty() {
             warn!("No extras found for {}", series);
             return SeriesResult::success(series, 0, 0);
         }
 
-        // Deduplicate by URL before downloading
+        // Deduplicate regular extras by URL before downloading
         let before_dedup = all_extras.len();
         let mut seen_urls = std::collections::HashSet::new();
         all_extras.retain(|extra| seen_urls.insert(extra.url.clone()));
@@ -633,11 +635,16 @@ impl Orchestrator {
             );
         }
 
-        info!("Found {} unique extras for {}", all_extras.len(), series);
-
-        // Phase 3: Download
         info!(
-            "Phase 3: Downloading {} videos for {}",
+            "Found {} unique regular extras and {} specials for {}",
+            all_extras.len(),
+            season_zero_extras.len(),
+            series
+        );
+
+        // Phase 3: Download regular extras
+        info!(
+            "Phase 3: Downloading {} regular extras for {}",
             all_extras.len(),
             series
         );
@@ -648,11 +655,40 @@ impl Orchestrator {
         let successful_download_count = downloads.iter().filter(|d| d.success).count();
 
         info!(
-            "Downloaded {}/{} videos for {}",
+            "Downloaded {}/{} regular extras for {}",
             successful_download_count, download_count, series
         );
 
-        if successful_download_count == 0 {
+        // Download Season 0 specials separately
+        let specials_downloads = if !season_zero_extras.is_empty() {
+            info!(
+                "Downloading {} Season 0 specials for {}",
+                season_zero_extras.len(),
+                series
+            );
+            let specials_video_sources: Vec<VideoSource> =
+                season_zero_extras.iter().map(|e| e.clone().into()).collect();
+            downloader
+                .download_all(&series_id, specials_video_sources)
+                .await
+        } else {
+            Vec::new()
+        };
+
+        let specials_download_count = specials_downloads.len();
+        let successful_specials_downloads = specials_downloads.iter().filter(|d| d.success).count();
+
+        if specials_download_count > 0 {
+            info!(
+                "Downloaded {}/{} Season 0 specials for {}",
+                successful_specials_downloads, specials_download_count, series
+            );
+        }
+
+        let total_downloads = download_count + specials_download_count;
+        let total_successful_downloads = successful_download_count + successful_specials_downloads;
+
+        if total_successful_downloads == 0 {
             warn!("No successful downloads for {}", series);
             let temp_dir = temp_base.join(&series_id);
             if temp_dir.exists()
@@ -660,27 +696,38 @@ impl Orchestrator {
             {
                 warn!("Failed to cleanup temp dir {:?}: {}", temp_dir, e);
             }
-            return SeriesResult::success(series, download_count, 0);
+            return SeriesResult::success(series, total_downloads, 0);
         }
 
         // Phase 4: Conversion
         info!(
             "Phase 4: Converting {} videos for {}",
-            successful_download_count, series
+            total_successful_downloads, series
         );
         let conversions = converter.convert_batch(downloads).await;
+        let specials_conversions = if !specials_downloads.is_empty() {
+            converter.convert_batch(specials_downloads).await
+        } else {
+            Vec::new()
+        };
+
         info!("Conversion batch complete for {}", series);
 
         let successful_conversion_count = conversions.iter().filter(|c| c.success).count();
+        let successful_specials_conversions =
+            specials_conversions.iter().filter(|c| c.success).count();
+        let total_conversions = successful_conversion_count + successful_specials_conversions;
 
         info!(
-            "Converted {}/{} videos for {}",
+            "Converted {}/{} videos for {} ({} regular, {} specials)",
+            total_conversions,
+            conversions.len() + specials_conversions.len(),
+            series,
             successful_conversion_count,
-            conversions.len(),
-            series
+            successful_specials_conversions
         );
 
-        if successful_conversion_count == 0 {
+        if total_conversions == 0 {
             warn!("No successful conversions for {}", series);
             let temp_dir = temp_base.join(&series_id);
             if temp_dir.exists()
@@ -688,18 +735,18 @@ impl Orchestrator {
             {
                 warn!("Failed to cleanup temp dir {:?}: {}", temp_dir, e);
             }
-            return SeriesResult::success(series, successful_download_count, 0);
+            return SeriesResult::success(series, total_successful_downloads, 0);
         }
 
         // Phase 5: Organization — group by season and use SeriesOrganizer
         info!(
             "Phase 5: Organizing {} files for {}",
-            successful_conversion_count, series
+            total_conversions, series
         );
         let organizer = SeriesOrganizer::new(series.path.clone(), series.seasons.clone());
         let temp_dir = temp_base.join(&series_id);
 
-        // Group conversions by season_number
+        // Group regular conversions by season_number
         let mut by_season: std::collections::HashMap<Option<u8>, Vec<_>> =
             std::collections::HashMap::new();
         for conversion in conversions {
@@ -716,6 +763,60 @@ impl Orchestrator {
                     "Organization failed for {} season {:?}: {}",
                     series, season, e
                 );
+                org_failed = true;
+            }
+        }
+
+        // Organize Season 0 specials separately
+        if !specials_conversions.is_empty() {
+            info!(
+                "Organizing {} Season 0 specials for {}",
+                successful_specials_conversions, series
+            );
+
+            // Convert successful conversions back to SpecialEpisode format
+            let episode_regex = regex::Regex::new(r"S00E(\d+)").expect("Valid regex pattern");
+            let mut special_episodes = Vec::new();
+            for (idx, conversion) in specials_conversions.iter().enumerate() {
+                if conversion.success {
+                    // Extract episode number from the original SeriesExtra title format: "S00E{:02} - {title}"
+                    if let Some(original_extra) = season_zero_extras.get(idx) {
+                        // Parse episode number from title like "S00E04 - Episode Title"
+                        let episode_number = episode_regex
+                            .captures(&original_extra.title)
+                            .and_then(|captures| {
+                                captures
+                                    .get(1)
+                                    .and_then(|m| m.as_str().parse::<u8>().ok())
+                            })
+                            .unwrap_or(idx as u8 + 1);
+
+                        // Extract episode title (everything after " - ")
+                        let episode_title = original_extra
+                            .title
+                            .split(" - ")
+                            .nth(1)
+                            .unwrap_or(&original_extra.title)
+                            .to_string();
+
+                        special_episodes.push(crate::models::SpecialEpisode {
+                            episode_number,
+                            title: episode_title,
+                            air_date: None,
+                            url: Some(original_extra.url.clone()),
+                            local_path: Some(conversion.output_path.clone()),
+                            tvdb_id: None,
+                        });
+                    }
+                }
+            }
+
+            if !special_episodes.is_empty()
+                && let Err(e) = organizer
+                    .organize_specials(&series.title, special_episodes, &specials_folder)
+                    .await
+            {
+                error!("Failed to organize Season 0 specials for {}: {}", series, e);
                 org_failed = true;
             }
         }
@@ -749,11 +850,7 @@ impl Orchestrator {
             }
 
             info!("✓ Series processing complete: {}", series);
-            SeriesResult::success(
-                series,
-                successful_download_count,
-                successful_conversion_count,
-            )
+            SeriesResult::success(series, total_successful_downloads, total_conversions)
         }
     }
 
