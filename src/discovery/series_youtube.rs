@@ -224,9 +224,29 @@ impl YoutubeSeriesDiscoverer {
                 }
                 Err(e) => {
                     error!("YouTube search failed for query '{}': {}", query, e);
-                    // Continue with other queries even if one fails
                 }
             }
+        }
+
+        // Filter out videos that reference seasons not available on disk
+        let before_count = all_sources.len();
+        all_sources.retain(|extra| {
+            if title_matching::references_unavailable_season(&extra.title, &series.seasons) {
+                debug!(
+                    "Excluding '{}' - references season not on disk (available: {:?})",
+                    extra.title, series.seasons
+                );
+                false
+            } else {
+                true
+            }
+        });
+        let filtered = before_count - all_sources.len();
+        if filtered > 0 {
+            info!(
+                "Filtered {} videos referencing unavailable seasons for {}",
+                filtered, series
+            );
         }
 
         info!(

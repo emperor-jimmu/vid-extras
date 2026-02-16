@@ -113,6 +113,15 @@ impl SeriesDiscoveryOrchestrator {
         series: &SeriesEntry,
         season: u8,
     ) -> Vec<SeriesExtra> {
+        // Only discover extras for seasons that exist on disk
+        if !series.seasons.contains(&season) {
+            info!(
+                "Skipping season {} - not found on disk for {}",
+                season, series
+            );
+            return Vec::new();
+        }
+
         let mut all_sources = Vec::new();
 
         match self.mode {

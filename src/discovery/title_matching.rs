@@ -93,6 +93,51 @@ pub fn contains_excluded_keywords(title: &str) -> bool {
         .iter()
         .any(|keyword| title_lower.contains(&keyword.to_lowercase()))
 }
+/// Extract season numbers mentioned in a video title.
+///
+/// Matches patterns like "Season 3", "season 03", "S03", "S05E02", "S3".
+/// Returns a list of unique season numbers found.
+pub fn extract_season_numbers(title: &str) -> Vec<u8> {
+    use regex::Regex;
+    use std::sync::LazyLock;
+
+    static SEASON_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+        vec![
+            // "Season 3", "season 03", "Season 12"
+            Regex::new(r"(?i)\bseason\s+(\d{1,2})\b").expect("valid regex"),
+            // "S03E01", "S3E1", "S05" (with or without episode)
+            Regex::new(r"(?i)\bS(\d{1,2})(?:E\d+)?\b").expect("valid regex"),
+        ]
+    });
+
+    let mut seasons: Vec<u8> = Vec::new();
+    for pattern in SEASON_PATTERNS.iter() {
+        for cap in pattern.captures_iter(title) {
+            if let Some(num_str) = cap.get(1)
+                && let Ok(num) = num_str.as_str().parse::<u8>()
+                && num > 0
+                && !seasons.contains(&num)
+            {
+                seasons.push(num);
+            }
+        }
+    }
+    seasons
+}
+
+/// Check if a video title references a season that is not in the available seasons list.
+///
+/// Returns true if the title mentions at least one specific season AND none of those
+/// seasons are in the available list. Returns false if no season is mentioned (general content).
+pub fn references_unavailable_season(title: &str, available_seasons: &[u8]) -> bool {
+    let mentioned = extract_season_numbers(title);
+    if mentioned.is_empty() {
+        // No season reference — general series content, keep it
+        return false;
+    }
+    // Exclude if none of the mentioned seasons are available on disk
+    !mentioned.iter().any(|s| available_seasons.contains(s))
+}
 
 /// Convert Roman numeral to integer (supports I-XIX, i.e., 1-19)
 /// Returns None if the string is not a valid Roman numeral
