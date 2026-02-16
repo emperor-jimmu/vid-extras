@@ -1,6 +1,7 @@
 # Project Structure
 
 ## Directory Layout
+
 ```
 extras_fetcher/
 ├── src/              # Source code modules
@@ -26,7 +27,13 @@ The codebase follows a pipeline architecture with clear separation of concerns:
 - `output.rs` - **[IMPLEMENTED]** CLI output formatting, colored progress display, summary statistics
 - `orchestrator.rs` - **[IMPLEMENTED]** Main pipeline coordinator, manages processing flow
 - `scanner.rs` - **[IMPLEMENTED]** Directory traversal, movie discovery, folder name parsing
-- `discovery.rs` - **[IMPLEMENTED]** Multi-source content discovery (TMDB, Archive.org, YouTube, and DiscoveryOrchestrator)
+- `discovery/` - **[IMPLEMENTED]** Multi-source content discovery module (refactored into submodules)
+  - `mod.rs` - Module entry point and public API re-exports
+  - `tmdb.rs` - TMDB API integration for movie extras discovery
+  - `archive.rs` - Archive.org integration for historical content
+  - `youtube.rs` - YouTube search integration via yt-dlp
+  - `orchestrator.rs` - Coordinates discovery across all sources with content limiting
+  - `title_matching.rs` - Title normalization, filtering, and matching logic
 - `downloader.rs` - **[IMPLEMENTED]** Video downloading via yt-dlp
 - `converter.rs` - **[IMPLEMENTED]** Video format conversion with ffmpeg, hardware acceleration detection
 - `organizer.rs` - **[IMPLEMENTED]** File organization into Jellyfin structure, done marker management
@@ -35,6 +42,7 @@ The codebase follows a pipeline architecture with clear separation of concerns:
 ## Processing Pipeline
 
 The tool follows this execution flow:
+
 1. Validation - Check dependencies and configuration
 2. Scanning - Discover movies in library
 3. Discovery - Find extras from multiple sources
@@ -56,9 +64,11 @@ The tool follows this execution flow:
 ### Completed Modules
 
 #### Scanner Module (src/scanner.rs)
+
 **Status:** ✅ Fully implemented and tested
 
 **Functionality:**
+
 - Recursive directory traversal with depth-first search
 - Folder name parsing using regex pattern `^(.+?)\s*\((\d{4})\)$`
 - Done marker detection with JSON validation
@@ -66,36 +76,41 @@ The tool follows this execution flow:
 - Comprehensive error handling for invalid paths and permissions
 
 **Public API:**
+
 ```rust
 pub struct Scanner {
     // Creates scanner with root directory and force flag
     pub fn new(root_dir: PathBuf, force: bool) -> Self;
-    
+
     // Scans directory tree and returns list of movies to process
     pub fn scan(&self) -> Result<Vec<MovieEntry>, ScanError>;
-    
+
     // Parses folder name to extract title and year
     pub fn parse_folder_name(name: &str) -> Option<(String, u16)>;
 }
 ```
 
 **Test Coverage:**
+
 - 11 unit tests covering edge cases (empty dirs, nested structures, invalid names)
 - 3 property-based tests with 100+ iterations each:
   - Property 1: Folder Name Parsing Correctness
-  - Property 3: Done Marker Skipping Behavior  
+  - Property 3: Done Marker Skipping Behavior
   - Property 6: Recursive Directory Traversal Completeness
 - All tests passing ✅
 
 **Dependencies:**
+
 - Uses `regex` crate for folder name pattern matching
 - Uses `serde_json` for done marker validation
 - Test dependencies: `proptest`, `tempfile`
 
 #### Validation Module (src/validation.rs)
+
 **Status:** ✅ Fully implemented and tested
 
 **Functionality:**
+
 - System dependency verification (yt-dlp, ffmpeg binaries)
 - FFmpeg HEVC codec support detection (libx265, hevc_nvenc, hevc_qsv)
 - TMDB API key validation from environment variables
@@ -103,28 +118,30 @@ pub struct Scanner {
 - Zero-sized type for efficient validation checks
 
 **Public API:**
+
 ```rust
 pub struct Validator;
 
 impl Validator {
     // Create a new Validator instance
     pub fn new() -> Self;
-    
+
     // Validate all dependencies and return TMDB API key if successful
     pub fn validate_dependencies(&self) -> Result<String, ValidationError>;
-    
+
     // Check if a binary exists in system PATH
     fn check_binary_exists(&self, name: &str) -> bool;
-    
+
     // Check if ffmpeg supports HEVC encoding
     fn check_ffmpeg_hevc_support(&self) -> bool;
-    
+
     // Check if TMDB API key is configured
     fn check_tmdb_api_key(&self) -> Result<String, ValidationError>;
 }
 ```
 
 **Test Coverage:**
+
 - 11 unit tests covering all validation scenarios
 - 4 property-based tests with 100+ iterations each:
   - Property 32: Dependency Validation at Startup
@@ -132,11 +149,13 @@ impl Validator {
 - All tests passing ✅
 
 **Dependencies:**
+
 - Uses `std::process::Command` for binary verification
 - Uses `std::env` for environment variable access
 - Test dependencies: `proptest`
 
 **Requirements Validated:**
+
 - 11.1: yt-dlp binary verification
 - 11.2: ffmpeg binary verification
 - 11.3: ffmpeg HEVC support detection
@@ -145,9 +164,11 @@ impl Validator {
 - 10.5: Clear error reporting
 
 #### Discovery Module - TMDB (src/discovery.rs)
+
 **Status:** ✅ TMDB implementation complete
 
 **Functionality:**
+
 - Movie search by title and year via TMDB API
 - Video list fetching from TMDB movie endpoints
 - Type-to-category mapping for 5 content types
@@ -156,6 +177,7 @@ impl Validator {
 - URL encoding for safe API requests
 
 **Public API:**
+
 ```rust
 pub trait ContentDiscoverer {
     async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError>;
@@ -164,7 +186,7 @@ pub trait ContentDiscoverer {
 pub struct TmdbDiscoverer {
     // Creates TMDB discoverer with API key
     pub fn new(api_key: String) -> Self;
-    
+
     // Maps TMDB video types to content categories
     pub fn map_tmdb_type(tmdb_type: &str) -> Option<ContentCategory>;
 }
@@ -176,6 +198,7 @@ impl ContentDiscoverer for TmdbDiscoverer {
 ```
 
 **Type Mappings:**
+
 - "Trailer" → ContentCategory::Trailer
 - "Behind the Scenes" → ContentCategory::BehindTheScenes
 - "Deleted Scene" → ContentCategory::DeletedScene
@@ -183,6 +206,7 @@ impl ContentDiscoverer for TmdbDiscoverer {
 - "Bloopers" → ContentCategory::Featurette
 
 **Test Coverage:**
+
 - 16 unit tests covering:
   - API response parsing with mock JSON
   - URL construction and encoding
@@ -194,6 +218,7 @@ impl ContentDiscoverer for TmdbDiscoverer {
 - All tests passing ✅
 
 **Dependencies:**
+
 - Uses `reqwest` for HTTP API calls
 - Uses `serde` and `serde_json` for JSON parsing
 - Uses `urlencoding` for safe URL construction
@@ -201,6 +226,7 @@ impl ContentDiscoverer for TmdbDiscoverer {
 - Test dependencies: `proptest`, `tokio`
 
 **Requirements Validated:**
+
 - 3.1: Movie search by title and year
 - 3.2: TMDB movie identifier retrieval
 - 3.3: Videos list fetching
@@ -208,13 +234,16 @@ impl ContentDiscoverer for TmdbDiscoverer {
 - 3.9: Graceful API error handling
 
 **API Endpoints Used:**
+
 - Search: `https://api.themoviedb.org/3/search/movie`
 - Videos: `https://api.themoviedb.org/3/movie/{id}/videos`
 
 #### Discovery Module - Archive.org (src/discovery.rs)
+
 **Status:** ✅ Archive.org implementation complete
 
 **Functionality:**
+
 - Year-based conditional querying (only for movies < 2010)
 - Search query construction with title and EPK/Making of subjects
 - Result parsing and category mapping
@@ -222,14 +251,15 @@ impl ContentDiscoverer for TmdbDiscoverer {
 - URL encoding for safe API requests
 
 **Public API:**
+
 ```rust
 pub struct ArchiveOrgDiscoverer {
     // Creates Archive.org discoverer
     pub fn new() -> Self;
-    
+
     // Builds search query for a movie
     fn build_query(title: &str) -> String;
-    
+
     // Maps Archive.org subjects to content categories
     fn map_subjects(subjects: &[String]) -> Option<ContentCategory>;
 }
@@ -241,6 +271,7 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
 ```
 
 **Test Coverage:**
+
 - 11 unit tests covering query construction, subject mapping, and API response parsing
 - 2 property-based tests with 100+ iterations each:
   - Property 8: Archive.org Year-Based Querying
@@ -248,13 +279,16 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
 - All tests passing ✅
 
 **Requirements Validated:**
+
 - 4.1-4.2: Year-based querying (< 2010)
 - 4.3-4.7: Query construction and result parsing
 
 #### Discovery Module - YouTube (src/discovery.rs)
+
 **Status:** ✅ YouTube implementation complete
 
 **Functionality:**
+
 - yt-dlp search integration with `ytsearch5:` operator
 - Search query construction for 4 content types (deleted scenes, behind the scenes, bloopers, cast interviews)
 - Duration filtering (30s - 20min range)
@@ -264,25 +298,26 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
 - Async search using tokio process execution
 
 **Public API:**
+
 ```rust
 pub struct YoutubeDiscoverer;
 
 impl YoutubeDiscoverer {
     // Creates YouTube discoverer
     pub fn new() -> Self;
-    
+
     // Builds search queries for different content types
     fn build_search_queries(title: &str, year: u16) -> Vec<(String, ContentCategory)>;
-    
+
     // Checks if video title contains excluded keywords
     fn contains_excluded_keywords(title: &str) -> bool;
-    
+
     // Validates duration is within acceptable range (30s - 20min)
     fn is_duration_valid(duration_secs: u32) -> bool;
-    
+
     // Detects YouTube Shorts (duration < 60s and vertical aspect ratio)
     fn is_youtube_short(duration_secs: u32, width: u32, height: u32) -> bool;
-    
+
     // Filters video based on all criteria
     fn should_include_video(title: &str, duration_secs: u32, width: u32, height: u32) -> bool;
 }
@@ -294,11 +329,13 @@ impl ContentDiscoverer for YoutubeDiscoverer {
 ```
 
 **Filtering Logic:**
+
 - Duration: 30s ≤ duration ≤ 1200s (20 minutes)
 - Keywords: Excludes Review, Reaction, Analysis, Explained, Ending, Theory, React (case-insensitive)
 - Shorts: Excludes videos < 60s with vertical aspect ratio (height > width)
 
 **Test Coverage:**
+
 - 23 unit tests covering:
   - Search query construction and category mapping
   - All 7 keyword filters with case-insensitivity
@@ -313,12 +350,14 @@ impl ContentDiscoverer for YoutubeDiscoverer {
 - All tests passing ✅
 
 **Dependencies:**
+
 - Uses `tokio::process::Command` for yt-dlp execution
 - Uses `serde_json` for parsing yt-dlp JSON output
 - Uses `log` for structured logging
 - Test dependencies: `proptest`, `tokio`
 
 **Requirements Validated:**
+
 - 5.1: YouTube always queried regardless of other sources
 - 5.2: yt-dlp ytsearch operator integration
 - 5.3-5.6: Search query construction for different content types
@@ -328,9 +367,11 @@ impl ContentDiscoverer for YoutubeDiscoverer {
 - 5.11: Graceful error handling
 
 #### Downloader Module (src/downloader.rs)
+
 **Status:** ✅ Fully implemented and tested
 
 **Functionality:**
+
 - Temporary directory creation and management (/tmp_downloads/{movie_id}/)
 - yt-dlp command execution for video downloads
 - Exit code verification and error handling
@@ -341,14 +382,15 @@ impl ContentDiscoverer for YoutubeDiscoverer {
 - Pre-existing temp directory cleanup
 
 **Public API:**
+
 ```rust
 pub struct Downloader {
     // Creates downloader with temporary base directory
     pub fn new(temp_base: PathBuf) -> Self;
-    
+
     // Creates downloader with custom timeout
     pub fn with_timeout(temp_base: PathBuf, timeout_secs: u64) -> Self;
-    
+
     // Downloads all videos for a movie, returns results for each
     pub async fn download_all(
         &self,
@@ -359,6 +401,7 @@ pub struct Downloader {
 ```
 
 **Test Coverage:**
+
 - 8 unit tests covering:
   - Temp directory creation and management
   - Pre-existing directory cleanup
@@ -375,6 +418,7 @@ pub struct Downloader {
 - All tests passing ✅
 
 **Dependencies:**
+
 - Uses `tokio::process::Command` for yt-dlp execution
 - Uses `tokio::fs` for async file operations
 - Uses `tokio::time::timeout` for download timeouts
@@ -382,6 +426,7 @@ pub struct Downloader {
 - Test dependencies: `proptest`, `tokio`, `tempfile`
 
 **Requirements Validated:**
+
 - 6.1: Temporary directory creation
 - 6.2: yt-dlp command execution
 - 6.3: Exit code verification
@@ -391,15 +436,18 @@ pub struct Downloader {
 - 6.7: Sequential download processing
 
 **Implementation Notes:**
+
 - Downloads are processed sequentially within a movie to avoid overwhelming the network
 - Temp directories are cleaned up before starting new downloads
 - Failed downloads are logged but don't prevent other downloads from proceeding
 - yt-dlp is invoked with `--no-playlist` and `--quiet` flags for cleaner output
 
 #### Converter Module (src/converter.rs)
+
 **Status:** ✅ Fully implemented and tested
 
 **Functionality:**
+
 - Hardware acceleration detection (NVENC, QSV, Software)
 - FFmpeg command construction with x265/HEVC codec
 - CRF value configuration (24-26 range, default 25)
@@ -412,38 +460,42 @@ pub struct Downloader {
   - Software (libx265 CPU encoding)
 
 **Public API:**
+
 ```rust
 pub struct Converter {
     // Create a new Converter with auto-detected hardware acceleration
     pub fn new() -> Self;
-    
+
     // Create a new Converter with specified hardware acceleration and CRF
     pub fn with_config(hw_accel: HardwareAccel, crf: u8) -> Self;
-    
+
     // Convert a batch of downloaded videos
     pub async fn convert_batch(
         &self,
         downloads: Vec<DownloadResult>,
     ) -> Vec<ConversionResult>;
-    
+
     // Get the hardware acceleration type being used
     pub fn hw_accel(&self) -> HardwareAccel;
-    
+
     // Get the CRF value being used
     pub fn crf(&self) -> u8;
 }
 ```
 
 **FFmpeg Command Construction:**
+
 - Software: `ffmpeg -y -i input.mp4 -c:v libx265 -crf 25 -preset medium -c:a copy output.mp4`
 - NVENC: `ffmpeg -y -hwaccel cuda -i input.mp4 -c:v hevc_nvenc -preset p4 -rc vbr -cq 25 -c:a copy output.mp4`
 - QSV: `ffmpeg -y -hwaccel qsv -i input.mp4 -c:v hevc_qsv -global_quality 25 -c:a copy output.mp4`
 
 **Cleanup Strategy:**
+
 - On success: Deletes original download file, keeps converted output
 - On failure: Deletes failed output file, preserves original for inspection
 
 **Test Coverage:**
+
 - 15 unit tests covering:
   - Hardware acceleration detection and configuration
   - CRF value validation (24-26 range)
@@ -462,12 +514,14 @@ pub struct Converter {
 - All tests passing ✅ (23 total tests)
 
 **Dependencies:**
+
 - Uses `tokio::process::Command` for ffmpeg execution
 - Uses `tokio::fs` for async file operations
 - Uses `log` for structured logging
 - Test dependencies: `proptest`, `tokio`, `tempfile`
 
 **Requirements Validated:**
+
 - 7.1: FFmpeg x265/HEVC codec usage
 - 7.2: CRF value between 24 and 26
 - 7.3: Hardware acceleration selection (NVENC, QSV, or software fallback)
@@ -478,6 +532,7 @@ pub struct Converter {
 - 11.6: Hardware acceleration fallback to software encoding
 
 **Implementation Notes:**
+
 - Hardware acceleration is auto-detected by checking ffmpeg encoder support
 - Invalid CRF values (outside 24-26 range) are clamped to default value of 25
 - Failed conversions preserve the original file for manual inspection
@@ -485,9 +540,11 @@ pub struct Converter {
 - Output files use `.converted.mp4` extension before final organization
 
 #### Organizer Module (src/organizer.rs)
+
 **Status:** ✅ Fully implemented and tested
 
 **Functionality:**
+
 - Category-to-subdirectory mapping for Jellyfin structure
 - Subdirectory creation if missing
 - File moving to target subdirectories with cross-drive support
@@ -497,11 +554,12 @@ pub struct Converter {
 - Multi-category organization support
 
 **Public API:**
+
 ```rust
 pub struct Organizer {
     // Create a new Organizer for a specific movie folder
     pub fn new(movie_path: PathBuf) -> Self;
-    
+
     // Organize converted files into appropriate subdirectories and create done marker
     pub async fn organize(
         &self,
@@ -512,12 +570,14 @@ pub struct Organizer {
 ```
 
 **Subdirectory Mapping:**
+
 - Trailer → `/trailers`
 - Featurette → `/featurettes`
 - BehindTheScenes → `/behind the scenes`
 - DeletedScene → `/deleted scenes`
 
 **Done Marker Format:**
+
 ```json
 {
   "finished_at": "2024-01-15T10:30:00Z",
@@ -526,6 +586,7 @@ pub struct Organizer {
 ```
 
 **Test Coverage:**
+
 - 9 unit tests covering:
   - Subdirectory creation (missing and existing)
   - File moving operations
@@ -543,6 +604,7 @@ pub struct Organizer {
 - All tests passing ✅ (14 total tests)
 
 **Dependencies:**
+
 - Uses `tokio::fs` for async file operations
 - Uses `chrono` for ISO 8601 timestamp generation
 - Uses `serde_json` for done marker serialization
@@ -550,6 +612,7 @@ pub struct Organizer {
 - Test dependencies: `proptest`, `tokio`, `tempfile`
 
 **Requirements Validated:**
+
 - 2.1: Done marker creation on completion
 - 8.1: Trailer subdirectory mapping
 - 8.2: Featurette subdirectory mapping
@@ -560,6 +623,7 @@ pub struct Organizer {
 - 8.7: Done marker creation with timestamp
 
 **Implementation Notes:**
+
 - Category information is stored in `ConversionResult` for accurate organization
 - Failed conversions are skipped during organization
 - Output files are verified to exist before moving (defensive check)
@@ -569,6 +633,7 @@ pub struct Organizer {
 - Cross-drive file moves (Windows error 17) automatically fall back to copy+delete
 
 **Implementation Notes:**
+
 - Category information is stored in `ConversionResult` for accurate organization
 - Failed conversions are skipped during organization
 - Temp directories are cleaned up after successful file moves
@@ -576,9 +641,11 @@ pub struct Organizer {
 - All file operations use async I/O for better performance
 
 #### Discovery Module - DiscoveryOrchestrator (src/discovery.rs)
+
 **Status:** ✅ Fully implemented and tested
 
 **Functionality:**
+
 - Coordinates discovery from all three sources (TMDB, Archive.org, YouTube)
 - Mode-based filtering (All vs YoutubeOnly)
 - Aggregates results from multiple sources
@@ -586,37 +653,43 @@ pub struct Organizer {
 - Logging for each discovery phase
 
 **Public API:**
+
 ```rust
 pub struct DiscoveryOrchestrator {
     // Creates a new DiscoveryOrchestrator with the specified mode
     pub fn new(tmdb_api_key: String, mode: SourceMode) -> Self;
-    
+
     // Discovers video sources from all configured sources based on mode
     pub async fn discover_all(&self, movie: &MovieEntry) -> Vec<VideoSource>;
 }
 ```
 
 **Test Coverage:**
+
 - 1 property-based test with 100+ iterations:
   - Property 5: Mode Filtering
 - All tests passing ✅
 
 **Requirements Validated:**
+
 - 1.5: Mode-based source filtering
 - 3.1-3.9: TMDB integration
 - 4.1-4.7: Archive.org integration
 - 5.1-5.11: YouTube integration
 
 **Implementation Notes:**
+
 - In All mode: queries TMDB, Archive.org (for movies < 2010), and YouTube
 - In YoutubeOnly mode: queries only YouTube
 - Errors from individual sources are logged but don't stop the overall discovery process
 - Results are aggregated into a single Vec<VideoSource>
 
 #### Orchestrator Module (src/orchestrator.rs)
+
 **Status:** ✅ Fully implemented and tested
 
 **Functionality:**
+
 - Coordinates all 5 processing phases (Scan, Discovery, Download, Conversion, Organization)
 - Sequential movie processing (concurrency = 1)
 - Parallel movie processing with configurable concurrency limit
@@ -627,6 +700,7 @@ pub struct DiscoveryOrchestrator {
 - Processing summary statistics generation
 
 **Public API:**
+
 ```rust
 pub struct Orchestrator {
     // Create a new Orchestrator with the given configuration
@@ -637,7 +711,7 @@ pub struct Orchestrator {
         force: bool,
         concurrency: usize,
     ) -> Result<Self, OrchestratorError>;
-    
+
     // Run the orchestrator and process all movies
     pub async fn run(&self) -> Result<ProcessingSummary, OrchestratorError>;
 }
@@ -652,6 +726,7 @@ pub struct ProcessingSummary {
 ```
 
 **Test Coverage:**
+
 - 14 unit/integration tests covering:
   - Empty directory handling
   - Sequential vs parallel processing
@@ -670,6 +745,7 @@ pub struct ProcessingSummary {
 - All tests passing ✅ (19 total tests)
 
 **Dependencies:**
+
 - Uses `tokio::sync::Semaphore` for concurrency control
 - Uses `Arc` for shared ownership in parallel processing
 - Uses `tokio::spawn` for parallel task execution
@@ -677,6 +753,7 @@ pub struct ProcessingSummary {
 - Test dependencies: `proptest`, `tokio`, `tempfile`
 
 **Requirements Validated:**
+
 - 9.1: Sequential downloads within a movie
 - 9.2: Parallel movie processing
 - 9.3: Concurrency limit parameter
@@ -688,6 +765,7 @@ pub struct ProcessingSummary {
 - 10.4: Pre-existing temp cleanup
 
 **Implementation Notes:**
+
 - Uses Arc-based shared ownership for parallel processing
 - Semaphore ensures at most N movies are processed simultaneously
 - Each movie is processed independently with error isolation
@@ -695,9 +773,11 @@ pub struct ProcessingSummary {
 - Temp directories use format: `tmp_downloads/{movie_title}_{year}/`
 
 #### CLI Module (src/cli.rs)
+
 **Status:** ✅ Fully implemented and tested
 
 **Functionality:**
+
 - Command-line argument parsing using clap with derive macros
 - Support for all required flags: `--help`, `--version`, `--force`, `--mode`, `--concurrency`, `--verbose`
 - Configuration validation (directory existence, concurrency >= 1)
@@ -706,6 +786,7 @@ pub struct ProcessingSummary {
 - Proper error handling with descriptive messages
 
 **Public API:**
+
 ```rust
 pub struct CliArgs {
     // Root directory containing movie folders
@@ -739,6 +820,7 @@ pub fn display_config(config: &CliConfig);
 ```
 
 **Test Coverage:**
+
 - 9 unit tests covering:
   - Source mode display formatting
   - CLI config conversion from args
@@ -755,11 +837,13 @@ pub fn display_config(config: &CliConfig);
 - All tests passing ✅ (11 total CLI tests)
 
 **Dependencies:**
+
 - Uses `clap` (4.5) for argument parsing with derive macros
 - Uses `colored` (2.1) for terminal output formatting
 - Test dependencies: `proptest`, `tempfile`
 
 **Requirements Validated:**
+
 - 1.1: Root directory command-line argument
 - 1.2: --help flag displays usage information
 - 1.3: --version flag displays version information
@@ -770,6 +854,7 @@ pub fn display_config(config: &CliConfig);
 - 13.8: --verbose flag for detailed output
 
 **Implementation Notes:**
+
 - Uses clap's derive macros for clean, declarative argument parsing
 - Validation happens before config creation to catch errors early
 - Colored output uses the `colored` crate for cross-platform terminal colors
@@ -777,9 +862,11 @@ pub fn display_config(config: &CliConfig);
 - Config display shows all parameters with color-coded values
 
 #### Main Entry Point (src/main.rs)
+
 **Status:** ✅ Fully implemented and tested
 
 **Functionality:**
+
 - Async main function using tokio runtime
 - CLI argument parsing with error handling
 - Logging initialization based on verbose flag (debug vs info level)
@@ -791,6 +878,7 @@ pub fn display_config(config: &CliConfig);
 - Installation instructions on dependency validation failures
 
 **Public API:**
+
 ```rust
 #[tokio::main]
 async fn main() {
@@ -807,6 +895,7 @@ async fn main() {
 
 **Integration Tests:**
 Created comprehensive integration test suite in `tests/main_integration_tests.rs`:
+
 - 16 integration tests covering:
   1. Validation of missing yt-dlp
   2. Validation of missing ffmpeg
@@ -826,18 +915,21 @@ Created comprehensive integration test suite in `tests/main_integration_tests.rs
   16. Idempotency: Invalid done markers
 
 **Test Coverage:**
+
 - All 16 integration tests passing ✅
 - Tests avoid real network operations to prevent hanging
 - Uses tempfile for isolated file system testing
 - Comprehensive coverage of Requirements 11.1-11.5, 10.5, and 12.1-12.4
 
 **Dependencies:**
+
 - Uses `tokio` for async runtime
 - Uses `env_logger` for logging infrastructure
 - Uses CLI, validation, orchestrator, and output modules
 - Test dependencies: `tokio`, `tempfile`, `serde_json`
 
 **Requirements Validated:**
+
 - 11.1: yt-dlp binary verification at startup
 - 11.2: ffmpeg binary verification at startup
 - 11.3: ffmpeg HEVC support verification
@@ -848,6 +940,7 @@ Created comprehensive integration test suite in `tests/main_integration_tests.rs
 - 13.8: Verbose logging support
 
 **Implementation Notes:**
+
 - Added `to_models_source_mode()` conversion method to bridge CLI and models enums
 - Comprehensive error handling with user-friendly messages
 - Installation instructions displayed on dependency validation failures
@@ -856,9 +949,11 @@ Created comprehensive integration test suite in `tests/main_integration_tests.rs
 - Logging level controlled by --verbose flag
 
 #### Idempotency Features (Task 19)
+
 **Status:** ✅ Fully implemented and tested
 
 **Functionality:**
+
 - Done marker checking throughout pipeline
 - Force flag override for reprocessing
 - Partial library processing support
@@ -867,6 +962,7 @@ Created comprehensive integration test suite in `tests/main_integration_tests.rs
 - Multiple run idempotency
 
 **Test Coverage:**
+
 - 1 property-based test with 100+ iterations:
   - Property 35: Idempotent Re-execution
 - 5 comprehensive integration tests:
@@ -878,12 +974,14 @@ Created comprehensive integration test suite in `tests/main_integration_tests.rs
 - All tests passing ✅
 
 **Requirements Validated:**
+
 - 12.1: Done marker skipping behavior
 - 12.2: Safe re-execution without duplicate work
 - 12.3: Partial library processing
 - 12.4: Safe resumption after interruption
 
 **Implementation Notes:**
+
 - Scanner validates done markers and respects force flag
 - Orchestrator cleans up pre-existing temp directories
 - Drop trait ensures cleanup on exit
@@ -899,6 +997,7 @@ None - all modules are fully implemented and tested!
 **Project Status:** ✅ **COMPLETE**
 
 All 21 implementation tasks have been completed:
+
 - ✅ All core modules implemented (scanner, validation, discovery, downloader, converter, organizer, orchestrator, CLI, main)
 - ✅ All 38 correctness properties implemented and tested
 - ✅ 412 tests passing (198 unit/property in lib, 198 in main, 16 integration)
@@ -908,12 +1007,14 @@ All 21 implementation tasks have been completed:
 - ✅ All requirements validated and traced to implementation
 
 **Test Summary:**
+
 - Unit tests: 200+ tests covering all modules
 - Property-based tests: 38 properties with 100+ iterations each
 - Integration tests: 16 end-to-end tests
 - Total: 412 tests passing ✅
 
 **Code Quality:**
+
 - `cargo build` - compiles without errors or warnings ✅
 - `cargo test` - all tests pass ✅
 - `cargo clippy -- -D warnings` - no warnings ✅
