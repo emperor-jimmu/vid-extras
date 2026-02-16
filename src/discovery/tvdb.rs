@@ -79,14 +79,24 @@ pub struct TvdbApiResponse<T> {
     pub data: T,
 }
 
-/// Episodes page response from the API
+/// Episodes data from the API (inner structure)
 #[derive(Debug, Deserialize)]
-pub struct TvdbEpisodesPage {
+pub struct TvdbEpisodesData {
     /// List of episodes on this page
     pub episodes: Vec<TvdbEpisode>,
     /// Optional URL to next page
     #[serde(default)]
     pub next: Option<String>,
+}
+
+/// Episodes page response from the API
+#[derive(Debug, Deserialize)]
+pub struct TvdbEpisodesPage {
+    /// Nested data object containing episodes and pagination
+    pub data: TvdbEpisodesData,
+    /// Status of the response (included for API compatibility)
+    #[allow(dead_code)]
+    pub status: String,
 }
 
 /// Inner data structure containing the token
@@ -270,9 +280,9 @@ impl TvdbClient {
                 }
             };
 
-            episodes.extend(page_data.episodes);
+            episodes.extend(page_data.data.episodes);
 
-            if let Some(next) = page_data.next {
+            if let Some(next) = page_data.data.next {
                 next_url = Some(next);
                 page += 1;
             } else {
@@ -387,16 +397,19 @@ mod tests {
     #[test]
     fn test_tvdb_episodes_page_deserialization() {
         let json = r#"{
-            "episodes": [
-                {"id": 1, "number": 1, "name": "Ep1", "aired": null, "overview": null},
-                {"id": 2, "number": 2, "name": "Ep2", "aired": null, "overview": null}
-            ],
-            "next": "https://api4.thetvdb.com/v4/series/123/episodes/default?page=1"
+            "data": {
+                "episodes": [
+                    {"id": 1, "number": 1, "name": "Ep1", "aired": null, "overview": null},
+                    {"id": 2, "number": 2, "name": "Ep2", "aired": null, "overview": null}
+                ],
+                "next": "https://api4.thetvdb.com/v4/series/123/episodes/default?page=1"
+            },
+            "status": "success"
         }"#;
 
         let page: TvdbEpisodesPage = serde_json::from_str(json).unwrap();
-        assert_eq!(page.episodes.len(), 2);
-        assert!(page.next.is_some());
+        assert_eq!(page.data.episodes.len(), 2);
+        assert!(page.data.next.is_some());
     }
 
     #[test]
