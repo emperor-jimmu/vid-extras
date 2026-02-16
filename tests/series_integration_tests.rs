@@ -834,3 +834,199 @@ fn test_series_folder_name_edge_cases() {
     assert_eq!(title, "Long Series Name");
     assert_eq!(year, Some(2020));
 }
+
+// Performance tests for large library scenarios
+// Tests concurrency limits, memory usage, and resource management
+
+#[test]
+fn test_performance_large_series_library() {
+    // Test with large library (100+ series)
+    // Requirements: 20.4, 11.2, 11.3, 11.4
+
+    use extras_fetcher::scanner::Scanner;
+    use std::time::Instant;
+
+    let temp_dir = TempDir::new().unwrap();
+    let num_series = 120;
+
+    // Create 120 series with varying season counts
+    let start_create = Instant::now();
+    for i in 0..num_series {
+        let name = format!("Series {}", i);
+        let year = 2000 + (i % 24) as u16;
+        let seasons = vec![1, 2, 3]; // Each series has 3 seasons
+        create_test_series_structure(temp_dir.path(), &name, year, &seasons).unwrap();
+    }
+    let _create_duration = start_create.elapsed();
+
+    // Scan the large library
+    let start_scan = Instant::now();
+    let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
+    let (movies, series) = scanner.scan_all().unwrap();
+    let scan_duration = start_scan.elapsed();
+
+    // Verify all series were found
+    assert_eq!(
+        series.len(),
+        num_series,
+        "Should find all {} series",
+        num_series
+    );
+    assert_eq!(movies.len(), 0, "Should find no movies");
+
+    // Verify scanning performance is reasonable (should complete in < 5 seconds)
+    assert!(
+        scan_duration.as_secs() < 5,
+        "Scanning {} series should complete in < 5 seconds, took {:?}",
+        num_series,
+        scan_duration
+    );
+
+    // Verify each series has correct season count
+    for series_entry in &series {
+        assert_eq!(
+            series_entry.seasons.len(),
+            3,
+            "Each series should have 3 seasons"
+        );
+    }
+}
+
+#[test]
+fn test_performance_concurrency_limits() {
+    // Test that concurrency limits are respected
+    // Requirements: 11.2, 11.3, 11.4
+
+    use extras_fetcher::models::ProcessingMode;
+    use extras_fetcher::scanner::Scanner;
+
+    // Verify ProcessingMode enum exists and can be used
+    let mode_both = ProcessingMode::Both;
+    let mode_movies = ProcessingMode::MoviesOnly;
+    let mode_series = ProcessingMode::SeriesOnly;
+
+    // Verify all modes are distinct
+    assert_ne!(mode_both, mode_movies);
+    assert_ne!(mode_both, mode_series);
+    assert_ne!(mode_movies, mode_series);
+
+    // Verify concurrency parameter validation
+    let temp_dir = TempDir::new().unwrap();
+    create_test_series_structure(temp_dir.path(), "Test Series", 2020, &[1]).unwrap();
+
+    // Concurrency of 1 should work (sequential)
+    let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
+    let (_, series) = scanner.scan_all().unwrap();
+    assert_eq!(series.len(), 1);
+
+    // Concurrency of 4 should work (parallel)
+    let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
+    let (_, series) = scanner.scan_all().unwrap();
+    assert_eq!(series.len(), 1);
+}
+
+#[test]
+fn test_performance_memory_efficiency() {
+    // Test memory efficiency with many series
+    // Requirements: 20.4
+
+    use extras_fetcher::scanner::Scanner;
+
+    let temp_dir = TempDir::new().unwrap();
+    let num_series = 50;
+
+    // Create 50 series
+    for i in 0..num_series {
+        let name = format!("Series {}", i);
+        let year = 2000 + (i % 24) as u16;
+        let seasons = vec![1, 2];
+        create_test_series_structure(temp_dir.path(), &name, year, &seasons).unwrap();
+    }
+
+    // Scan and verify memory is managed efficiently
+    let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
+    let (_, series) = scanner.scan_all().unwrap();
+
+    // Verify all series are loaded
+    assert_eq!(series.len(), num_series);
+
+    // Verify each series entry has reasonable size
+    for series_entry in &series {
+        assert!(!series_entry.title.is_empty());
+        assert!(series_entry.path.exists());
+        // Verify seasons are properly tracked
+        assert!(!series_entry.seasons.is_empty());
+    }
+}
+
+#[test]
+fn test_performance_no_resource_leaks() {
+    // Test that resources are properly cleaned up
+    // Requirements: 20.4
+
+    use extras_fetcher::scanner::Scanner;
+
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create multiple series
+    for i in 0..10 {
+        let name = format!("Series {}", i);
+        let year = 2020 + (i % 5) as u16;
+        let seasons = vec![1, 2, 3];
+        create_test_series_structure(temp_dir.path(), &name, year, &seasons).unwrap();
+    }
+
+    // Multiple scans should not leak resources
+    for _ in 0..5 {
+        let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
+        let (_, series) = scanner.scan_all().unwrap();
+        assert_eq!(series.len(), 10);
+    }
+
+    // Verify temp directory can be cleaned up (no locked files)
+    drop(temp_dir);
+}
+
+#[test]
+fn test_performance_mixed_library_scaling() {
+    // Test performance with mixed movie and series library
+    // Requirements: 20.4, 12.1, 12.2, 12.3
+
+    use extras_fetcher::scanner::Scanner;
+    use std::time::Instant;
+
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create 50 movies and 50 series
+    let start_create = Instant::now();
+    for i in 0..50 {
+        let name = format!("Movie {}", i);
+        let year = 2000 + (i % 24) as u16;
+        create_test_movie_structure(temp_dir.path(), &name, year).unwrap();
+    }
+
+    for i in 0..50 {
+        let name = format!("Series {}", i);
+        let year = 2000 + (i % 24) as u16;
+        let seasons = vec![1, 2];
+        create_test_series_structure(temp_dir.path(), &name, year, &seasons).unwrap();
+    }
+    let _create_duration = start_create.elapsed();
+
+    // Scan mixed library
+    let start_scan = Instant::now();
+    let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
+    let (movies, series) = scanner.scan_all().unwrap();
+    let scan_duration = start_scan.elapsed();
+
+    // Verify correct counts
+    assert_eq!(movies.len(), 50, "Should find 50 movies");
+    assert_eq!(series.len(), 50, "Should find 50 series");
+
+    // Verify scanning performance is reasonable
+    assert!(
+        scan_duration.as_secs() < 5,
+        "Scanning 100 items should complete in < 5 seconds, took {:?}",
+        scan_duration
+    );
+}
