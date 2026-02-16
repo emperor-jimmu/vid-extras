@@ -9,9 +9,7 @@ pub struct Season0Importer;
 
 impl Season0Importer {
     /// Scan series folder for S00Exx files
-    pub async fn scan_for_season_zero_files(
-        series_path: &Path,
-    ) -> Result<Vec<PathBuf>, String> {
+    pub async fn scan_for_season_zero_files(series_path: &Path) -> Result<Vec<PathBuf>, String> {
         let mut season_zero_files = Vec::new();
         let season_zero_regex = Regex::new(r"(?i)S00E\d{1,2}").map_err(|e| e.to_string())?;
 
@@ -95,8 +93,8 @@ impl Season0Importer {
             .and_then(|n| n.to_str())
             .ok_or("Invalid filename")?;
 
-        let episode_number = Self::extract_episode_number(filename)
-            .ok_or("Could not extract episode number")?;
+        let episode_number =
+            Self::extract_episode_number(filename).ok_or("Could not extract episode number")?;
 
         // Create Season 00 folder if it doesn't exist
         let season_00_dir = series_path.join("Season 00");
@@ -110,11 +108,8 @@ impl Season0Importer {
             .and_then(|s| s.to_str())
             .unwrap_or("Special");
 
-        let new_filename = Self::generate_season_zero_filename(
-            series_name,
-            episode_number,
-            original_stem,
-        );
+        let new_filename =
+            Self::generate_season_zero_filename(series_name, episode_number, original_stem);
 
         let target_path = season_00_dir.join(&new_filename);
 
@@ -132,10 +127,7 @@ impl Season0Importer {
             .await
             .map_err(|e| format!("Failed to move file: {}", e))?;
 
-        debug!(
-            "Imported Season 0 file: {} -> {}",
-            filename, new_filename
-        );
+        debug!("Imported Season 0 file: {} -> {}", filename, new_filename);
 
         Ok(())
     }
@@ -165,8 +157,7 @@ impl Season0Importer {
 
                     seen_episodes.insert(episode_num);
 
-                    match Self::import_season_zero_file(&file_path, series_path, series_name)
-                        .await
+                    match Self::import_season_zero_file(&file_path, series_path, series_name).await
                     {
                         Ok(()) => imported += 1,
                         Err(e) => {
@@ -247,21 +238,14 @@ mod tests {
 
     #[test]
     fn test_generate_season_zero_filename() {
-        let filename = Season0Importer::generate_season_zero_filename(
-            "Breaking Bad",
-            5,
-            "Pilot",
-        );
+        let filename = Season0Importer::generate_season_zero_filename("Breaking Bad", 5, "Pilot");
         assert_eq!(filename, "Breaking Bad - S00E05 - Pilot.mp4");
     }
 
     #[test]
     fn test_generate_season_zero_filename_single_digit() {
-        let filename = Season0Importer::generate_season_zero_filename(
-            "The Office",
-            1,
-            "Unaired Pilot",
-        );
+        let filename =
+            Season0Importer::generate_season_zero_filename("The Office", 1, "Unaired Pilot");
         assert_eq!(filename, "The Office - S00E01 - Unaired Pilot.mp4");
     }
 

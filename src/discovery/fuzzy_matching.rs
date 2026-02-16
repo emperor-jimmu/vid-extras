@@ -46,8 +46,8 @@ impl FuzzyMatcher {
 
                 matrix[i][j] = std::cmp::min(
                     std::cmp::min(
-                        matrix[i - 1][j] + 1,     // deletion
-                        matrix[i][j - 1] + 1,     // insertion
+                        matrix[i - 1][j] + 1, // deletion
+                        matrix[i][j - 1] + 1, // insertion
                     ),
                     matrix[i - 1][j - 1] + cost, // substitution
                 );
@@ -76,10 +76,7 @@ impl FuzzyMatcher {
         let normalized2 = Self::normalize(title2);
 
         let score = Self::similarity_score(&normalized1, &normalized2);
-        debug!(
-            "Fuzzy match: '{}' vs '{}' -> {}%",
-            title1, title2, score
-        );
+        debug!("Fuzzy match: '{}' vs '{}' -> {}%", title1, title2, score);
 
         score >= 80
     }
@@ -164,10 +161,7 @@ mod tests {
 
     #[test]
     fn test_titles_match_with_special_chars() {
-        assert!(FuzzyMatcher::titles_match(
-            "Breaking Bad",
-            "Breaking-Bad!"
-        ));
+        assert!(FuzzyMatcher::titles_match("Breaking Bad", "Breaking-Bad!"));
     }
 
     #[test]
@@ -177,7 +171,10 @@ mod tests {
 
     #[test]
     fn test_titles_no_match_very_different() {
-        assert!(!FuzzyMatcher::titles_match("Breaking Bad", "Game of Thrones"));
+        assert!(!FuzzyMatcher::titles_match(
+            "Breaking Bad",
+            "Game of Thrones"
+        ));
     }
 
     #[test]

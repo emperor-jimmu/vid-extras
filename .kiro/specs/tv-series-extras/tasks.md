@@ -254,20 +254,20 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Test string normalization
     - Test similarity calculation
 
-- [ ] 16. Add error handling and logging
-  - [ ] 16.1 Define series-specific error types in src/error.rs
+- [x] 16. Add error handling and logging
+  - [x] 16.1 Define series-specific error types in src/error.rs
     - Add SeriesScanError enum
     - Add SeriesDiscoveryError enum
     - Add SeriesOrganizerError enum
     - Implement Display and Error traits using thiserror
     - _Requirements: 13.6_
-  - [ ] 16.2 Add comprehensive error logging
+  - [x] 16.2 Add comprehensive error logging
     - Log errors with series context (name, year)
     - Log operation that failed
     - Log error details
     - Continue processing on non-fatal errors
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5_
-  - [ ]\* 16.3 Write unit tests for error handling
+  - [x] 16.3 Write unit tests for error handling
     - Test error propagation
     - Test error logging
     - Test graceful degradation

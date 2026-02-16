@@ -14,8 +14,8 @@ mod tmdb;
 mod youtube;
 
 // Re-export public API
-pub use orchestrator::DiscoveryOrchestrator;
 pub use fuzzy_matching::FuzzyMatcher;
+pub use orchestrator::DiscoveryOrchestrator;
 pub use season_pack::SeasonPackProcessor;
 pub use season_zero_import::Season0Importer;
 #[allow(unused_imports)]

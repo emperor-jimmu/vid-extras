@@ -185,10 +185,7 @@ impl SeasonPackProcessor {
                     if let Some(filename) = path.file_name() {
                         if let Some(filename_str) = filename.to_str() {
                             if let Some(category) = Self::identify_bonus_content(filename_str) {
-                                debug!(
-                                    "Found bonus content: {} -> {:?}",
-                                    filename_str, category
-                                );
+                                debug!("Found bonus content: {} -> {:?}", filename_str, category);
                                 bonus_files.push((path, category));
                             }
                         }
