@@ -182,20 +182,20 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Test error handling and recovery
     - Test done marker creation
 
-- [ ] 12. Update CLI module with series flags
-  - [ ] 12.1 Add new CLI flags to CliArgs struct
+- [x] 12. Update CLI module with series flags
+  - [x] 12.1 Add new CLI flags to CliArgs struct
     - Add --series-only flag (bool)
     - Add --movies-only flag (bool)
     - Add --season-extras flag (bool)
     - Add --specials flag (bool)
     - Add --type flag (Option<String>)
     - _Requirements: 12.1, 12.2, 12.4, 12.6, 12.7, 10.5_
-  - [ ] 12.2 Update parse_args to validate flag combinations
+  - [x] 12.2 Update parse_args to validate flag combinations
     - Ensure --series-only and --movies-only are mutually exclusive
     - Convert flags to ProcessingMode enum
     - Validate --type flag values (movie or series)
     - _Requirements: 12.1, 12.2, 12.3_
-  - [ ] 12.3 Write unit tests for CLI flag parsing
+  - [x] 12.3 Write unit tests for CLI flag parsing
     - Test all flag combinations
     - Test mutually exclusive flags
     - Test default values

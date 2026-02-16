@@ -201,7 +201,11 @@ impl Orchestrator {
             .scan_all()
             .map_err(|e| OrchestratorError::Processing(format!("Scan failed: {}", e)))?;
 
-        info!("Found {} movies and {} series to process", movies.len(), series.len());
+        info!(
+            "Found {} movies and {} series to process",
+            movies.len(),
+            series.len()
+        );
 
         // Initialize summary
         let mut summary = ProcessingSummary::new();
@@ -515,7 +519,11 @@ impl Orchestrator {
         info!("Processing series: {}", series);
 
         // Generate series ID for temp directory
-        let series_id = format!("{}_{}", series.title.replace(' ', "_"), series.year.unwrap_or(0));
+        let series_id = format!(
+            "{}_{}",
+            series.title.replace(' ', "_"),
+            series.year.unwrap_or(0)
+        );
 
         // Phase 2: Discovery
         info!("Phase 2: Discovering content for {}", series);
@@ -1163,7 +1171,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(orchestrator_movies.processing_mode, ProcessingMode::MoviesOnly);
+        assert_eq!(
+            orchestrator_movies.processing_mode,
+            ProcessingMode::MoviesOnly
+        );
 
         // Test with SeriesOnly mode
         let orchestrator_series = Orchestrator::new(
@@ -1177,7 +1188,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(orchestrator_series.processing_mode, ProcessingMode::SeriesOnly);
+        assert_eq!(
+            orchestrator_series.processing_mode,
+            ProcessingMode::SeriesOnly
+        );
     }
 
     #[tokio::test]
@@ -1191,7 +1205,9 @@ mod tests {
         // Create a movie folder with proper naming and a video file
         let movie_dir = root_dir.join("TestMovie (2020)");
         tokio::fs::create_dir(&movie_dir).await.unwrap();
-        tokio::fs::write(movie_dir.join("movie.mp4"), "").await.unwrap();
+        tokio::fs::write(movie_dir.join("movie.mp4"), "")
+            .await
+            .unwrap();
 
         // Create a series folder with season subfolder and proper naming
         let series_dir = root_dir.join("TestSeries (2021)");
@@ -1229,7 +1245,11 @@ mod tests {
 
         let (movies_only, series_only) = orchestrator_movies.scanner.scan_all().unwrap();
         assert_eq!(movies_only.len(), 1, "MoviesOnly mode should find 1 movie");
-        assert_eq!(series_only.len(), 1, "Scanner still finds series regardless of mode");
+        assert_eq!(
+            series_only.len(),
+            1,
+            "Scanner still finds series regardless of mode"
+        );
 
         // Test with SeriesOnly mode - should only find series
         let orchestrator_series = Orchestrator::new(
@@ -1244,8 +1264,16 @@ mod tests {
         .unwrap();
 
         let (movies_series, series_series) = orchestrator_series.scanner.scan_all().unwrap();
-        assert_eq!(movies_series.len(), 1, "Scanner still finds movies regardless of mode");
-        assert_eq!(series_series.len(), 1, "SeriesOnly mode should find 1 series");
+        assert_eq!(
+            movies_series.len(),
+            1,
+            "Scanner still finds movies regardless of mode"
+        );
+        assert_eq!(
+            series_series.len(),
+            1,
+            "SeriesOnly mode should find 1 series"
+        );
     }
 }
 
@@ -1521,7 +1549,7 @@ mod property_tests {
                     let series_folder = format!("TestSeries{} (202{})", i, i);
                     let series_path = root_dir.join(&series_folder);
                     tokio::fs::create_dir(&series_path).await.unwrap();
-                    
+
                     // Create a season folder to mark it as a series
                     let season_path = series_path.join("Season 01");
                     tokio::fs::create_dir(&season_path).await.unwrap();

@@ -66,6 +66,26 @@ pub struct CliArgs {
     /// Process a single movie folder directly (instead of scanning for multiple movies)
     #[arg(short, long)]
     pub single: bool,
+
+    /// Process only TV series and skip movies
+    #[arg(long)]
+    pub series_only: bool,
+
+    /// Process only movies and skip TV series
+    #[arg(long)]
+    pub movies_only: bool,
+
+    /// Enable season-specific extras discovery
+    #[arg(long)]
+    pub season_extras: bool,
+
+    /// Enable Season 0 specials discovery
+    #[arg(long)]
+    pub specials: bool,
+
+    /// Force classification as either 'movie' or 'series'
+    #[arg(long, value_name = "TYPE")]
+    pub r#type: Option<String>,
 }
 
 /// CLI configuration
@@ -77,10 +97,23 @@ pub struct CliConfig {
     pub concurrency: usize,
     pub verbose: bool,
     pub single: bool,
+    pub processing_mode: crate::models::ProcessingMode,
+    pub season_extras: bool,
+    pub specials: bool,
+    pub media_type: Option<String>,
 }
 
 impl From<CliArgs> for CliConfig {
     fn from(args: CliArgs) -> Self {
+        // Determine processing mode based on flags
+        let processing_mode = if args.series_only {
+            crate::models::ProcessingMode::SeriesOnly
+        } else if args.movies_only {
+            crate::models::ProcessingMode::MoviesOnly
+        } else {
+            crate::models::ProcessingMode::Both
+        };
+
         CliConfig {
             root_directory: args.root_directory,
             force: args.force,
@@ -88,6 +121,10 @@ impl From<CliArgs> for CliConfig {
             concurrency: args.concurrency,
             verbose: args.verbose,
             single: args.single,
+            processing_mode,
+            season_extras: args.season_extras,
+            specials: args.specials,
+            media_type: args.r#type,
         }
     }
 }
@@ -122,6 +159,24 @@ fn validate_config(args: &CliArgs) -> Result<(), CliError> {
         return Err(CliError::InvalidConcurrency(
             "Concurrency must be at least 1".to_string(),
         ));
+    }
+
+    // Validate that --series-only and --movies-only are mutually exclusive
+    if args.series_only && args.movies_only {
+        return Err(CliError::ParseError(
+            "--series-only and --movies-only are mutually exclusive".to_string(),
+        ));
+    }
+
+    // Validate --type flag values if provided
+    if let Some(ref media_type) = args.r#type {
+        let valid_types = ["movie", "series"];
+        if !valid_types.contains(&media_type.as_str()) {
+            return Err(CliError::ParseError(format!(
+                "Invalid --type value: '{}'. Must be 'movie' or 'series'",
+                media_type
+            )));
+        }
     }
 
     Ok(())
@@ -184,6 +239,36 @@ pub fn display_config(config: &CliConfig) {
             "No".bright_white()
         }
     );
+    println!(
+        "  {} {}",
+        "Processing Mode:".bright_white(),
+        config.processing_mode
+    );
+    println!(
+        "  {} {}",
+        "Season Extras:".bright_white(),
+        if config.season_extras {
+            "Yes".bright_yellow()
+        } else {
+            "No".bright_white()
+        }
+    );
+    println!(
+        "  {} {}",
+        "Specials:".bright_white(),
+        if config.specials {
+            "Yes".bright_yellow()
+        } else {
+            "No".bright_white()
+        }
+    );
+    if let Some(ref media_type) = config.media_type {
+        println!(
+            "  {} {}",
+            "Media Type:".bright_white(),
+            media_type.bright_yellow()
+        );
+    }
     println!();
 }
 
@@ -208,6 +293,11 @@ mod tests {
             concurrency: 4,
             verbose: true,
             single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: true,
+            specials: true,
+            r#type: Some("series".to_string()),
         };
 
         let config: CliConfig = args.into();
@@ -217,6 +307,10 @@ mod tests {
         assert_eq!(config.concurrency, 4);
         assert!(config.verbose);
         assert!(!config.single);
+        assert_eq!(config.processing_mode, crate::models::ProcessingMode::Both);
+        assert!(config.season_extras);
+        assert!(config.specials);
+        assert_eq!(config.media_type, Some("series".to_string()));
     }
 
     #[test]
@@ -229,6 +323,11 @@ mod tests {
             concurrency: 2,
             verbose: false,
             single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: false,
+            specials: false,
+            r#type: None,
         };
 
         let result = validate_config(&args);
@@ -244,6 +343,11 @@ mod tests {
             concurrency: 2,
             verbose: false,
             single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: false,
+            specials: false,
+            r#type: None,
         };
 
         let result = validate_config(&args);
@@ -270,6 +374,11 @@ mod tests {
             concurrency: 2,
             verbose: false,
             single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: false,
+            specials: false,
+            r#type: None,
         };
 
         let result = validate_config(&args);
@@ -292,6 +401,11 @@ mod tests {
             concurrency: 0,
             verbose: false,
             single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: false,
+            specials: false,
+            r#type: None,
         };
 
         let result = validate_config(&args);
@@ -314,6 +428,11 @@ mod tests {
             concurrency: 2,
             verbose: false,
             single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: false,
+            specials: false,
+            r#type: None,
         };
 
         let result = validate_config(&args);
@@ -325,6 +444,10 @@ mod tests {
         assert_eq!(config.concurrency, 2);
         assert!(!config.verbose);
         assert!(!config.single);
+        assert_eq!(config.processing_mode, crate::models::ProcessingMode::Both);
+        assert!(!config.season_extras);
+        assert!(!config.specials);
+        assert_eq!(config.media_type, None);
     }
 
     #[test]
@@ -342,10 +465,200 @@ mod tests {
             concurrency: 4,
             verbose: true,
             single: false,
+            processing_mode: crate::models::ProcessingMode::SeriesOnly,
+            season_extras: true,
+            specials: true,
+            media_type: Some("series".to_string()),
         };
 
         // Just verify the config can be displayed without panicking
         display_config(&config);
+    }
+
+    #[test]
+    fn test_series_only_flag_sets_processing_mode() {
+        let temp_dir = TempDir::new().unwrap();
+        let args = CliArgs {
+            root_directory: temp_dir.path().to_path_buf(),
+            force: false,
+            mode: SourceMode::All,
+            concurrency: 2,
+            verbose: false,
+            single: false,
+            series_only: true,
+            movies_only: false,
+            season_extras: false,
+            specials: false,
+            r#type: None,
+        };
+
+        let config: CliConfig = args.into();
+        assert_eq!(
+            config.processing_mode,
+            crate::models::ProcessingMode::SeriesOnly
+        );
+    }
+
+    #[test]
+    fn test_movies_only_flag_sets_processing_mode() {
+        let temp_dir = TempDir::new().unwrap();
+        let args = CliArgs {
+            root_directory: temp_dir.path().to_path_buf(),
+            force: false,
+            mode: SourceMode::All,
+            concurrency: 2,
+            verbose: false,
+            single: false,
+            series_only: false,
+            movies_only: true,
+            season_extras: false,
+            specials: false,
+            r#type: None,
+        };
+
+        let config: CliConfig = args.into();
+        assert_eq!(
+            config.processing_mode,
+            crate::models::ProcessingMode::MoviesOnly
+        );
+    }
+
+    #[test]
+    fn test_mutually_exclusive_flags_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let args = CliArgs {
+            root_directory: temp_dir.path().to_path_buf(),
+            force: false,
+            mode: SourceMode::All,
+            concurrency: 2,
+            verbose: false,
+            single: false,
+            series_only: true,
+            movies_only: true,
+            season_extras: false,
+            specials: false,
+            r#type: None,
+        };
+
+        let result = validate_config(&args);
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ParseError(msg)) => {
+                assert!(msg.contains("mutually exclusive"));
+            }
+            _ => panic!("Expected ParseError for mutually exclusive flags"),
+        }
+    }
+
+    #[test]
+    fn test_type_flag_movie_valid() {
+        let temp_dir = TempDir::new().unwrap();
+        let args = CliArgs {
+            root_directory: temp_dir.path().to_path_buf(),
+            force: false,
+            mode: SourceMode::All,
+            concurrency: 2,
+            verbose: false,
+            single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: false,
+            specials: false,
+            r#type: Some("movie".to_string()),
+        };
+
+        let result = validate_config(&args);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_type_flag_series_valid() {
+        let temp_dir = TempDir::new().unwrap();
+        let args = CliArgs {
+            root_directory: temp_dir.path().to_path_buf(),
+            force: false,
+            mode: SourceMode::All,
+            concurrency: 2,
+            verbose: false,
+            single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: false,
+            specials: false,
+            r#type: Some("series".to_string()),
+        };
+
+        let result = validate_config(&args);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_type_flag_invalid_value() {
+        let temp_dir = TempDir::new().unwrap();
+        let args = CliArgs {
+            root_directory: temp_dir.path().to_path_buf(),
+            force: false,
+            mode: SourceMode::All,
+            concurrency: 2,
+            verbose: false,
+            single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: false,
+            specials: false,
+            r#type: Some("invalid".to_string()),
+        };
+
+        let result = validate_config(&args);
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ParseError(msg)) => {
+                assert!(msg.contains("Invalid --type value"));
+            }
+            _ => panic!("Expected ParseError for invalid type"),
+        }
+    }
+
+    #[test]
+    fn test_season_extras_flag() {
+        let temp_dir = TempDir::new().unwrap();
+        let args = CliArgs {
+            root_directory: temp_dir.path().to_path_buf(),
+            force: false,
+            mode: SourceMode::All,
+            concurrency: 2,
+            verbose: false,
+            single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: true,
+            specials: false,
+            r#type: None,
+        };
+
+        let config: CliConfig = args.into();
+        assert!(config.season_extras);
+    }
+
+    #[test]
+    fn test_specials_flag() {
+        let temp_dir = TempDir::new().unwrap();
+        let args = CliArgs {
+            root_directory: temp_dir.path().to_path_buf(),
+            force: false,
+            mode: SourceMode::All,
+            concurrency: 2,
+            verbose: false,
+            single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: false,
+            specials: true,
+            r#type: None,
+        };
+
+        let config: CliConfig = args.into();
+        assert!(config.specials);
     }
 }
 
@@ -379,6 +692,10 @@ mod property_tests {
                 concurrency,
                 verbose,
                 single,
+                processing_mode: crate::models::ProcessingMode::Both,
+                season_extras: false,
+                specials: false,
+                media_type: None,
             };
 
             // Capture the display output
@@ -440,6 +757,10 @@ mod property_tests {
                 concurrency: 2,
                 verbose,
                 single: false,
+                processing_mode: crate::models::ProcessingMode::Both,
+                season_extras: false,
+                specials: false,
+                media_type: None,
             };
 
             // Verify the verbose flag is correctly stored
