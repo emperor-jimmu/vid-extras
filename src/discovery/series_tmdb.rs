@@ -242,6 +242,7 @@ impl TmdbSeriesDiscoverer {
                 air_date: ep.air_date,
                 url: None, // URLs would need to be fetched separately
                 local_path: None,
+                tvdb_id: None, // TVDB ID would be populated by IdBridge
             })
             .collect();
 
@@ -348,6 +349,7 @@ mod tests {
             air_date: Some("2020-01-01".to_string()),
             url: None,
             local_path: None,
+            tvdb_id: None,
         };
 
         assert_eq!(episode.episode_number, 1);
@@ -364,6 +366,7 @@ mod tests {
             air_date: None,
             url: None,
             local_path: None,
+            tvdb_id: None,
         };
 
         assert_eq!(episode.episode_number, 2);

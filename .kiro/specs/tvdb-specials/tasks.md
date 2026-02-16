@@ -6,23 +6,23 @@ Incremental implementation of TheTVDB API v4 integration for Season 0 specials d
 
 ## Tasks
 
-- [ ] 1. Extend Config and data models
-  - [ ] 1.1 Add `tvdb_api_key: Option<String>` field to `Config` struct in `src/config.rs` with `#[serde(default)]`
+- [x] 1. Extend Config and data models
+  - [x] 1.1 Add `tvdb_api_key: Option<String>` field to `Config` struct in `src/config.rs` with `#[serde(default)]`
     - Update `prompt_for_api_key` to support prompting for TVDB key
     - Update `load_or_create` to handle missing TVDB key when specials are enabled
     - _Requirements: 1.1, 1.6_
-  - [ ] 1.2 Write property test for Config serialization round-trip with tvdb_api_key
+  - [x] 1.2 Write property test for Config serialization round-trip with tvdb_api_key
     - **Property 1: Config Serialization Round-Trip**
     - **Validates: Requirements 1.6**
-  - [ ] 1.3 Add TVDB data model structs in `src/discovery/tvdb.rs`
+  - [x] 1.3 Add TVDB data model structs in `src/discovery/tvdb.rs`
     - Define `TvdbEpisode`, `TvdbEpisodeExtended`, `TvdbSearchResult`, `TvdbApiResponse<T>`, `TvdbEpisodesPage`, `TvdbLoginResponse`, `TvdbSearchResponse`
     - Add `TheTVDB` variant to `SourceType` enum in `src/models.rs`
     - Add optional `tvdb_id: Option<u64>` field to `SpecialEpisode` in `src/models.rs`
     - _Requirements: 3.3, 4.2_
-  - [ ] 1.4 Write property test for TVDB episode parsing completeness
+  - [x] 1.4 Write property test for TVDB episode parsing completeness
     - **Property 3: TVDB Episode Parsing Completeness**
     - **Validates: Requirements 3.3, 4.2**
-  - [ ] 1.5 Add `TvdbAuthError` and `TvdbApiError` variants to `DiscoveryError` in `src/error.rs`
+  - [x] 1.5 Add `TvdbAuthError` and `TvdbApiError` variants to `DiscoveryError` in `src/error.rs`
     - _Requirements: 1.3, 10.1_
 
 - [ ] 2. Checkpoint - Ensure all tests pass

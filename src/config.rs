@@ -11,6 +11,9 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     /// TMDB API key for content discovery
     pub tmdb_api_key: String,
+    /// TheTVDB API key for Season 0 specials discovery
+    #[serde(default)]
+    pub tvdb_api_key: Option<String>,
 }
 
 impl Config {
@@ -79,6 +82,40 @@ impl Config {
         Ok(api_key)
     }
 
+    /// Prompt user for TheTVDB API key via CLI
+    ///
+    /// Displays instructions and prompts the user to enter their API key.
+    /// Returns the entered key or an error if input fails.
+    pub fn prompt_for_tvdb_api_key() -> Result<String, ConfigError> {
+        println!("\n{}", "TheTVDB API Key Required".to_uppercase());
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!("To discover Season 0 specials, you need a free TheTVDB API key.");
+        println!("\nHow to get your API key:");
+        println!("  1. Visit: https://www.thetvdb.com/api-information");
+        println!("  2. Sign up for a free account (if you don't have one)");
+        println!("  3. Request an API key from your account settings");
+        println!("  4. Copy the API key value");
+        println!("\nYour API key will be saved to config.cfg for future use.");
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+        print!("Enter your TheTVDB API key: ");
+        io::stdout().flush().map_err(ConfigError::IoError)?;
+
+        let mut api_key = String::new();
+        io::stdin()
+            .read_line(&mut api_key)
+            .map_err(ConfigError::IoError)?;
+
+        let api_key = api_key.trim().to_string();
+
+        if api_key.is_empty() {
+            return Err(ConfigError::EmptyApiKey);
+        }
+
+        Ok(api_key)
+    }
+
+
     /// Load or create configuration
     ///
     /// Attempts to load config from file. If the file doesn't exist or is invalid,
@@ -99,6 +136,7 @@ impl Config {
 
                 let config = Config {
                     tmdb_api_key: api_key,
+                    tvdb_api_key: None,
                 };
 
                 // Save the new config
@@ -112,6 +150,30 @@ impl Config {
                 Err(e)
             }
         }
+    }
+
+    /// Load or create configuration, optionally prompting for TVDB key
+    ///
+    /// Attempts to load config from file. If the file doesn't exist or is invalid,
+    /// prompts the user for the API keys and creates a new config file.
+    /// If `require_tvdb_key` is true and the loaded config doesn't have a TVDB key,
+    /// prompts the user to enter one and saves it.
+    pub fn load_or_create_with_tvdb(require_tvdb_key: bool) -> Result<Self, ConfigError> {
+        let config_path = Self::default_path();
+        let mut config = Self::load_or_create()?;
+
+        // If TVDB key is required and missing, prompt for it
+        if require_tvdb_key && config.tvdb_api_key.is_none() {
+            log::info!("TVDB key required but not found in config");
+            let tvdb_key = Self::prompt_for_tvdb_api_key()?;
+            config.tvdb_api_key = Some(tvdb_key);
+
+            // Save the updated config
+            config.save(&config_path)?;
+            println!("\n✓ Configuration updated and saved to {:?}", config_path);
+        }
+
+        Ok(config)
     }
 }
 
@@ -127,6 +189,7 @@ mod tests {
 
         let config = Config {
             tmdb_api_key: "test_key_12345".to_string(),
+            tvdb_api_key: None,
         };
 
         // Save config
@@ -135,6 +198,7 @@ mod tests {
         // Load config
         let loaded = Config::load(&config_path).unwrap();
         assert_eq!(loaded.tmdb_api_key, "test_key_12345");
+        assert_eq!(loaded.tvdb_api_key, None);
     }
 
     #[test]
@@ -165,6 +229,7 @@ mod tests {
     fn test_config_serialization() {
         let config = Config {
             tmdb_api_key: "test_key".to_string(),
+            tvdb_api_key: None,
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -177,5 +242,60 @@ mod tests {
         let json = r#"{"tmdb_api_key":"my_key"}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.tmdb_api_key, "my_key");
+        assert_eq!(config.tvdb_api_key, None);
+    }
+
+    #[test]
+    fn test_config_with_tvdb_key_serialization() {
+        let config = Config {
+            tmdb_api_key: "tmdb_key".to_string(),
+            tvdb_api_key: Some("tvdb_key".to_string()),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("tmdb_api_key"));
+        assert!(json.contains("tvdb_api_key"));
+        assert!(json.contains("tmdb_key"));
+        assert!(json.contains("tvdb_key"));
+    }
+
+    #[test]
+    fn test_config_with_tvdb_key_deserialization() {
+        let json = r#"{"tmdb_api_key":"my_tmdb_key","tvdb_api_key":"my_tvdb_key"}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.tmdb_api_key, "my_tmdb_key");
+        assert_eq!(config.tvdb_api_key, Some("my_tvdb_key".to_string()));
+    }
+}
+
+
+#[cfg(test)]
+mod property_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    // Feature: tvdb-specials, Property 1: Config Serialization Round-Trip
+    // Validates: Requirements 1.6
+    proptest! {
+        #[test]
+        fn prop_config_serialization_round_trip(
+            tmdb_key in "[a-zA-Z0-9]{10,50}",
+            tvdb_key in proptest::option::of("[a-zA-Z0-9]{10,50}")
+        ) {
+            let config = Config {
+                tmdb_api_key: tmdb_key.clone(),
+                tvdb_api_key: tvdb_key.clone(),
+            };
+
+            // Serialize to JSON
+            let json = serde_json::to_string(&config).unwrap();
+
+            // Deserialize from JSON
+            let deserialized: Config = serde_json::from_str(&json).unwrap();
+
+            // Verify round-trip preserves both fields
+            prop_assert_eq!(&config.tmdb_api_key, &deserialized.tmdb_api_key);
+            prop_assert_eq!(&config.tvdb_api_key, &deserialized.tvdb_api_key);
+        }
     }
 }

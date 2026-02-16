@@ -883,6 +883,7 @@ mod tests {
             air_date: None,
             url: None,
             local_path: Some(special_file.clone()),
+            tvdb_id: None,
         }];
 
         let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
@@ -1248,6 +1249,7 @@ mod property_tests {
                     air_date: None,
                     url: None,
                     local_path: Some(file),
+                    tvdb_id: None,
                 }];
 
                 let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);

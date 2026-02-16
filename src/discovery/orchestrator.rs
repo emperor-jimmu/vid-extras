@@ -161,11 +161,12 @@ impl DiscoveryOrchestrator {
         for (category, mut sources) in by_category {
             let limit = limits.get(&category).copied().unwrap_or(usize::MAX);
 
-            // Sort by source priority: TMDB (0) > Archive.org (1) > YouTube (2)
+            // Sort by source priority: TMDB (0) > Archive.org (1) > YouTube (2) > TheTVDB (3)
             sources.sort_by_key(|s| match s.source_type {
                 SourceType::TMDB => 0,
                 SourceType::ArchiveOrg => 1,
                 SourceType::YouTube => 2,
+                SourceType::TheTVDB => 3,
             });
 
             // Take only up to the limit

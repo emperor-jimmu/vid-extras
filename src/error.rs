@@ -34,6 +34,10 @@ pub enum DiscoveryError {
     NetworkError(#[from] reqwest::Error),
     #[error("yt-dlp error: {0}")]
     YtDlpError(String),
+    #[error("TVDB authentication failed: {0}")]
+    TvdbAuthError(String),
+    #[error("TVDB API error: {0}")]
+    TvdbApiError(String),
 }
 
 /// Download-related errors

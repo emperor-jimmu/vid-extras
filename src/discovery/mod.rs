@@ -11,6 +11,7 @@ mod series_tmdb;
 mod series_youtube;
 mod title_matching;
 mod tmdb;
+mod tvdb;
 mod youtube;
 
 // Re-export public API
@@ -25,6 +26,11 @@ pub use season_zero_import::Season0Importer;
 pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};
 #[allow(unused_imports)]
 pub use series_orchestrator::SeriesDiscoveryOrchestrator;
+#[allow(dead_code, unused_imports)]
+pub use tvdb::{
+    TvdbApiResponse, TvdbEpisode, TvdbEpisodeExtended, TvdbEpisodesPage, TvdbLoginResponse,
+    TvdbSearchResponse, TvdbSearchResult,
+};
 
 use crate::error::DiscoveryError;
 use crate::models::MovieEntry;

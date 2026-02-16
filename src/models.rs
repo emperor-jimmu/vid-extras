@@ -162,6 +162,8 @@ pub enum SourceType {
     ArchiveOrg,
     /// YouTube
     YouTube,
+    /// TheTVDB API
+    TheTVDB,
 }
 
 impl fmt::Display for SourceType {
@@ -170,6 +172,7 @@ impl fmt::Display for SourceType {
             SourceType::TMDB => write!(f, "TMDB"),
             SourceType::ArchiveOrg => write!(f, "Archive.org"),
             SourceType::YouTube => write!(f, "YouTube"),
+            SourceType::TheTVDB => write!(f, "TheTVDB"),
         }
     }
 }
@@ -339,6 +342,8 @@ pub struct SpecialEpisode {
     pub url: Option<String>,
     /// Local path after download (optional)
     pub local_path: Option<PathBuf>,
+    /// Optional TheTVDB episode ID
+    pub tvdb_id: Option<u64>,
 }
 
 impl fmt::Display for SpecialEpisode {
@@ -452,6 +457,7 @@ mod tests {
             air_date: Some("2010-12-25".to_string()),
             url: None,
             local_path: None,
+            tvdb_id: Some(123456),
         };
         assert_eq!(episode.to_string(), "S00E05 - Holiday Special");
     }
