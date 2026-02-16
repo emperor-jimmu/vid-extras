@@ -659,6 +659,23 @@ impl Orchestrator {
             error!("✗ Series processing had organization errors: {}", series);
             SeriesResult::failed(series, "organization", "Some seasons failed".to_string())
         } else {
+            // Create done marker for series
+            let marker_path = series.path.join("done.ext");
+            let marker = serde_json::json!({
+                "finished_at": chrono::Utc::now().to_rfc3339(),
+                "version": env!("CARGO_PKG_VERSION"),
+            });
+
+            if let Ok(json) = serde_json::to_string_pretty(&marker) {
+                if let Err(e) = tokio::fs::write(&marker_path, json).await {
+                    warn!("Failed to create done marker for {}: {}", series, e);
+                } else {
+                    info!("Created done marker for series: {:?}", marker_path);
+                }
+            } else {
+                warn!("Failed to serialize done marker for {}", series);
+            }
+
             info!("✓ Series processing complete: {}", series);
             SeriesResult::success(
                 series,

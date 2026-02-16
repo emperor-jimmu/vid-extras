@@ -142,6 +142,7 @@ impl Downloader {
 
         // Build yt-dlp command with unique filename to prevent collisions
         // Format: "title_HASH.ext" where HASH is first 8 chars of URL hash
+        // We use the hash during download to prevent collisions, but will rename it later
         let output_template = dest_dir.join(format!("%(title)s_{:08x}.%(ext)s", url_hash));
         let output_template_str = output_template.to_string_lossy().to_string();
 
@@ -249,7 +250,7 @@ impl Downloader {
     }
 
     /// Find the downloaded file in the destination directory
-    /// Now looks for files with the URL hash suffix pattern
+    /// Looks for files with the URL hash suffix pattern and removes the hash from the filename
     async fn find_downloaded_file(
         &self,
         dest_dir: &Path,
@@ -261,8 +262,8 @@ impl Downloader {
             expected_title, url_hash
         );
 
-        let mut entries = fs::read_dir(dest_dir).await?;
         let hash_suffix = format!("_{:08x}", url_hash);
+        let mut entries = fs::read_dir(dest_dir).await?;
 
         // Look for files with the hash suffix
         while let Some(entry) = entries.next_entry().await? {
@@ -274,7 +275,8 @@ impl Downloader {
                 // Check if filename contains our hash suffix
                 if filename_str.contains(&hash_suffix) {
                     debug!("Found file with hash suffix: {:?}", path);
-                    return Ok(path);
+                    // Remove hash suffix from filename
+                    return self.remove_hash_from_filename(&path, &hash_suffix).await;
                 }
             }
         }
@@ -364,6 +366,40 @@ impl Downloader {
         Err(DownloadError::YtDlpFailed(
             "No downloaded file found".to_string(),
         ))
+    }
+
+    /// Remove hash suffix from filename and rename the file
+    async fn remove_hash_from_filename(
+        &self,
+        path: &Path,
+        hash_suffix: &str,
+    ) -> Result<PathBuf, DownloadError> {
+        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+            // Remove hash suffix from filename
+            let clean_filename = filename.replace(hash_suffix, "");
+
+            if clean_filename != filename {
+                let clean_path = path
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join(&clean_filename);
+
+                // Rename the file to remove the hash
+                match fs::rename(path, &clean_path).await {
+                    Ok(_) => {
+                        debug!("Renamed {} to {}", filename, clean_filename);
+                        return Ok(clean_path);
+                    }
+                    Err(e) => {
+                        warn!("Failed to rename {} to {}: {}", filename, clean_filename, e);
+                        // Return original path if rename fails
+                        return Ok(path.to_path_buf());
+                    }
+                }
+            }
+        }
+
+        Ok(path.to_path_buf())
     }
 
     /// Clean up partial files after a failed download
@@ -520,16 +556,21 @@ mod tests {
 
         // Create a file with hash suffix
         let test_hash = 0x12345678u64;
-        let test_file = temp_dir.join(format!("Test Trailer_{:08x}.mp4", test_hash));
-        fs::write(&test_file, "video").await.unwrap();
+        let test_file_with_hash = temp_dir.join(format!("Test Trailer_{:08x}.mp4", test_hash));
+        fs::write(&test_file_with_hash, "video").await.unwrap();
 
-        // Should find the file
+        // Should find the file and remove the hash suffix
         let found = downloader
             .find_downloaded_file(&temp_dir, "Test Trailer", test_hash)
             .await
             .unwrap();
 
-        assert_eq!(found, test_file);
+        // The returned path should have the hash removed
+        let expected_file = temp_dir.join("Test Trailer.mp4");
+        assert_eq!(found, expected_file);
+        // Verify the file was actually renamed
+        assert!(found.exists());
+        assert!(!test_file_with_hash.exists());
     }
 
     #[tokio::test]
