@@ -276,8 +276,8 @@ The plan is organized into discrete, incremental tasks that build upon each othe
 - [x] 17. Checkpoint - Ensure advanced features tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 18. Create integration tests
-  - [ ] 18.1 Create tests/series_integration_tests.rs
+- [x] 18. Create integration tests
+  - [x] 18.1 Create tests/series_integration_tests.rs
     - Test complete series processing pipeline (scan → discover → download → convert → organize)
     - Test mixed library processing (movies + series)
     - Test processing mode filtering (movies-only, series-only, both)
@@ -286,10 +286,10 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Test Season 0 specials processing
     - Test season-specific extras processing
     - _Requirements: 20.3_
-  - [ ]\* 18.2 Write property test for backward compatibility
+  - [x] 18.2 Write property test for backward compatibility
     - **Property 19: Backward Compatibility Preservation**
     - **Validates: Requirements 20.1, 20.2, 20.5**
-  - [ ]\* 18.3 Write integration tests for edge cases
+  - [x] 18.3 Write integration tests for edge cases
     - Test series without year
     - Test series with no Season 0
     - Test series with no extras found

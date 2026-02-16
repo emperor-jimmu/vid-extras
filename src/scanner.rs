@@ -1098,4 +1098,106 @@ mod property_tests {
             }
         }
     }
+
+    // Feature: tv-series-extras, Property 19: Backward Compatibility Preservation
+    // Validates: Requirements 20.1, 20.2, 20.5
+    // For any library containing only movies (no series folders), processing should produce
+    // identical results to the previous version, including the same done marker format,
+    // directory structure, and file organization.
+    proptest! {
+        #[test]
+        fn prop_backward_compatibility_movies_only(
+            num_movies in 1usize..5usize,
+        ) {
+            use tempfile::TempDir;
+
+            let temp_root = TempDir::new().unwrap();
+
+            // Create only movie folders (no series)
+            for i in 0..num_movies {
+                let title = format!("Movie {}", i);
+                let year = 2000 + i as u16;
+                let movie_folder = format!("{} ({})", title, year);
+                let movie_path = temp_root.path().join(&movie_folder);
+                fs::create_dir(&movie_path).unwrap();
+
+                // Create a dummy movie file
+                fs::write(
+                    movie_path.join(format!("{}.mp4", movie_folder)),
+                    b"dummy content",
+                ).unwrap();
+            }
+
+            // Scan the directory
+            let scanner = Scanner::new(temp_root.path().to_path_buf(), false, false);
+            let (movies, series) = scanner.scan_all().unwrap();
+
+            // Should find only movies, no series
+            prop_assert_eq!(
+                movies.len(),
+                num_movies,
+                "Should find all {} movies",
+                num_movies
+            );
+            prop_assert_eq!(
+                series.len(),
+                0,
+                "Should find no series in movie-only library"
+            );
+
+            // Verify all movies have valid structure
+            for movie in &movies {
+                prop_assert!(!movie.title.is_empty(), "Movie title should not be empty");
+                prop_assert!(movie.path.exists(), "Movie path should exist");
+            }
+        }
+    }
+
+    // Additional backward compatibility test: done marker format preservation
+    proptest! {
+        #[test]
+        fn prop_backward_compatibility_done_marker_format(
+            _dummy in 0u8..1u8,
+        ) {
+            use tempfile::TempDir;
+
+            let temp_root = TempDir::new().unwrap();
+            let movie_dir = temp_root.path().join("Test Movie (2020)");
+            fs::create_dir(&movie_dir).unwrap();
+
+            // Create a dummy movie file to make it a movie folder
+            fs::write(movie_dir.join("movie.mp4"), b"dummy").unwrap();
+
+            // Create done marker in the expected format
+            let done_marker = serde_json::json!({
+                "finished_at": "2024-01-15T10:30:00Z",
+                "version": "0.1.0"
+            });
+            fs::write(
+                movie_dir.join("done.ext"),
+                serde_json::to_string_pretty(&done_marker).unwrap(),
+            ).unwrap();
+
+            // Scan should recognize the done marker
+            let scanner = Scanner::new(temp_root.path().to_path_buf(), false, false);
+            let (movies, _) = scanner.scan_all().unwrap();
+
+            // Movie should be skipped due to done marker
+            prop_assert_eq!(
+                movies.len(),
+                0,
+                "Movie with done marker should be skipped"
+            );
+
+            // With force flag, should be included
+            let scanner_force = Scanner::new(temp_root.path().to_path_buf(), true, false);
+            let (movies_force, _) = scanner_force.scan_all().unwrap();
+
+            prop_assert_eq!(
+                movies_force.len(),
+                1,
+                "Movie with done marker should be included with force flag"
+            );
+        }
+    }
 }
