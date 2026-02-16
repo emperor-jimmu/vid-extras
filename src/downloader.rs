@@ -410,11 +410,17 @@ impl Downloader {
 
     /// Sanitize filename for Windows compatibility
     /// Replaces characters that are problematic on Windows filesystems
+    /// Handles both ASCII and Unicode variants of special characters
     fn sanitize_filename(filename: &str) -> String {
         filename
+            // ASCII special characters
             .replace(['|', '<', '>', ':', '/', '\\', '*'], "-")
             .replace('"', "'")
             .replace('?', "")
+            // Unicode full-width variants (common in Asian text)
+            .replace(['｜', '＜', '＞', '：', '／', '＼', '＊'], "-")
+            .replace(['"', '"'], "'") // Left and right double quotation marks
+            .replace('？', "")  // Full-width question mark (U+FF1F)
     }
 
     /// Clean up partial files after a failed download
@@ -601,6 +607,38 @@ mod tests {
             .await;
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sanitize_filename_ascii() {
+        let input = "Title | Part 1: Test <File> Name*.mkv";
+        let result = Downloader::sanitize_filename(input);
+        assert_eq!(result, "Title - Part 1- Test -File- Name-.mkv");
+    }
+
+    #[test]
+    fn test_sanitize_filename_unicode() {
+        // Test full-width Unicode variants common in Asian text
+        let input = "Solo Leveling Season 2 -Arise from the Shadow- ｜ OFFICIAL TEASER TRAILER.mkv";
+        let result = Downloader::sanitize_filename(input);
+        assert_eq!(
+            result,
+            "Solo Leveling Season 2 -Arise from the Shadow- - OFFICIAL TEASER TRAILER.mkv"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_filename_mixed_unicode() {
+        let input = "Title：Part／1＜Test＞？.mp4";
+        let result = Downloader::sanitize_filename(input);
+        assert_eq!(result, "Title-Part-1-Test-.mp4");
+    }
+
+    #[test]
+    fn test_sanitize_filename_quotation_marks() {
+        let input = r#"Title "with" quotes and "curly" quotes.mkv"#;
+        let result = Downloader::sanitize_filename(input);
+        assert_eq!(result, "Title 'with' quotes and 'curly' quotes.mkv");
     }
 }
 
