@@ -463,10 +463,10 @@ impl Scanner {
         MediaType::Unknown
     }
 
-    /// Check if directory contains season folders (Season 00, Season 01, etc.)
-    /// Uses regex pattern to match "Season XX" format
+    /// Check if directory contains season folders (Season 1, Season 01, Season 001, etc.)
+    /// Uses regex pattern to match "Season X+" format (one or more digits)
     fn has_season_folders(path: &Path) -> bool {
-        let season_regex = match Regex::new(r"^Season \d{2}$") {
+        let season_regex = match Regex::new(r"^Season \d+$") {
             Ok(re) => re,
             Err(_) => return false,
         };
@@ -507,8 +507,9 @@ impl Scanner {
 
     /// Detect all season folders in a series directory
     /// Returns a sorted vector of season numbers found
+    /// Matches "Season 1", "Season 01", "Season 001", etc.
     fn detect_season_folders(path: &Path) -> Vec<u8> {
-        let season_regex = match Regex::new(r"^Season (\d{2})$") {
+        let season_regex = match Regex::new(r"^Season (\d+)$") {
             Ok(re) => re,
             Err(_) => return Vec::new(),
         };
@@ -752,6 +753,33 @@ mod tests {
 
         // No done marker file
         assert!(!Scanner::check_done_marker(temp_dir.path()));
+    }
+
+    #[test]
+    fn test_detect_season_folders_varied_formats() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let series_path = temp_dir.path().join("Test Series (2020)");
+        fs::create_dir(&series_path).unwrap();
+
+        // Create season folders with different naming formats
+        fs::create_dir(series_path.join("Season 1")).unwrap(); // Single digit
+        fs::create_dir(series_path.join("Season 02")).unwrap(); // Two digits with leading zero
+        fs::create_dir(series_path.join("Season 003")).unwrap(); // Three digits with leading zeros
+        fs::create_dir(series_path.join("Season 10")).unwrap(); // Two digits, no leading zero
+        fs::create_dir(series_path.join("Season 99")).unwrap(); // Max two-digit season
+
+        // Create some non-season folders that should be ignored
+        fs::create_dir(series_path.join("Extras")).unwrap();
+        fs::create_dir(series_path.join("Behind the Scenes")).unwrap();
+
+        let seasons = Scanner::detect_season_folders(&series_path);
+
+        // Should detect all 5 season folders
+        assert_eq!(seasons.len(), 5);
+        assert_eq!(seasons, vec![1, 2, 3, 10, 99]);
     }
 }
 
