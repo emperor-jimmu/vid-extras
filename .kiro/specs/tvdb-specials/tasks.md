@@ -116,13 +116,13 @@ Incremental implementation of TheTVDB API v4 integration for Season 0 specials d
     - **Property 8: Filename Sanitization Removes Windows-Invalid Characters**
     - **Validates: Requirements 7.4**
 
-- [ ] 10. Extend validation and caching
-  - [ ] 10.1 Update `Validator` in `src/validation.rs` to check TVDB API key when `--specials` is enabled
+- [x] 10. Extend validation and caching
+  - [x] 10.1 Update `Validator` in `src/validation.rs` to check TVDB API key when `--specials` is enabled
     - Skip validation when specials not enabled
     - Prompt for key if missing from config, save to config.cfg
     - Verify connectivity with test authentication
     - _Requirements: 8.1, 8.2, 8.3_
-  - [ ] 10.2 Extend `SeriesMetadataCache` to store TVDB Season 0 episode data with 7-day TTL
+  - [x] 10.2 Extend `SeriesMetadataCache` to store TVDB Season 0 episode data with 7-day TTL
     - Reuse existing cache infrastructure
     - Support force flag to bypass cache
     - _Requirements: 9.1, 9.2, 9.3_
