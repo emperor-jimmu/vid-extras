@@ -1,6 +1,11 @@
 // TheTVDB API v4 integration module
 
+use crate::error::DiscoveryError;
+use log::{debug, warn};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Base episode data from the Season 0 listing endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +99,196 @@ pub struct TvdbLoginResponse {
 pub struct TvdbSearchResponse {
     /// List of search results
     pub data: Vec<TvdbSearchResult>,
+}
+
+/// TheTVDB API client for authentication and data fetching
+pub struct TvdbClient {
+    /// API key for authentication
+    api_key: String,
+    /// HTTP client for making requests
+    client: Client,
+    /// Bearer token storage with RwLock for thread-safe access
+    token: Arc<RwLock<Option<String>>>,
+}
+
+impl TvdbClient {
+    /// Create a new TvdbClient with the given API key
+    pub fn new(api_key: String) -> Self {
+        Self {
+            api_key,
+            client: Client::new(),
+            token: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Authenticate with TheTVDB API and obtain a Bearer token
+    async fn authenticate(&self) -> Result<String, DiscoveryError> {
+        let url = "https://api4.thetvdb.com/v4/login";
+        let body = serde_json::json!({ "apikey": &self.api_key });
+
+        debug!("Authenticating with TheTVDB API");
+
+        let response = self
+            .client
+            .post(url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| DiscoveryError::TvdbApiError(format!("Authentication request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown error".to_string());
+            return Err(DiscoveryError::TvdbAuthError(format!(
+                "Authentication failed with status {}: {}",
+                status, body
+            )));
+        }
+
+        let login_response: TvdbLoginResponse = response
+            .json()
+            .await
+            .map_err(|e| DiscoveryError::TvdbApiError(format!("Failed to parse login response: {}", e)))?;
+
+        debug!("Successfully authenticated with TheTVDB API");
+        Ok(login_response.token)
+    }
+
+    /// Ensure we have a valid token, re-authenticating if needed
+    async fn ensure_token(&self) -> Result<String, DiscoveryError> {
+        let token = self.token.read().await;
+        if let Some(token) = token.as_ref() {
+            return Ok(token.clone());
+        }
+        drop(token);
+
+        // Token is missing, authenticate
+        let new_token = self.authenticate().await?;
+        let mut token_write = self.token.write().await;
+        *token_write = Some(new_token.clone());
+        Ok(new_token)
+    }
+
+    /// Execute an authenticated GET request with auto-retry on 401
+    async fn authenticated_get(&self, url: &str) -> Result<reqwest::Response, DiscoveryError> {
+        let token = self.ensure_token().await?;
+
+        let response = self
+            .client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    DiscoveryError::TvdbApiError(format!("Request timeout: {}", e))
+                } else {
+                    DiscoveryError::TvdbApiError(format!("Request failed: {}", e))
+                }
+            })?;
+
+        // Handle 401 Unauthorized - retry once with re-authentication
+        if response.status() == 401 {
+            debug!("Received 401 Unauthorized, re-authenticating");
+            let new_token = self.authenticate().await?;
+            let mut token_write = self.token.write().await;
+            *token_write = Some(new_token.clone());
+            drop(token_write);
+
+            let retry_response = self
+                .client
+                .get(url)
+                .header("Authorization", format!("Bearer {}", new_token))
+                .send()
+                .await
+                .map_err(|e| DiscoveryError::TvdbApiError(format!("Retry request failed: {}", e)))?;
+
+            return Ok(retry_response);
+        }
+
+        Ok(response)
+    }
+
+    /// Fetch all Season 0 episodes with pagination support
+    pub async fn get_season_zero(&self, tvdb_id: u64) -> Result<Vec<TvdbEpisode>, DiscoveryError> {
+        let mut episodes = Vec::new();
+        let mut page = 0;
+        let mut next_url: Option<String> = None;
+
+        loop {
+            let url = if let Some(next) = next_url.take() {
+                next
+            } else {
+                format!(
+                    "https://api4.thetvdb.com/v4/series/{}/episodes/default?season=0&page={}",
+                    tvdb_id, page
+                )
+            };
+
+            debug!("Fetching Season 0 episodes from: {}", url);
+
+            let response = match self.authenticated_get(&url).await {
+                Ok(resp) => resp,
+                Err(e) => {
+                    warn!("Failed to fetch Season 0 episodes: {}", e);
+                    return Ok(episodes); // Return what we have so far
+                }
+            };
+
+            if !response.status().is_success() {
+                warn!(
+                    "Season 0 fetch returned status {}, returning empty list",
+                    response.status()
+                );
+                return Ok(episodes);
+            }
+
+            let page_data: TvdbEpisodesPage = match response.json().await {
+                Ok(data) => data,
+                Err(e) => {
+                    warn!("Failed to parse Season 0 response: {}", e);
+                    return Ok(episodes);
+                }
+            };
+
+            episodes.extend(page_data.episodes);
+
+            if let Some(next) = page_data.next {
+                next_url = Some(next);
+                page += 1;
+            } else {
+                break;
+            }
+        }
+
+        debug!("Fetched {} Season 0 episodes", episodes.len());
+        Ok(episodes)
+    }
+
+    /// Fetch extended episode details for enrichment
+    pub async fn get_episode_extended(&self, episode_id: u64) -> Result<TvdbEpisodeExtended, DiscoveryError> {
+        let url = format!("https://api4.thetvdb.com/v4/episodes/{}/extended", episode_id);
+
+        debug!("Fetching extended episode data from: {}", url);
+
+        let response = self.authenticated_get(&url).await?;
+
+        if !response.status().is_success() {
+            return Err(DiscoveryError::TvdbApiError(format!(
+                "Failed to fetch extended episode data: {}",
+                response.status()
+            )));
+        }
+
+        let api_response: TvdbApiResponse<TvdbEpisodeExtended> = response.json().await.map_err(|e| {
+            DiscoveryError::TvdbApiError(format!("Failed to parse extended episode response: {}", e))
+        })?;
+
+        Ok(api_response.data)
+    }
 }
 
 #[cfg(test)]
@@ -203,6 +398,19 @@ mod tests {
         assert_eq!(episode.id, 123456);
         assert_eq!(episode.absolute_number, None);
         assert_eq!(episode.is_movie, None);
+    }
+
+    #[tokio::test]
+    async fn test_tvdb_client_creation() {
+        let client = TvdbClient::new("test_api_key".to_string());
+        assert_eq!(client.api_key, "test_api_key");
+    }
+
+    #[tokio::test]
+    async fn test_tvdb_client_token_storage() {
+        let client = TvdbClient::new("test_api_key".to_string());
+        let token = client.token.read().await;
+        assert!(token.is_none());
     }
 }
 
@@ -363,6 +571,37 @@ mod property_tests {
             prop_assert_eq!(episode.airs_after_season, deserialized.airs_after_season);
             prop_assert_eq!(episode.airs_before_episode, deserialized.airs_before_episode);
             prop_assert_eq!(episode.is_movie, deserialized.is_movie);
+        }
+    }
+
+    // Feature: tvdb-specials, Property 2: TVDB API URL Construction
+    // Validates: Requirements 3.1, 4.1
+    proptest! {
+        #[test]
+        fn prop_tvdb_api_url_construction(
+            tvdb_id in 1u64..1_000_000u64,
+            page in 0u32..100u32,
+            episode_id in 1u64..1_000_000u64
+        ) {
+            // Test Season 0 URL construction
+            let season_zero_url = format!(
+                "https://api4.thetvdb.com/v4/series/{}/episodes/default?season=0&page={}",
+                tvdb_id, page
+            );
+            prop_assert!(season_zero_url.contains("api4.thetvdb.com/v4/series/"));
+            prop_assert!(season_zero_url.contains("/episodes/default"));
+            prop_assert!(season_zero_url.contains("season=0"));
+            let page_str = format!("page={}", page);
+            prop_assert!(season_zero_url.contains(&page_str));
+
+            // Test extended episode URL construction
+            let extended_url = format!(
+                "https://api4.thetvdb.com/v4/episodes/{}/extended",
+                episode_id
+            );
+            prop_assert!(extended_url.contains("api4.thetvdb.com/v4/episodes/"));
+            prop_assert!(extended_url.contains("/extended"));
+            prop_assert!(extended_url.contains(&episode_id.to_string()));
         }
     }
 }

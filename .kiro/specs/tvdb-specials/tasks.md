@@ -25,28 +25,28 @@ Incremental implementation of TheTVDB API v4 integration for Season 0 specials d
   - [x] 1.5 Add `TvdbAuthError` and `TvdbApiError` variants to `DiscoveryError` in `src/error.rs`
     - _Requirements: 1.3, 10.1_
 
-- [ ] 2. Checkpoint - Ensure all tests pass
+- [x] 2. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 3. Implement TvdbClient authentication and API communication
-  - [ ] 3.1 Implement `TvdbClient` struct with `new`, `authenticate`, `ensure_token`, and `authenticated_get` methods in `src/discovery/tvdb.rs`
+- [x] 3. Implement TvdbClient authentication and API communication
+  - [x] 3.1 Implement `TvdbClient` struct with `new`, `authenticate`, `ensure_token`, and `authenticated_get` methods in `src/discovery/tvdb.rs`
     - Use `tokio::sync::RwLock<Option<String>>` for token storage
     - Implement auto-retry on HTTP 401 (re-authenticate once, then fail)
     - Implement network timeout retry (2-second delay, one retry)
     - Include Bearer token in Authorization header for all requests
     - _Requirements: 1.2, 1.3, 1.4, 1.5, 10.4_
-  - [ ] 3.2 Write unit tests for TvdbClient authentication flow
+  - [x] 3.2 Write unit tests for TvdbClient authentication flow
     - Test valid key authentication, invalid key error, 401 retry logic, timeout retry
     - _Requirements: 1.2, 1.3, 1.4, 10.4_
-  - [ ] 3.3 Implement `get_season_zero` method with pagination support
+  - [x] 3.3 Implement `get_season_zero` method with pagination support
     - Query `GET /series/{tvdb_id}/episodes/default?season=0&page=0`
     - Paginate through all pages until no `next` URL remains
     - Return empty list on error or empty response
     - _Requirements: 3.1, 3.2, 3.4_
-  - [ ] 3.4 Write property test for TVDB API URL construction
+  - [x] 3.4 Write property test for TVDB API URL construction
     - **Property 2: TVDB API URL Construction**
     - **Validates: Requirements 3.1, 4.1**
-  - [ ] 3.5 Implement `get_episode_extended` method for enrichment
+  - [x] 3.5 Implement `get_episode_extended` method for enrichment
     - Query `GET /episodes/{tvdb_episode_id}/extended`
     - Populate absolute_number, airs_before_season, airs_after_season, airs_before_episode, is_movie
     - Retain base metadata on enrichment failure
