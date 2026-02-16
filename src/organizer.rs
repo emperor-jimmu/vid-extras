@@ -284,18 +284,22 @@ impl SeriesOrganizer {
         Ok(())
     }
 
-    /// Organize Season 0 special episodes
+    /// Organize Season 0 special episodes with Sonarr-compatible naming
     ///
     /// This method:
     /// 1. Creates a specials folder (default: "Season 00", configurable via folder_name)
-    /// 2. Formats filenames as "{Series Name} - S00E{num} - {title}.mp4"
-    /// 3. Zero-pads episode numbers
-    /// 4. Sanitizes filenames
+    /// 2. Formats filenames as "{Series Name} - S00E{num} - {title}.mkv" (Sonarr pattern)
+    /// 3. Zero-pads episode numbers using aired_episode_number from TVDB
+    /// 4. Sanitizes filenames to remove Windows-invalid characters
+    /// 5. Skips files when target already exists
     ///
     /// # Arguments
     /// * `series_name` - Name of the series for filename formatting
     /// * `specials` - List of special episodes to organize
     /// * `folder_name` - Name of the folder for specials (e.g., "Specials", "Season 00")
+    ///
+    /// # Requirements
+    /// Validates: 7.1, 7.2, 7.3, 7.5
     pub async fn organize_specials(
         &self,
         series_name: &str,
@@ -326,13 +330,27 @@ impl SeriesOrganizer {
 
         for special in specials {
             if let Some(local_path) = special.local_path {
+                // Sanitize both series name and episode title for filename safety
+                let sanitized_series = Self::sanitize_filename(series_name);
                 let sanitized_title = Self::sanitize_filename(&special.title);
+                
+                // Sonarr-compatible naming: "{series_title} - S00E{episode_number:02} - {sanitized_title}.mkv"
+                // Use aired_episode_number from TVDB (stored in episode_number field)
                 let filename = format!(
-                    "{} - S00E{:02} - {}.mp4",
-                    series_name, special.episode_number, sanitized_title
+                    "{} - S00E{:02} - {}.mkv",
+                    sanitized_series, special.episode_number, sanitized_title
                 );
 
                 let target_path = specials_dir.join(&filename);
+
+                // Skip if target already exists (Requirement 7.5)
+                if target_path.exists() {
+                    info!(
+                        "Skipping special episode, target already exists: {:?}",
+                        target_path
+                    );
+                    continue;
+                }
 
                 debug!(
                     "Moving special episode: {:?} -> {:?}",
@@ -894,11 +912,54 @@ mod tests {
 
         // Verify Season 00 folder was created
         assert!(series_path.join("Season 00").exists());
+        // Updated to .mkv extension (Sonarr-compatible)
         assert!(
             series_path
-                .join("Season 00/Breaking Bad - S00E01 - Pilot.mp4")
+                .join("Season 00/Breaking Bad - S00E01 - Pilot.mkv")
                 .exists()
         );
+    }
+
+    #[tokio::test]
+    async fn test_series_organizer_organize_specials_skips_existing() {
+        let temp = TempDir::new().unwrap();
+        let series_path = temp.path().join("Breaking Bad (2008)");
+        fs::create_dir(&series_path).await.unwrap();
+
+        let season_00_dir = series_path.join("Season 00");
+        fs::create_dir(&season_00_dir).await.unwrap();
+
+        // Create an existing target file
+        let existing_target = season_00_dir.join("Breaking Bad - S00E01 - Pilot.mkv");
+        fs::write(&existing_target, b"existing content").await.unwrap();
+
+        let temp_dir = temp.path().join("tmp_downloads");
+        fs::create_dir(&temp_dir).await.unwrap();
+
+        let special_file = temp_dir.join("special.mp4");
+        fs::write(&special_file, b"new content").await.unwrap();
+
+        let specials = vec![SpecialEpisode {
+            episode_number: 1,
+            title: "Pilot".to_string(),
+            air_date: None,
+            url: None,
+            local_path: Some(special_file.clone()),
+            tvdb_id: None,
+        }];
+
+        let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
+        organizer
+            .organize_specials("Breaking Bad", specials, "Season 00")
+            .await
+            .unwrap();
+
+        // Verify the existing file was not overwritten
+        let content = fs::read_to_string(&existing_target).await.unwrap();
+        assert_eq!(content, "existing content");
+
+        // Verify the source file still exists (wasn't moved)
+        assert!(special_file.exists());
     }
 
     #[tokio::test]
@@ -1258,10 +1319,10 @@ mod property_tests {
                 // Verify Season 00 folder exists
                 prop_assert!(series_path.join("Season 00").exists());
 
-                // Verify file naming format: "Series Name - S00E{num} - {title}.mp4"
+                // Verify file naming format: "Series Name - S00E{num} - {title}.mkv" (Sonarr-compatible)
                 let sanitized_title = SeriesOrganizer::sanitize_filename(&title);
                 let expected_filename = format!(
-                    "TestSeries - S00E{:02} - {}.mp4",
+                    "TestSeries - S00E{:02} - {}.mkv",
                     episode_num, sanitized_title
                 );
                 let expected_path = series_path.join("Season 00").join(&expected_filename);
@@ -1369,6 +1430,107 @@ mod property_tests {
 
                 Ok(())
             })?;
+        }
+    }
+
+    // Feature: tvdb-specials, Property 7: Sonarr-Compatible File Path Construction
+    // Validates: Requirements 7.1, 7.2, 7.3
+    proptest! {
+        #[test]
+        fn prop_sonarr_compatible_file_path_construction(
+            series_title in "[A-Za-z0-9 ]{3,30}",
+            folder_name in prop_oneof![
+                Just("Specials"),
+                Just("Season 00"),
+                Just("Season 0"),
+            ],
+            episode_number in 1u8..=99u8,
+            episode_title in "[A-Za-z0-9 :',&!?.-]{1,50}",
+        ) {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            runtime.block_on(async {
+                let temp = tempfile::TempDir::new().unwrap();
+                let series_path = temp.path().join("TestSeries");
+                tokio::fs::create_dir(&series_path).await.unwrap();
+
+                let temp_dir = temp.path().join("tmp_downloads");
+                tokio::fs::create_dir(&temp_dir).await.unwrap();
+
+                let source_file = temp_dir.join("special.mp4");
+                tokio::fs::write(&source_file, b"content").await.unwrap();
+
+                let specials = vec![SpecialEpisode {
+                    episode_number,
+                    title: episode_title.clone(),
+                    air_date: None,
+                    url: None,
+                    local_path: Some(source_file),
+                    tvdb_id: None,
+                }];
+
+                let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
+                organizer.organize_specials(&series_title, specials, &folder_name).await.unwrap();
+
+                // Requirement 7.1: File is placed in {series_folder}/{specials_folder_name}/
+                let specials_dir = series_path.join(&folder_name);
+                prop_assert!(specials_dir.exists());
+                prop_assert!(specials_dir.is_dir());
+
+                // Requirement 7.2: File naming pattern is {series_title} - S00E{episode_number:02} - {sanitized_title}.mkv
+                let sanitized_series = SeriesOrganizer::sanitize_filename(&series_title);
+                let sanitized_title = SeriesOrganizer::sanitize_filename(&episode_title);
+                let expected_filename = format!(
+                    "{} - S00E{:02} - {}.mkv",
+                    sanitized_series, episode_number, sanitized_title
+                );
+                
+                // Requirement 7.3: Uses aired_episode_number from TVDB (stored in episode_number field)
+                let expected_path = specials_dir.join(&expected_filename);
+                prop_assert!(expected_path.exists(), "Expected file not found: {:?}", expected_path);
+
+                // Verify the file contains the expected content
+                let content = tokio::fs::read(&expected_path).await.unwrap();
+                prop_assert_eq!(content, b"content");
+
+                Ok(())
+            })?;
+        }
+    }
+
+    // Feature: tvdb-specials, Property 8: Filename Sanitization Removes Windows-Invalid Characters
+    // Validates: Requirement 7.4
+    proptest! {
+        #[test]
+        fn prop_filename_sanitization_removes_invalid_chars(
+            // Generate strings that may contain Windows-invalid characters
+            input in "[\u{0020}-\u{007E}]{1,100}",
+        ) {
+            let sanitized = SeriesOrganizer::sanitize_filename(&input);
+            
+            // Property 1: Sanitized output SHALL contain none of the Windows-invalid characters
+            let invalid_chars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
+            for invalid_char in &invalid_chars {
+                prop_assert!(
+                    !sanitized.contains(*invalid_char),
+                    "Sanitized output contains invalid character '{}': {}",
+                    invalid_char,
+                    sanitized
+                );
+            }
+            
+            // Property 2: Sanitized output SHALL have length <= original string length
+            prop_assert!(
+                sanitized.len() <= input.len(),
+                "Sanitized output is longer than input: {} > {}",
+                sanitized.len(),
+                input.len()
+            );
+            
+            // Additional verification: If input had no invalid chars, output should be identical
+            let has_invalid = input.chars().any(|c| invalid_chars.contains(&c));
+            if !has_invalid {
+                prop_assert_eq!(&sanitized, &input, "Input without invalid chars should be unchanged");
+            }
         }
     }
 }

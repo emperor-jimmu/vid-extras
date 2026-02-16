@@ -100,19 +100,19 @@ Incremental implementation of TheTVDB API v4 integration for Season 0 specials d
     - **Property 5: Only Monitored Episodes Produce Search Queries**
     - **Validates: Requirements 5.5**
 
-- [ ] 8. Checkpoint - Ensure all tests pass
+- [x] 8. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. Extend SpecialsOrganizer for Sonarr-compatible naming
-  - [ ] 9.1 Update `organize_specials` in `src/organizer.rs` to use TVDB episode numbers and Sonarr naming pattern
+- [x] 9. Extend SpecialsOrganizer for Sonarr-compatible naming
+  - [x] 9.1 Update `organize_specials` in `src/organizer.rs` to use TVDB episode numbers and Sonarr naming pattern
     - File pattern: `{series_title} - S00E{episode_number:02} - {sanitized_title}.mkv`
     - Use aired_episode_number from TVDB
     - Skip files when target already exists
     - _Requirements: 7.1, 7.2, 7.3, 7.5_
-  - [ ] 9.2 Write property test for Sonarr-compatible file path construction
+  - [x] 9.2 Write property test for Sonarr-compatible file path construction
     - **Property 7: Sonarr-Compatible File Path Construction**
     - **Validates: Requirements 7.1, 7.2, 7.3**
-  - [ ] 9.3 Write property test for filename sanitization
+  - [x] 9.3 Write property test for filename sanitization
     - **Property 8: Filename Sanitization Removes Windows-Invalid Characters**
     - **Validates: Requirements 7.4**
 
