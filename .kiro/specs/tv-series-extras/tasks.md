@@ -47,27 +47,27 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - **Property 11: Media Type Detection Consistency**
     - **Validates: Requirements 10.1, 10.2, 10.3**
 
-- [ ] 3. Checkpoint - Ensure scanner tests pass
+- [x] 3. Checkpoint - Ensure scanner tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Create series discovery module structure
-  - [ ] 4.1 Create src/discovery/series_tmdb.rs module
+- [x] 4. Create series discovery module structure
+  - [x] 4.1 Create src/discovery/series_tmdb.rs module
     - Define TmdbSeriesDiscoverer struct with api_key and reqwest client
     - Implement search_series method to query TMDB TV search endpoint
     - Implement discover_series_extras method to fetch videos from TMDB
     - Implement discover_season_zero method to fetch Season 0 episodes
     - Map TMDB video types to ContentCategory (Trailer, Behind the Scenes, Featurette, Bloopers)
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 4.1, 4.2, 4.3_
-  - [ ]\* 4.2 Write property test for TMDB video type mapping
+  - [x] 4.2 Write property test for TMDB video type mapping
     - **Property 5: TMDB Video Type Mapping Completeness**
     - **Validates: Requirements 3.4, 3.5, 3.6, 3.7, 3.8**
-  - [ ]\* 4.3 Write unit tests for TMDB series discovery
+  - [x] 4.3 Write unit tests for TMDB series discovery
     - Test search_series with mock responses
     - Test video type mapping for all types
     - Test Season 0 episode parsing
     - Test error handling for API failures
     - _Requirements: 3.9, 4.4_
-  - [ ]\* 4.4 Write property test for Season 0 episode separation
+  - [x] 4.4 Write property test for Season 0 episode separation
     - **Property 6: Season 0 Episode Separation**
     - **Validates: Requirements 4.5**
 
@@ -79,13 +79,13 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Support season-specific queries (title + year + season)
     - Reuse existing YouTube filtering (duration, keywords, shorts)
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 6.1, 6.2_
-  - [ ]\* 5.2 Write property test for YouTube series query construction
+  - [ ] 5.2 Write property test for YouTube series query construction
     - **Property 7: YouTube Series Query Construction**
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5**
-  - [ ]\* 5.3 Write property test for season-specific query tagging
+  - [ ] 5.3 Write property test for season-specific query tagging
     - **Property 8: Season-Specific Query Tagging**
     - **Validates: Requirements 6.1, 6.2, 6.3**
-  - [ ]\* 5.4 Write unit tests for YouTube series discovery
+  - [ ] 5.4 Write unit tests for YouTube series discovery
     - Test query construction for all content types
     - Test season-specific query format
     - Test fallback to series-level when season search fails

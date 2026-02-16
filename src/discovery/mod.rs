@@ -2,6 +2,7 @@
 
 mod archive;
 mod orchestrator;
+mod series_tmdb;
 mod title_matching;
 mod tmdb;
 mod youtube;
