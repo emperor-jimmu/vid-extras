@@ -29,6 +29,13 @@ struct ArchiveOrgDoc {
 }
 
 /// Archive.org content discoverer
+///
+/// Discovers movie extras from Archive.org for pre-2010 films.
+/// Returns detail page URLs in the format `https://archive.org/details/{identifier}`
+/// which are fully supported by yt-dlp's archive.org extractor.
+///
+/// The discoverer searches for content with subjects: trailer, featurette,
+/// behind the scenes, deleted scene, or clip, and filters by mediatype:movies.
 pub struct ArchiveOrgDiscoverer {
     client: reqwest::Client,
 }
@@ -133,10 +140,6 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
             return Ok(Vec::new());
         }
 
-        // NOTE: Archive.org URLs may not be directly downloadable via yt-dlp
-        // The detail page URLs returned here might require special handling or
-        // may not work with yt-dlp at all. This is a known limitation.
-
         info!("Discovering Archive.org content for: {}", movie);
 
         // Search for the movie
@@ -149,6 +152,11 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
         };
 
         // Convert Archive.org docs to VideoSource
+        // URLs are in the format https://archive.org/details/{identifier}
+        // which yt-dlp's archive.org extractor handles natively by:
+        // 1. Fetching metadata from https://archive.org/metadata/{identifier}
+        // 2. Selecting the best video file (usually .mp4 or .mkv)
+        // 3. Downloading from https://archive.org/download/{identifier}/{filename}
         let sources: Vec<VideoSource> = docs
             .into_iter()
             .filter_map(|doc| {
