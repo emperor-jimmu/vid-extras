@@ -127,7 +127,7 @@ impl YoutubeSeriesDiscoverer {
         query: &str,
         series_title: &str,
         category: ContentCategory,
-        _season_number: Option<u8>,
+        season_number: Option<u8>,
     ) -> Result<Vec<SeriesExtra>, DiscoveryError> {
         let search_query = format!("ytsearch5:{}", query);
 
@@ -178,15 +178,13 @@ impl YoutubeSeriesDiscoverer {
                         // Extract actual season number from title
                         let extracted_seasons = title_matching::extract_season_numbers(&title);
 
-                        // If title mentions specific seasons, use those; otherwise treat as
-                        // series-level content (None) so it gets placed in the show root folder
-                        // rather than a season subfolder.
+                        // If title mentions specific seasons, use those; otherwise fall back
+                        // to the caller-provided season number so season-specific queries
+                        // tag their results correctly.
                         let final_season = if !extracted_seasons.is_empty() {
-                            // Use the first extracted season (most specific match)
                             Some(extracted_seasons[0])
                         } else {
-                            // No season in title — this is general series content
-                            None
+                            season_number
                         };
 
                         sources.push(SeriesExtra {
@@ -304,6 +302,28 @@ impl YoutubeSeriesDiscoverer {
                     // Continue with other queries even if one fails
                 }
             }
+        }
+
+        // Filter out videos that reference seasons not available on disk
+        // (YouTube search is fuzzy and may return results for other seasons)
+        let before_count = all_sources.len();
+        all_sources.retain(|extra| {
+            if title_matching::references_unavailable_season(&extra.title, &series.seasons) {
+                debug!(
+                    "Excluding '{}' - references season not on disk (available: {:?})",
+                    extra.title, series.seasons
+                );
+                false
+            } else {
+                true
+            }
+        });
+        let filtered = before_count - all_sources.len();
+        if filtered > 0 {
+            info!(
+                "Filtered {} videos referencing unavailable seasons for {} Season {}",
+                filtered, series, season
+            );
         }
 
         info!(

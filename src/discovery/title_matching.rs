@@ -384,4 +384,69 @@ mod tests {
             &collection
         ));
     }
+
+    #[test]
+    fn test_extract_season_numbers() {
+        // "Season N" format
+        assert_eq!(
+            extract_season_numbers("Breaking Bad Extras Season 3"),
+            vec![3]
+        );
+        assert_eq!(
+            extract_season_numbers("Season 1 Behind the Scenes"),
+            vec![1]
+        );
+        assert_eq!(extract_season_numbers("season 03 extras"), vec![3]);
+
+        // "SxxExx" format
+        assert_eq!(extract_season_numbers("Breaking Bad S03E01"), vec![3]);
+        assert_eq!(extract_season_numbers("S5 Deleted Scenes"), vec![5]);
+
+        // Multiple seasons
+        let mut result = extract_season_numbers("Season 1 and Season 3 recap");
+        result.sort();
+        assert_eq!(result, vec![1, 3]);
+
+        // No season reference
+        assert!(extract_season_numbers("Breaking Bad Cast Interview").is_empty());
+        assert!(extract_season_numbers("Behind the Scenes").is_empty());
+
+        // Season 0 is excluded (must be > 0)
+        assert!(extract_season_numbers("Season 0 Specials").is_empty());
+    }
+
+    #[test]
+    fn test_references_unavailable_season() {
+        let available = vec![1, 2];
+
+        // Should exclude: mentions season 3, only 1 and 2 on disk
+        assert!(references_unavailable_season(
+            "Bryan Cranston & Aaron Paul Answers Fan Questions | Breaking Bad Extras Season 3",
+            &available
+        ));
+
+        // Should keep: mentions season 1, which is available
+        assert!(!references_unavailable_season(
+            "Breaking Bad Season 1 Behind the Scenes",
+            &available
+        ));
+
+        // Should keep: no season reference at all (general content)
+        assert!(!references_unavailable_season(
+            "Breaking Bad Cast Interview",
+            &available
+        ));
+
+        // Should exclude: S03 format, season 3 not available
+        assert!(references_unavailable_season(
+            "Breaking Bad S03 Deleted Scenes",
+            &available
+        ));
+
+        // Should keep: mentions both season 1 and 3, season 1 is available
+        assert!(!references_unavailable_season(
+            "Season 1 and Season 3 comparison",
+            &available
+        ));
+    }
 }

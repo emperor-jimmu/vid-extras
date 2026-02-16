@@ -190,6 +190,28 @@ impl SeriesDiscoveryOrchestrator {
             }
         }
 
+        // Filter out videos that reference seasons not available on disk
+        // (YouTube search is fuzzy and may return results for other seasons)
+        let before_count = all_sources.len();
+        all_sources.retain(|extra| {
+            if title_matching::references_unavailable_season(&extra.title, &series.seasons) {
+                debug!(
+                    "Excluding '{}' - references season not on disk (available: {:?})",
+                    extra.title, series.seasons
+                );
+                false
+            } else {
+                true
+            }
+        });
+        let filtered = before_count - all_sources.len();
+        if filtered > 0 {
+            info!(
+                "Filtered {} season-specific videos referencing unavailable seasons for {}",
+                filtered, series
+            );
+        }
+
         info!(
             "Total season-specific sources discovered for {} Season {}: {}",
             series,
