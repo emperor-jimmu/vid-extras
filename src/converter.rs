@@ -199,7 +199,8 @@ impl Converter {
             }
             HardwareAccel::VideoToolbox => {
                 // Apple VideoToolbox hardware acceleration (M-series chips)
-                cmd.arg("-hwaccel").arg("videotoolbox");
+                // Note: We don't use -hwaccel for decoding to avoid AV1 compatibility issues
+                // Only use hardware acceleration for encoding
                 cmd.arg("-i").arg(input);
                 cmd.arg("-c:v").arg("hevc_videotoolbox");
                 cmd.arg("-q:v").arg(self.crf.to_string());
