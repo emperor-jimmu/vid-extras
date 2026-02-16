@@ -1073,6 +1073,82 @@ Created comprehensive integration test suite in `tests/main_integration_tests.rs
 - 100+ unit tests covering all series functionality
 - All tests passing ✅
 
+### Recent Enhancements (February 2026)
+
+#### Filename Sanitization (src/downloader.rs)
+
+**Status:** ✅ Implemented and tested
+
+**Functionality:**
+
+- Automatic sanitization of downloaded filenames to ensure Windows compatibility
+- Replaces Windows-incompatible special characters with safe alternatives
+- Prevents ffmpeg failures when processing files with special characters
+
+**Character Mapping:**
+
+- `|`, `<`, `>`, `:`, `/`, `\`, `*` → replaced with `-`
+- `"` → replaced with `'`
+- `?` → removed entirely
+
+**Implementation Details:**
+
+- Sanitization occurs automatically after download when removing the hash suffix
+- Uses efficient array-based `replace()` for multiple character replacements
+- Ensures cross-platform compatibility (especially important for Windows)
+- Prevents "No such file or directory" errors in ffmpeg conversion
+
+**Example:**
+
+- Downloaded: `Solo Leveling Season 2 -Arise from the Shadow- ｜ OFFICIAL TEASER TRAILER.mkv`
+- Sanitized: `Solo Leveling Season 2 -Arise from the Shadow- - OFFICIAL TEASER TRAILER.mkv`
+
+#### Configurable Season 0 Folder Name (src/orchestrator.rs, src/cli.rs, src/organizer.rs)
+
+**Status:** ✅ Implemented and tested
+
+**Functionality:**
+
+- Allows users to customize the folder name for Season 0 specials
+- Default folder name: "Specials"
+- Configurable via `--specials-folder <NAME>` CLI parameter
+- Applies to both series-level and season-specific organization
+
+**CLI Parameter:**
+
+```bash
+# Use default "Specials" folder
+extras_fetcher --series-only --specials /media/tv
+
+# Use custom folder name "Season 00"
+extras_fetcher --series-only --specials --specials-folder "Season 00" /media/tv
+
+# Use custom folder name "Season 0"
+extras_fetcher --series-only --specials --specials-folder "Season 0" /media/tv
+```
+
+**Implementation Details:**
+
+- Added `specials_folder: String` field to `CliArgs`, `CliConfig`, and `Orchestrator` structs
+- Updated `organize_specials()` method to accept `folder_name: &str` parameter
+- Changed from hardcoded "Season 00" to use configurable folder name
+- Updated variable names from `season_00_dir` to `specials_dir` for clarity
+- All test cases updated to include new parameters (16+ in orchestrator, multiple in CLI and organizer)
+
+**Configuration Display:**
+
+When `--specials` is enabled, the configuration display shows:
+
+```
+Specials folder: Specials
+```
+
+Or with custom name:
+
+```
+Specials folder: Season 00
+```
+
 ### Pending Modules
 
 None - all modules are fully implemented and tested!

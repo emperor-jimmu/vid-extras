@@ -139,6 +139,7 @@ Options:
   --movies-only            Process only movies (skip TV series)
   --season-extras          Enable season-specific extras discovery
   --specials               Enable Season 0 specials discovery
+  --specials-folder <NAME> Folder name for Season 0 specials [default: Specials]
   --type <TYPE>            Force media type classification [possible values: movie, series]
 
   -h, --help               Print help information
@@ -261,6 +262,19 @@ extras_fetcher --series-only --specials /media/tv
 
 Discovers and downloads official special episodes from TMDB Season 0.
 
+**Customize Season 0 Folder Name:**
+
+```bash
+# Use custom folder name "Season 00"
+extras_fetcher --series-only --specials --specials-folder "Season 00" /media/tv
+
+# Use custom folder name "Season 0"
+extras_fetcher --series-only --specials --specials-folder "Season 0" /media/tv
+
+# Use default "Specials" folder
+extras_fetcher --series-only --specials /media/tv
+```
+
 **Enable Season-Specific Extras:**
 
 ```bash
@@ -347,7 +361,7 @@ After processing, series extras are organized by series and season:
 ```
 /media/tv/
 └── Series Name (2020)/
-    ├── Season 00/                    # Season 0 specials (if enabled)
+    ├── Specials/                     # Season 0 specials (default folder name)
     │   ├── Series Name - S00E01 - Pilot.mp4
     │   └── Series Name - S00E02 - Holiday Special.mp4
     ├── Season 01/
@@ -367,6 +381,8 @@ After processing, series extras are organized by series and season:
     │   └── Creator Interview.mp4
     └── .extras_done  (completion marker)
 ```
+
+**Note**: The Season 0 folder name can be customized using the `--specials-folder` parameter. Default is "Specials", but you can use "Season 00", "Season 0", or any custom name.
 
 ## How It Works
 

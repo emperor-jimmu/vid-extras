@@ -555,7 +555,7 @@ impl Orchestrator {
         temp_base: PathBuf,
         season_extras: bool,
         specials: bool,
-        specials_folder: String,
+        _specials_folder: String,
     ) -> SeriesResult {
         info!("Processing series: {}", series);
 

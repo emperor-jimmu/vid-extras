@@ -43,6 +43,7 @@ The tool scans a Jellyfin library, discovers extras from multiple sources (TMDB,
 - Local Season 0 file import and organization
 - Fuzzy title matching (80% similarity threshold)
 - Comprehensive error handling with graceful degradation
+- **Customizable Season 0 folder name** (default: "Specials")
 
 ### Configuration Options
 
@@ -50,6 +51,7 @@ The tool scans a Jellyfin library, discovers extras from multiple sources (TMDB,
 - `--movies-only` - Process only movies
 - `--season-extras` - Enable season-specific extras discovery
 - `--specials` - Enable Season 0 specials discovery
+- `--specials-folder <NAME>` - Customize Season 0 folder name (default: "Specials")
 - `--force` - Reprocess completed items
 - `--mode` - Content source filtering (all or youtube-only)
 - `--concurrency` - Parallel processing limit
