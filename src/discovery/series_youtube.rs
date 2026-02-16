@@ -175,16 +175,31 @@ impl YoutubeSeriesDiscoverer {
 
                     // Apply filtering
                     if Self::should_include_video(&title, series_title, duration, width, height) {
+                        // Extract actual season number from title
+                        let extracted_seasons = title_matching::extract_season_numbers(&title);
+
+                        // If title mentions specific seasons, use those; otherwise use the search season
+                        let final_season = if !extracted_seasons.is_empty() {
+                            // Use the first extracted season (most specific match)
+                            Some(extracted_seasons[0])
+                        } else {
+                            // No season in title, use the season we're searching for
+                            season_number
+                        };
+
                         sources.push(SeriesExtra {
                             series_id: series_title.to_lowercase().replace(' ', "_"),
-                            season_number,
+                            season_number: final_season,
                             category,
                             title: title.clone(),
                             url,
                             source_type: SourceType::YouTube,
                             local_path: None,
                         });
-                        debug!("Added YouTube video: {}", title);
+                        debug!(
+                            "Added YouTube video: {} (season: {:?})",
+                            title, final_season
+                        );
                     }
                 }
                 Err(e) => {
