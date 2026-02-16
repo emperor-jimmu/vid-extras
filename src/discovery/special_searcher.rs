@@ -413,10 +413,10 @@ mod property_tests {
                 1..20
             ),
             latest_season in 0u8..=20,
-            manual_list in prop::collection::vec(1u8..=99, 0..10),
+            exclude_list in prop::collection::vec(1u8..=99, 0..10),
             series_title in "[a-zA-Z0-9 ]{1,50}"
         ) {
-            // Create episodes with varied monitoring conditions
+            // Create episodes with varied metadata
             let episodes: Vec<TvdbEpisodeExtended> = episodes_data
                 .iter()
                 .enumerate()
@@ -436,8 +436,8 @@ mod property_tests {
                 })
                 .collect();
 
-            // Filter to monitored episodes
-            let monitored = MonitorPolicy::filter_monitored(&episodes, latest_season, &manual_list);
+            // Filter to monitored episodes (all by default, minus exclusions)
+            let monitored = MonitorPolicy::filter_monitored(&episodes, latest_season, &exclude_list);
 
             // Generate queries for monitored episodes
             let mut query_count = 0;
@@ -458,10 +458,10 @@ mod property_tests {
                 "Query count should equal monitored episode count"
             );
 
-            // Verify unmonitored episodes don't produce queries in our workflow
+            // Verify excluded episodes don't produce queries in our workflow
             // (This is a workflow property - we only call build_queries for monitored episodes)
             for episode in &episodes {
-                let is_monitored = MonitorPolicy::should_monitor(episode, latest_season, &manual_list);
+                let is_monitored = MonitorPolicy::should_monitor(episode, latest_season, &exclude_list);
 
                 if is_monitored {
                     // Monitored episodes should produce queries
@@ -472,7 +472,7 @@ mod property_tests {
                         episode.number
                     );
                 } else {
-                    // Unmonitored episodes can still produce queries if called,
+                    // Excluded episodes can still produce queries if called,
                     // but in the workflow we only call build_queries for monitored episodes
                     // This property validates the workflow behavior, not the function itself
                 }
