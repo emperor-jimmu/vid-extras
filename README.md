@@ -4,13 +4,29 @@ A Rust-based automation tool for enriching Jellyfin movie libraries by discoveri
 
 ## Features
 
+### Movies & TV Series Support
+
 - **Multi-source content discovery**: Automatically finds extras from TheMovieDB, Archive.org, and YouTube
+- **Movie extras**: Trailers, behind-the-scenes footage, deleted scenes, featurettes, interviews
+- **TV series extras**: Series-level and season-specific bonus content
+- **Season 0 specials**: Discover and organize official special episodes
+- **Automatic media detection**: Intelligently distinguishes between movies and TV series
+
+### Processing & Organization
+
 - **Automated downloading**: Uses yt-dlp to fetch videos from discovered sources
 - **Hardware-accelerated conversion**: Converts videos to efficient x265/HEVC format using NVENC, QSV, or software encoding
 - **Jellyfin-compatible organization**: Organizes content into standard subdirectories that Jellyfin automatically recognizes
-- **Idempotent execution**: Safe to run multiple times - tracks completed movies with done markers
+- **Idempotent execution**: Safe to run multiple times - tracks completed items with done markers
 - **Configurable processing**: Control concurrency, source filtering, and processing modes
 - **Rich CLI output**: Colored progress indicators and detailed status information
+
+### Advanced Features
+
+- **Metadata caching**: 7-day cache for TMDB series metadata to reduce API calls
+- **Season pack extraction**: Automatically extracts and organizes bonus content from season pack archives
+- **Local Season 0 import**: Scans for existing Season 0 files and organizes them correctly
+- **Fuzzy title matching**: 80% similarity threshold for matching extras to series/movies
 
 ## Requirements
 
@@ -36,6 +52,7 @@ A TMDB API key is required for discovering movie extras. The tool will check for
 2. **TMDB_API_KEY environment variable** (fallback for backward compatibility)
 
 **Getting your API key:**
+
 1. Visit: https://www.themoviedb.org/settings/api
 2. Sign up for a free account (if you don't have one)
 3. Request an API key from your account settings
@@ -64,6 +81,7 @@ A sample configuration file is provided as `config.cfg.example` for reference.
 **Option 2: Using Environment Variable**
 
 Set the environment variable (for backward compatibility):
+
 - Linux/macOS: `export TMDB_API_KEY=your_api_key_here`
 - Windows: `set TMDB_API_KEY=your_api_key_here`
 
@@ -108,13 +126,21 @@ extras_fetcher /path/to/movie/library
 extras_fetcher [OPTIONS] <ROOT_DIRECTORY>
 
 Arguments:
-  <ROOT_DIRECTORY>  Path to the root directory containing movie folders
+  <ROOT_DIRECTORY>  Path to the root directory containing movie and/or series folders
 
 Options:
-  -f, --force              Ignore done markers and reprocess all movies
+  -f, --force              Ignore done markers and reprocess all items
   -m, --mode <MODE>        Content source mode [default: all] [possible values: all, youtube]
-  -c, --concurrency <N>    Maximum number of movies to process concurrently [default: 2]
+  -c, --concurrency <N>    Maximum number of items to process concurrently [default: 2]
   -v, --verbose            Enable verbose logging output
+
+  Series-specific options:
+  --series-only            Process only TV series (skip movies)
+  --movies-only            Process only movies (skip TV series)
+  --season-extras          Enable season-specific extras discovery
+  --specials               Enable Season 0 specials discovery
+  --type <TYPE>            Force media type classification [possible values: movie, series]
+
   -h, --help               Print help information
   -V, --version            Print version information
 ```
@@ -122,33 +148,146 @@ Options:
 ### Examples
 
 **Process a movie library with default settings:**
+
 ```bash
 extras_fetcher /media/movies
 ```
 
-**Reprocess all movies (ignore done markers):**
+**Process a TV series library:**
+
 ```bash
-extras_fetcher --force /media/movies
+extras_fetcher --series-only /media/tv
+```
+
+**Process a mixed library (movies and series):**
+
+```bash
+extras_fetcher /media/library
+```
+
+**Process series with Season 0 specials and season-specific extras:**
+
+```bash
+extras_fetcher --series-only --specials --season-extras /media/tv
+```
+
+**Reprocess all items (ignore done markers):**
+
+```bash
+extras_fetcher --force /media/library
 ```
 
 **Use only YouTube as a content source:**
+
 ```bash
-extras_fetcher --mode youtube /media/movies
+extras_fetcher --mode youtube /media/library
 ```
 
-**Process 4 movies concurrently with verbose logging:**
+**Process 4 items concurrently with verbose logging:**
+
 ```bash
-extras_fetcher --concurrency 4 --verbose /media/movies
+extras_fetcher --concurrency 4 --verbose /media/library
 ```
 
 **Enable debug logging:**
+
 ```bash
-RUST_LOG=debug extras_fetcher /media/movies
+RUST_LOG=debug extras_fetcher /media/library
 ```
+
+## TV Series Configuration
+
+### Series Library Setup
+
+For the tool to properly detect TV series, follow these naming conventions:
+
+**Series Folder Names:**
+
+- With year: `Series Name (YYYY)` - Recommended for accurate TMDB matching
+- Without year: `Series Name` - Supported but may match multiple series on TMDB
+
+**Season Folders:**
+
+- Must be named exactly as `Season XX` with zero-padded numbers
+- Examples: `Season 00`, `Season 01`, `Season 02`, etc.
+- Season 00 is reserved for specials (pilot episodes, holiday specials, etc.)
+
+**Example Structure:**
+
+```
+/media/tv/
+├── Breaking Bad (2008)/
+│   ├── Season 01/
+│   ├── Season 02/
+│   └── Season 05/
+└── The Office (2005)/
+    ├── Season 01/
+    └── Season 09/
+```
+
+### Series Processing Modes
+
+**Process Everything (Default):**
+
+```bash
+extras_fetcher /media/library
+```
+
+Automatically detects and processes both movies and TV series.
+
+**Series Only:**
+
+```bash
+extras_fetcher --series-only /media/tv
+```
+
+Processes only TV series, skips all movie folders.
+
+**Movies Only:**
+
+```bash
+extras_fetcher --movies-only /media/movies
+```
+
+Processes only movies, skips all series folders.
+
+### Series-Specific Features
+
+**Enable Season 0 Specials Discovery:**
+
+```bash
+extras_fetcher --series-only --specials /media/tv
+```
+
+Discovers and downloads official special episodes from TMDB Season 0.
+
+**Enable Season-Specific Extras:**
+
+```bash
+extras_fetcher --series-only --season-extras /media/tv
+```
+
+Discovers extras specific to individual seasons (e.g., "Season 1 Behind the Scenes").
+
+**Enable Both Features:**
+
+```bash
+extras_fetcher --series-only --specials --season-extras /media/tv
+```
+
+Full series support with all available content types.
+
+### Best Practices for Series Libraries
+
+1. **Use consistent naming**: Always include the year in series folder names for accurate TMDB matching
+2. **Organize by season**: Keep episodes organized in `Season XX` folders before running the tool
+3. **Run with appropriate flags**: Use `--specials` and `--season-extras` based on your preferences
+4. **Monitor first run**: Use `--verbose` on first run to verify correct detection and organization
+5. **Reprocess selectively**: Use `--force` only when needed; the tool tracks completed series with `.extras_done` markers
 
 ## Directory Structure
 
-### Input Structure
+### Input Structure - Movies
 
 Your movie library should follow this naming convention:
 
@@ -162,7 +301,26 @@ Your movie library should follow this naming convention:
     └── Classic Film (1999).avi
 ```
 
-### Output Structure
+### Input Structure - TV Series
+
+Your TV series library should follow this naming convention:
+
+```
+/media/tv/
+├── Series Name (2020)/
+│   ├── Season 01/
+│   │   ├── Series Name - S01E01 - Episode Title.mkv
+│   │   └── Series Name - S01E02 - Another Episode.mkv
+│   └── Season 02/
+│       └── Series Name - S02E01 - Episode Title.mkv
+└── Another Series (2018)/
+    ├── Season 01/
+    │   └── Another Series - S01E01.mp4
+    └── Season 02/
+        └── Another Series - S02E01.mp4
+```
+
+### Output Structure - Movies
 
 After processing, extras are organized into Jellyfin-compatible subdirectories:
 
@@ -179,16 +337,49 @@ After processing, extras are organized into Jellyfin-compatible subdirectories:
     │   └── Deleted Scene 1.mp4
     ├── featurettes/
     │   └── Cast Interviews.mp4
-    └── done.ext  (completion marker)
+    └── .extras_done  (completion marker)
+```
+
+### Output Structure - TV Series
+
+After processing, series extras are organized by series and season:
+
+```
+/media/tv/
+└── Series Name (2020)/
+    ├── Season 00/                    # Season 0 specials (if enabled)
+    │   ├── Series Name - S00E01 - Pilot.mp4
+    │   └── Series Name - S00E02 - Holiday Special.mp4
+    ├── Season 01/
+    │   ├── Series Name - S01E01 - Episode Title.mkv
+    │   ├── behind the scenes/        # Season 1 specific extras
+    │   │   └── S01 Making Of.mp4
+    │   └── interviews/
+    │       └── S01 Cast Interview.mp4
+    ├── Season 02/
+    │   └── Series Name - S02E01.mkv
+    ├── trailers/                     # Series-level extras
+    │   ├── Official Trailer.mp4
+    │   └── Season 2 Trailer.mp4
+    ├── behind the scenes/
+    │   └── Series Overview.mp4
+    ├── interviews/
+    │   └── Creator Interview.mp4
+    └── .extras_done  (completion marker)
 ```
 
 ## How It Works
 
 ### Processing Pipeline
 
-1. **Scanning**: Recursively scans the movie library directory
+The tool automatically detects whether each folder contains a movie or TV series and applies the appropriate processing pipeline.
+
+#### For Movies:
+
+1. **Scanning**: Recursively scans the library directory
+   - Detects folders with video files directly inside (movie folders)
    - Parses folder names to extract movie title and year
-   - Skips folders with `done.ext` marker (unless `--force` is used)
+   - Skips folders with `.extras_done` marker (unless `--force` is used)
 
 2. **Discovery**: Queries multiple sources for extra content
    - **TMDB**: Official trailers, behind-the-scenes, deleted scenes, featurettes
@@ -208,38 +399,86 @@ After processing, extras are organized into Jellyfin-compatible subdirectories:
 5. **Organization**: Moves converted files to appropriate subdirectories
    - Creates Jellyfin-compatible folder structure
    - Cleans up temporary files
-   - Creates `done.ext` marker to prevent reprocessing
+   - Creates `.extras_done` marker to prevent reprocessing
+
+#### For TV Series:
+
+1. **Scanning**: Recursively scans the library directory
+   - Detects folders with Season XX subfolders (series folders)
+   - Parses folder names to extract series title and optional year
+   - Identifies available seasons and checks for Season 0 (specials)
+   - Skips folders with `.extras_done` marker (unless `--force` is used)
+
+2. **Discovery**: Queries multiple sources for series extras
+   - **TMDB**: Series-level trailers, interviews, behind-the-scenes content
+   - **TMDB Season 0**: Official special episodes (if `--specials` enabled)
+   - **Season-specific extras**: Bonus content for individual seasons (if `--season-extras` enabled)
+   - **YouTube**: Community-uploaded series extras with smart filtering
+   - **Season packs**: Extracts and organizes bonus content from downloaded archives
+   - **Local Season 0 import**: Scans for existing Season 0 files and organizes them
+
+3. **Downloading**: Downloads discovered videos using yt-dlp
+   - Sequential downloads within each series
+   - Parallel processing across multiple series (configurable)
+   - Automatic cleanup of failed downloads
+
+4. **Conversion**: Converts videos to x265/HEVC format
+   - Same hardware acceleration and quality settings as movies
+   - Preserves original quality for special episodes
+
+5. **Organization**: Moves converted files to appropriate subdirectories
+   - Series-level extras go to series root subdirectories (trailers, interviews, etc.)
+   - Season-specific extras go to season subdirectories
+   - Season 0 specials go to `Season 00` folder with proper naming format
+   - Creates `.extras_done` marker to prevent reprocessing
 
 ### Content Filtering
 
 YouTube content is intelligently filtered to exclude:
+
 - Videos shorter than 30 seconds or longer than 20 minutes
 - Videos with keywords: "Review", "Reaction", "Analysis", "Explained", "Ending", "Theory", "React"
 - YouTube Shorts (vertical videos under 60 seconds)
 
+### Advanced Features
+
+**Metadata Caching**: Series metadata from TMDB is cached for 7 days to reduce API calls on repeated runs.
+
+**Fuzzy Title Matching**: Uses 80% similarity threshold to match extras to series/movies, handling minor title variations.
+
+**Season Pack Extraction**: Automatically extracts bonus content from season pack archives and organizes by content type.
+
+**Local Season 0 Import**: Scans for existing Season 0 files in series folders and organizes them with proper naming.
+
 ### Idempotency
 
 The tool is designed to be safely re-runnable:
-- Completed movies are marked with a `done.ext` file
-- Subsequent runs skip marked movies (unless `--force` is used)
+
+- Completed items are marked with a `.extras_done` file
+- Subsequent runs skip marked items (unless `--force` is used)
 - Interrupted processing can be safely resumed
 - Temporary files are cleaned up on exit
+- Mixed libraries (movies + series) are handled correctly
 
 ## Troubleshooting
 
 ### "Missing binary: yt-dlp"
+
 - Install yt-dlp: https://github.com/yt-dlp/yt-dlp#installation
 - Ensure it's in your system PATH
 
 ### "Missing binary: ffmpeg"
+
 - Install ffmpeg: https://ffmpeg.org/download.html
 - Ensure it's in your system PATH
 
 ### "Unsupported codec"
+
 - Your ffmpeg installation doesn't support HEVC/x265
 - Install a version with libx265, hevc_nvenc, or hevc_qsv support
 
 ### "Missing API key: TMDB_API_KEY"
+
 - The tool couldn't find your TMDB API key in config.cfg or environment variable
 - On first run, you'll be prompted to enter your API key
 - Get an API key from: https://www.themoviedb.org/settings/api
@@ -247,14 +486,71 @@ The tool is designed to be safely re-runnable:
 - Alternatively, set the environment variable: `export TMDB_API_KEY=your_key`
 
 ### Downloads failing
+
 - Check your internet connection
 - Verify yt-dlp is up to date: `yt-dlp -U`
 - Some videos may be region-restricted or removed
 
 ### Slow processing
+
 - Increase concurrency: `--concurrency 4`
 - Check if hardware acceleration is being used (look for NVENC/QSV in logs)
 - Network speed affects download times
+
+## TV Series Troubleshooting
+
+### Series not being detected
+
+- Ensure series folders follow the naming convention: `Series Name (YYYY)` or `Series Name`
+- Verify series folders contain `Season XX` subfolders (e.g., `Season 01`, `Season 02`)
+- Check that season folders are named exactly as `Season XX` with zero-padded numbers
+- Use `--verbose` flag to see detailed scanning output
+
+### Season 0 specials not being discovered
+
+- Ensure `--specials` flag is enabled: `extras_fetcher --series-only --specials /media/tv`
+- Not all series have Season 0 content available on TMDB
+- Check TMDB directly to verify if Season 0 exists for the series
+
+### Season-specific extras not being found
+
+- Ensure `--season-extras` flag is enabled: `extras_fetcher --series-only --season-extras /media/tv`
+- Season-specific extras may not be available for all seasons
+- YouTube search may have limited results for specific seasons
+
+### Series extras organized incorrectly
+
+- Verify series folder structure matches Jellyfin requirements
+- Check that season folders are named `Season XX` with zero-padded numbers
+- Season 0 specials should be in `Season 00` folder
+- Series-level extras go to subdirectories at series root (trailers, interviews, etc.)
+- Season-specific extras go to subdirectories within season folders
+
+### Mixed library processing issues
+
+- Use `--series-only` to process only series: `extras_fetcher --series-only /media/library`
+- Use `--movies-only` to process only movies: `extras_fetcher --movies-only /media/library`
+- Omit both flags to process everything: `extras_fetcher /media/library`
+- Ensure movies and series are in the same root directory for mixed processing
+
+### Cache-related issues
+
+- Clear metadata cache to force fresh TMDB queries: `rm -rf /path/to/series/.cache`
+- Use `--force` flag to bypass cache and reprocess: `extras_fetcher --force --series-only /media/tv`
+- Cache is automatically refreshed after 7 days
+
+### Season pack extraction not working
+
+- Verify downloaded files are valid archive formats (zip, rar, 7z, etc.)
+- Check that yt-dlp successfully downloaded the archive
+- Use `--verbose` flag to see extraction details
+- Manually extract and organize if automatic extraction fails
+
+### Local Season 0 import not finding files
+
+- Ensure Season 0 files follow the naming pattern: `S00E{number}` (e.g., `S00E01`, `S00E02`)
+- Files can be anywhere in the series folder; they'll be moved to `Season 00`
+- Use `--verbose` flag to see which files are being imported
 
 ## Development
 

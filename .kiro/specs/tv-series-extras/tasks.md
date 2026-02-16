@@ -297,7 +297,7 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Test invalid done markers
     - _Requirements: 12.4, 20.4_
 
-- [ ] 19. Update documentation
+- [x] 19. Update documentation
   - Update README.md with series support information
   - Add examples for series processing
   - Document new CLI flags
