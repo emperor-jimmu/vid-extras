@@ -2,13 +2,17 @@
 
 mod archive;
 mod orchestrator;
+mod series_orchestrator;
 mod series_tmdb;
+mod series_youtube;
 mod title_matching;
 mod tmdb;
 mod youtube;
 
 // Re-export public API
 pub use orchestrator::DiscoveryOrchestrator;
+#[allow(unused_imports)]
+pub use series_orchestrator::SeriesDiscoveryOrchestrator;
 
 use crate::error::DiscoveryError;
 use crate::models::MovieEntry;

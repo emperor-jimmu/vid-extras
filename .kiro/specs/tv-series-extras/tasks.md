@@ -71,28 +71,28 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - **Property 6: Season 0 Episode Separation**
     - **Validates: Requirements 4.5**
 
-- [ ] 5. Create YouTube series discovery module
-  - [ ] 5.1 Create src/discovery/series_youtube.rs module
+- [x] 5. Create YouTube series discovery module
+  - [x] 5.1 Create src/discovery/series_youtube.rs module
     - Define YoutubeSeriesDiscoverer struct
     - Implement build_series_search_queries for all content types
     - Support series-level queries (title + year)
     - Support season-specific queries (title + year + season)
     - Reuse existing YouTube filtering (duration, keywords, shorts)
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 6.1, 6.2_
-  - [ ] 5.2 Write property test for YouTube series query construction
+  - [x] 5.2 Write property test for YouTube series query construction
     - **Property 7: YouTube Series Query Construction**
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5**
-  - [ ] 5.3 Write property test for season-specific query tagging
+  - [x] 5.3 Write property test for season-specific query tagging
     - **Property 8: Season-Specific Query Tagging**
     - **Validates: Requirements 6.1, 6.2, 6.3**
-  - [ ] 5.4 Write unit tests for YouTube series discovery
+  - [x] 5.4 Write unit tests for YouTube series discovery
     - Test query construction for all content types
     - Test season-specific query format
     - Test fallback to series-level when season search fails
     - Test error handling
     - _Requirements: 5.9, 6.4_
 
-- [ ] 6. Create series discovery orchestrator
+- [x] 6. Create series discovery orchestrator
   - Add SeriesDiscoveryOrchestrator to coordinate TMDB and YouTube discovery
   - Implement discover_all method to aggregate results from both sources
   - Handle errors gracefully (continue if one source fails)
@@ -109,10 +109,10 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Support season-specific extras (with season number)
     - Create subdirectories based on ContentCategory
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 2.3, 2.4_
-  - [ ]\* 8.2 Write property test for season number interpretation
+  - [ ] 8.2 Write property test for season number interpretation
     - **Property 3: Season Number Interpretation**
     - **Validates: Requirements 2.3, 2.4**
-  - [ ]\* 8.3 Write property test for content category to subdirectory mapping
+  - [ ] 8.3 Write property test for content category to subdirectory mapping
     - **Property 9: Content Category to Subdirectory Mapping**
     - **Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7**
   - [ ] 8.4 Add organize_specials method for Season 0 episodes
@@ -121,10 +121,10 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Zero-pad episode numbers
     - Sanitize filenames (remove invalid characters)
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
-  - [ ]\* 8.5 Write property test for Season 0 file naming format
+  - [ ] 8.5 Write property test for Season 0 file naming format
     - **Property 10: Season 0 File Naming Format**
     - **Validates: Requirements 8.1, 8.2, 8.3, 8.4**
-  - [ ]\* 8.6 Write unit tests for series organizer
+  - [ ] 8.6 Write unit tests for series organizer
     - Test subdirectory creation
     - Test file moving with cross-drive support
     - Test filename sanitization
