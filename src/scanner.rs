@@ -1,7 +1,7 @@
 // Scanner module - handles directory traversal and movie discovery
 
 use crate::error::ScanError;
-use crate::models::{DoneMarker, MovieEntry};
+use crate::models::{DoneMarker, MediaType, MovieEntry, SeriesEntry};
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -37,6 +37,222 @@ impl Scanner {
         let mut movies = Vec::new();
         self.scan_directory(&self.root_dir, &mut movies)?;
         Ok(movies)
+    }
+
+    /// Scan the root directory and return both movies and series
+    /// Classifies each folder using detect_media_type
+    /// Returns (movies, series) tuple
+    pub fn scan_all(&self) -> Result<(Vec<MovieEntry>, Vec<SeriesEntry>), ScanError> {
+        // If single mode, detect type of the single folder
+        if self.single {
+            return self.scan_single_folder_all();
+        }
+
+        // Otherwise, scan for both movies and series
+        let mut movies = Vec::new();
+        let mut series = Vec::new();
+        self.scan_directory_all(&self.root_dir, &mut movies, &mut series)?;
+        Ok((movies, series))
+    }
+
+    /// Scan a single folder and classify it as movie or series
+    fn scan_single_folder_all(&self) -> Result<(Vec<MovieEntry>, Vec<SeriesEntry>), ScanError> {
+        // Check if directory exists and is readable
+        if !self.root_dir.exists() {
+            return Err(ScanError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Directory not found: {:?}", self.root_dir),
+            )));
+        }
+
+        if !self.root_dir.is_dir() {
+            return Err(ScanError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Path is not a directory: {:?}", self.root_dir),
+            )));
+        }
+
+        // Try to parse the folder name
+        let folder_name = self
+            .root_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| {
+                ScanError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Invalid folder name: {:?}", self.root_dir),
+                ))
+            })?;
+
+        // Detect media type
+        let media_type = Self::detect_media_type(&self.root_dir);
+
+        match media_type {
+            MediaType::Movie => {
+                // Parse as movie
+                let (title, year) = Self::parse_folder_name(folder_name).ok_or_else(|| {
+                    ScanError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!(
+                            "Folder name does not match expected format 'Title (Year)': {}",
+                            folder_name
+                        ),
+                    ))
+                })?;
+
+                let has_done_marker = Self::check_done_marker(&self.root_dir);
+
+                if has_done_marker && !self.force {
+                    log::info!(
+                        "Skipping {} (done marker found, use --force to reprocess)",
+                        folder_name
+                    );
+                    return Ok((Vec::new(), Vec::new()));
+                }
+
+                Ok((
+                    vec![MovieEntry {
+                        path: self.root_dir.clone(),
+                        title,
+                        year,
+                        has_done_marker,
+                    }],
+                    Vec::new(),
+                ))
+            }
+            MediaType::Series => {
+                // Parse as series
+                let (title, year) = Self::parse_series_folder_name(folder_name).ok_or_else(|| {
+                    ScanError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("Invalid series folder name: {}", folder_name),
+                    ))
+                })?;
+
+                let has_done_marker = Self::check_done_marker(&self.root_dir);
+
+                if has_done_marker && !self.force {
+                    log::info!(
+                        "Skipping {} (done marker found, use --force to reprocess)",
+                        folder_name
+                    );
+                    return Ok((Vec::new(), Vec::new()));
+                }
+
+                let seasons = Self::detect_season_folders(&self.root_dir);
+
+                Ok((
+                    Vec::new(),
+                    vec![SeriesEntry {
+                        path: self.root_dir.clone(),
+                        title,
+                        year,
+                        has_done_marker,
+                        seasons,
+                    }],
+                ))
+            }
+            MediaType::Unknown => {
+                log::warn!("Could not determine media type for: {}", folder_name);
+                Ok((Vec::new(), Vec::new()))
+            }
+        }
+    }
+
+    /// Recursively scan a directory for both movies and series
+    fn scan_directory_all(
+        &self,
+        dir: &Path,
+        movies: &mut Vec<MovieEntry>,
+        series: &mut Vec<SeriesEntry>,
+    ) -> Result<(), ScanError> {
+        // Check if directory exists and is readable
+        if !dir.exists() {
+            return Err(ScanError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Directory not found: {:?}", dir),
+            )));
+        }
+
+        if !dir.is_dir() {
+            return Err(ScanError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Path is not a directory: {:?}", dir),
+            )));
+        }
+
+        // Read directory entries
+        let entries = fs::read_dir(dir)?;
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+
+            // Only process directories
+            if !path.is_dir() {
+                continue;
+            }
+
+            // Try to parse folder name
+            if let Some(folder_name) = path.file_name().and_then(|n| n.to_str()) {
+                // Detect media type
+                let media_type = Self::detect_media_type(&path);
+
+                match media_type {
+                    MediaType::Movie => {
+                        // Try to parse as movie
+                        if let Some((title, year)) = Self::parse_folder_name(folder_name) {
+                            let has_done_marker = Self::check_done_marker(&path);
+
+                            if has_done_marker && !self.force {
+                                log::debug!("Skipping {} (done marker found)", folder_name);
+                                continue;
+                            }
+
+                            movies.push(MovieEntry {
+                                path: path.clone(),
+                                title,
+                                year,
+                                has_done_marker,
+                            });
+                        } else {
+                            // Movie type detected but name doesn't parse, recurse
+                            self.scan_directory_all(&path, movies, series)?;
+                        }
+                    }
+                    MediaType::Series => {
+                        // Try to parse as series
+                        if let Some((title, year)) = Self::parse_series_folder_name(folder_name) {
+                            let has_done_marker = Self::check_done_marker(&path);
+
+                            if has_done_marker && !self.force {
+                                log::debug!("Skipping {} (done marker found)", folder_name);
+                                continue;
+                            }
+
+                            let seasons = Self::detect_season_folders(&path);
+
+                            series.push(SeriesEntry {
+                                path: path.clone(),
+                                title,
+                                year,
+                                has_done_marker,
+                                seasons,
+                            });
+                        } else {
+                            // Series type detected but name doesn't parse, recurse
+                            self.scan_directory_all(&path, movies, series)?;
+                        }
+                    }
+                    MediaType::Unknown => {
+                        // Unknown type, recurse into it
+                        self.scan_directory_all(&path, movies, series)?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Scan a single movie folder directly
@@ -180,6 +396,34 @@ impl Scanner {
         Some((title, year))
     }
 
+    /// Parse a series folder name to extract title and optional year
+    /// Supports formats:
+    /// - "{Series Name} (YYYY)" - with year
+    /// - "{Series Name}" - without year
+    /// Returns Some((title, year)) where year is None if not present
+    pub fn parse_series_folder_name(name: &str) -> Option<(String, Option<u16>)> {
+        // Try with year first: "Series Name (YYYY)"
+        let re_with_year = Regex::new(r"^(.+?)\s*\((\d{4})\)$").ok()?;
+
+        if let Some(caps) = re_with_year.captures(name) {
+            let title = caps.get(1)?.as_str().trim().to_string();
+            let year = caps.get(2)?.as_str().parse::<u16>().ok()?;
+
+            // Validate that title is not empty
+            if !title.is_empty() {
+                return Some((title, Some(year)));
+            }
+        }
+
+        // Try without year: just the series name
+        let trimmed = name.trim();
+        if !trimmed.is_empty() && !trimmed.starts_with('.') && trimmed != "." {
+            return Some((trimmed.to_string(), None));
+        }
+
+        None
+    }
+
     /// Check if a done marker file exists in the given directory
     fn check_done_marker(path: &Path) -> bool {
         let marker_path = path.join(DONE_MARKER_FILENAME);
@@ -196,6 +440,98 @@ impl Scanner {
             }
             Err(_) => false,
         }
+    }
+
+    /// Detect whether a folder contains a movie or a TV series
+    /// Returns MediaType::Series if season folders are detected
+    /// Returns MediaType::Movie if video files are found directly
+    /// Returns MediaType::Unknown if neither condition is met
+    pub fn detect_media_type(path: &Path) -> MediaType {
+        // Check for season folders first (takes precedence)
+        if Self::has_season_folders(path) {
+            return MediaType::Series;
+        }
+
+        // Check for video files directly in folder
+        if Self::has_video_files(path) {
+            return MediaType::Movie;
+        }
+
+        MediaType::Unknown
+    }
+
+    /// Check if directory contains season folders (Season 00, Season 01, etc.)
+    /// Uses regex pattern to match "Season XX" format
+    fn has_season_folders(path: &Path) -> bool {
+        let season_regex = match Regex::new(r"^Season \d{2}$") {
+            Ok(re) => re,
+            Err(_) => return false,
+        };
+
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if season_regex.is_match(name) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if directory contains video files directly
+    /// Looks for common video file extensions
+    fn has_video_files(path: &Path) -> bool {
+        let video_extensions = [
+            "mp4", "mkv", "avi", "mov", "flv", "wmv", "webm", "m4v", "mpg", "mpeg",
+        ];
+
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let entry_path = entry.path();
+                if entry_path.is_file() {
+                    if let Some(ext) = entry_path.extension().and_then(|e| e.to_str()) {
+                        if video_extensions.contains(&ext.to_lowercase().as_str()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Detect all season folders in a series directory
+    /// Returns a sorted vector of season numbers found
+    fn detect_season_folders(path: &Path) -> Vec<u8> {
+        let season_regex = match Regex::new(r"^Season (\d{2})$") {
+            Ok(re) => re,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut seasons = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if let Some(caps) = season_regex.captures(name) {
+                            if let Some(season_str) = caps.get(1) {
+                                if let Ok(season_num) = season_str.as_str().parse::<u8>() {
+                                    seasons.push(season_num);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        seasons.sort_unstable();
+        seasons
     }
 }
 
@@ -425,6 +761,162 @@ mod tests {
 mod property_tests {
     use super::*;
     use proptest::prelude::*;
+
+    // Feature: tv-series-extras, Property 1: Series Folder Name Parsing
+    // Validates: Requirements 1.1, 1.2
+    // For any folder name matching the patterns "{Series Name} (YYYY)" or "{Series Name}",
+    // parsing should correctly extract the series title and optional year.
+    proptest! {
+        #[test]
+        fn prop_series_folder_name_parsing(
+            title in "[a-zA-Z0-9 :',&!?.-]{1,100}",
+            year in proptest::option::of(1900u16..2100u16)
+        ) {
+            let title_trimmed = title.trim();
+
+            // Skip empty titles, titles that are just dots, or titles that start with a dot
+            if title_trimmed.is_empty() || title_trimmed.starts_with('.') {
+                return Ok(());
+            }
+
+            // Construct folder name based on whether year is present
+            let folder_name = if let Some(y) = year {
+                format!("{} ({})", title_trimmed, y)
+            } else {
+                title_trimmed.to_string()
+            };
+
+            // Parse the folder name
+            let parsed = Scanner::parse_series_folder_name(&folder_name);
+
+            // Should successfully parse
+            prop_assert!(parsed.is_some(), "Failed to parse valid series folder name: {}", folder_name);
+
+            let (parsed_title, parsed_year) = parsed.unwrap();
+
+            // Extracted title should match
+            prop_assert_eq!(&parsed_title, title_trimmed, "Title mismatch for folder: {}", folder_name);
+
+            // Extracted year should match
+            prop_assert_eq!(parsed_year, year, "Year mismatch for folder: {}", folder_name);
+        }
+    }
+
+    // Feature: tv-series-extras, Property 2: Series Done Marker Skipping
+    // Validates: Requirements 1.3, 9.1, 9.3, 9.4
+    // For any series folder containing a valid done marker file, when the force flag is not set,
+    // the series should be excluded from the processing queue; when the force flag is set,
+    // the series should be included.
+    proptest! {
+        #[test]
+        fn prop_series_done_marker_skipping(
+            title in "[a-zA-Z0-9 ]{1,50}",
+            year in proptest::option::of(1900u16..2100u16),
+            force_flag in proptest::bool::ANY
+        ) {
+            use std::fs;
+            use tempfile::TempDir;
+
+            let title_trimmed = title.trim();
+            if title_trimmed.is_empty() {
+                return Ok(());
+            }
+
+            // Create a temporary directory structure
+            let temp_root = TempDir::new().unwrap();
+            let series_folder_name = if let Some(y) = year {
+                format!("{} ({})", title_trimmed, y)
+            } else {
+                title_trimmed.to_string()
+            };
+            let series_path = temp_root.path().join(&series_folder_name);
+            fs::create_dir(&series_path).unwrap();
+
+            // Create a Season 01 folder to make it a series
+            fs::create_dir(series_path.join("Season 01")).unwrap();
+
+            // Create a valid done marker
+            let done_marker = DoneMarker {
+                finished_at: "2024-01-15T10:30:00Z".to_string(),
+                version: "0.1.0".to_string(),
+            };
+            let marker_json = serde_json::to_string(&done_marker).unwrap();
+            let marker_path = series_path.join("done.ext");
+            fs::write(&marker_path, marker_json).unwrap();
+
+            // Create scanner with the force flag
+            let scanner = Scanner::new(temp_root.path().to_path_buf(), force_flag, false);
+
+            // Scan the directory
+            let (_movies, series) = scanner.scan_all().unwrap();
+
+            if force_flag {
+                // With force flag, the series should be included even with done marker
+                prop_assert_eq!(
+                    series.len(),
+                    1,
+                    "With force flag, series should be included despite done marker"
+                );
+                prop_assert_eq!(&series[0].title, title_trimmed);
+                prop_assert_eq!(series[0].year, year);
+                prop_assert!(series[0].has_done_marker, "has_done_marker should be true");
+            } else {
+                // Without force flag, the series should be skipped
+                prop_assert_eq!(
+                    series.len(),
+                    0,
+                    "Without force flag, series with done marker should be skipped"
+                );
+            }
+        }
+    }
+
+    // Feature: tv-series-extras, Property 11: Media Type Detection Consistency
+    // Validates: Requirements 10.1, 10.2, 10.3
+    // For any directory, if it contains season folders (Season 01, Season 02, etc.),
+    // it should be classified as a Series; if it contains video files directly,
+    // it should be classified as a Movie; the classification should be deterministic
+    // and consistent across multiple scans.
+    proptest! {
+        #[test]
+        fn prop_media_type_detection_consistency(
+            has_seasons in proptest::bool::ANY,
+            has_videos in proptest::bool::ANY
+        ) {
+            use std::fs;
+            use tempfile::TempDir;
+
+            let temp_dir = TempDir::new().unwrap();
+
+            // Create season folders if needed
+            if has_seasons {
+                fs::create_dir(temp_dir.path().join("Season 01")).unwrap();
+            }
+
+            // Create video files if needed
+            if has_videos && !has_seasons {
+                fs::write(temp_dir.path().join("video.mp4"), "fake video").unwrap();
+            }
+
+            // Detect media type multiple times
+            let type1 = Scanner::detect_media_type(temp_dir.path());
+            let type2 = Scanner::detect_media_type(temp_dir.path());
+            let type3 = Scanner::detect_media_type(temp_dir.path());
+
+            // All detections should be consistent
+            prop_assert_eq!(type1, type2, "Media type detection should be consistent");
+            prop_assert_eq!(type2, type3, "Media type detection should be consistent");
+
+            // Verify correct classification
+            if has_seasons {
+                prop_assert_eq!(type1, MediaType::Series, "Should detect as Series when season folders exist");
+            } else if has_videos {
+                prop_assert_eq!(type1, MediaType::Movie, "Should detect as Movie when video files exist");
+            } else {
+                prop_assert_eq!(type1, MediaType::Unknown, "Should detect as Unknown when neither condition is met");
+            }
+        }
+    }
 
     // Feature: extras-fetcher, Property 1: Folder Name Parsing Correctness
     // Validates: Requirements 1.7

@@ -18,9 +18,15 @@ pub struct ProcessingSummary {
     /// Total number of movies found
     pub total_movies: usize,
     /// Number of movies successfully processed
-    pub successful: usize,
+    pub successful_movies: usize,
     /// Number of movies that failed processing
-    pub failed: usize,
+    pub failed_movies: usize,
+    /// Total number of series found
+    pub total_series: usize,
+    /// Number of series successfully processed
+    pub successful_series: usize,
+    /// Number of series that failed processing
+    pub failed_series: usize,
     /// Total number of videos downloaded
     pub total_downloads: usize,
     /// Total number of videos converted
@@ -36,9 +42,9 @@ impl ProcessingSummary {
     /// Add statistics from a movie result
     fn add_movie_result(&mut self, result: &MovieResult) {
         if result.success {
-            self.successful += 1;
+            self.successful_movies += 1;
         } else {
-            self.failed += 1;
+            self.failed_movies += 1;
         }
         self.total_downloads += result.downloads;
         self.total_conversions += result.conversions;
@@ -179,8 +185,11 @@ impl Orchestrator {
 
         info!("Orchestrator run complete");
         info!("  Total movies: {}", summary.total_movies);
-        info!("  Successful: {}", summary.successful);
-        info!("  Failed: {}", summary.failed);
+        info!("  Successful movies: {}", summary.successful_movies);
+        info!("  Failed movies: {}", summary.failed_movies);
+        info!("  Total series: {}", summary.total_series);
+        info!("  Successful series: {}", summary.successful_series);
+        info!("  Failed series: {}", summary.failed_series);
         info!("  Total downloads: {}", summary.total_downloads);
         info!("  Total conversions: {}", summary.total_conversions);
 
@@ -408,8 +417,11 @@ mod tests {
     fn test_processing_summary_new() {
         let summary = ProcessingSummary::new();
         assert_eq!(summary.total_movies, 0);
-        assert_eq!(summary.successful, 0);
-        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.successful_movies, 0);
+        assert_eq!(summary.failed_movies, 0);
+        assert_eq!(summary.total_series, 0);
+        assert_eq!(summary.successful_series, 0);
+        assert_eq!(summary.failed_series, 0);
         assert_eq!(summary.total_downloads, 0);
         assert_eq!(summary.total_conversions, 0);
     }
@@ -430,8 +442,8 @@ mod tests {
 
         summary.add_movie_result(&result);
 
-        assert_eq!(summary.successful, 1);
-        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.successful_movies, 1);
+        assert_eq!(summary.failed_movies, 0);
         assert_eq!(summary.total_downloads, 5);
         assert_eq!(summary.total_conversions, 4);
     }
@@ -452,8 +464,8 @@ mod tests {
 
         summary.add_movie_result(&result);
 
-        assert_eq!(summary.successful, 0);
-        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.successful_movies, 0);
+        assert_eq!(summary.failed_movies, 1);
         assert_eq!(summary.total_downloads, 0);
         assert_eq!(summary.total_conversions, 0);
     }
@@ -569,8 +581,8 @@ mod tests {
         let summary = orchestrator.run().await.unwrap();
 
         assert_eq!(summary.total_movies, 0);
-        assert_eq!(summary.successful, 0);
-        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.successful_movies, 0);
+        assert_eq!(summary.failed_movies, 0);
     }
 
     #[tokio::test]
@@ -714,8 +726,8 @@ mod tests {
         }
 
         assert_eq!(summary.total_movies, 5);
-        assert_eq!(summary.successful, 3);
-        assert_eq!(summary.failed, 2);
+        assert_eq!(summary.successful_movies, 3);
+        assert_eq!(summary.failed_movies, 2);
         assert_eq!(summary.total_downloads, 6); // 3 movies * 2 downloads
         assert_eq!(summary.total_conversions, 6); // 3 movies * 2 conversions
     }

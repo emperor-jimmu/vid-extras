@@ -159,17 +159,39 @@ pub fn display_summary(summary: &ProcessingSummary) {
 
     println!(
         "  {} {}",
-        "Successful:".bright_white(),
-        summary.successful.to_string().green()
+        "Successful Movies:".bright_white(),
+        summary.successful_movies.to_string().green()
     );
 
     println!(
         "  {} {}",
-        "Failed:".bright_white(),
-        if summary.failed > 0 {
-            summary.failed.to_string().red()
+        "Failed Movies:".bright_white(),
+        if summary.failed_movies > 0 {
+            summary.failed_movies.to_string().red()
         } else {
-            summary.failed.to_string().bright_white()
+            summary.failed_movies.to_string().bright_white()
+        }
+    );
+
+    println!(
+        "  {} {}",
+        "Total Series:".bright_white(),
+        summary.total_series.to_string().bright_yellow()
+    );
+
+    println!(
+        "  {} {}",
+        "Successful Series:".bright_white(),
+        summary.successful_series.to_string().green()
+    );
+
+    println!(
+        "  {} {}",
+        "Failed Series:".bright_white(),
+        if summary.failed_series > 0 {
+            summary.failed_series.to_string().red()
+        } else {
+            summary.failed_series.to_string().bright_white()
         }
     );
 
@@ -188,21 +210,24 @@ pub fn display_summary(summary: &ProcessingSummary) {
     println!("{}", "═".repeat(60).bright_cyan());
 
     // Display completion message
-    if summary.failed == 0 && summary.successful > 0 {
+    let total_failed = summary.failed_movies + summary.failed_series;
+    let total_successful = summary.successful_movies + summary.successful_series;
+
+    if total_failed == 0 && total_successful > 0 {
         println!(
             "\n{} {}",
             "✓".green().bold(),
-            "All movies processed successfully!".green().bold()
+            "All items processed successfully!".green().bold()
         );
-    } else if summary.failed > 0 {
+    } else if total_failed > 0 {
         println!(
-            "\n{} {} movies completed with {} errors",
+            "\n{} {} items completed with {} errors",
             "⚠".yellow().bold(),
-            summary.successful.to_string().green(),
-            summary.failed.to_string().red()
+            total_successful.to_string().green(),
+            total_failed.to_string().red()
         );
     } else {
-        println!("\n{} {}", "ℹ".blue(), "No movies to process".bright_white());
+        println!("\n{} {}", "ℹ".blue(), "No items to process".bright_white());
     }
 }
 
@@ -338,8 +363,11 @@ mod tests {
     fn test_display_summary_all_successful() {
         let summary = ProcessingSummary {
             total_movies: 5,
-            successful: 5,
-            failed: 0,
+            successful_movies: 5,
+            failed_movies: 0,
+            total_series: 3,
+            successful_series: 3,
+            failed_series: 0,
             total_downloads: 15,
             total_conversions: 12,
         };
@@ -350,8 +378,11 @@ mod tests {
     fn test_display_summary_with_failures() {
         let summary = ProcessingSummary {
             total_movies: 5,
-            successful: 3,
-            failed: 2,
+            successful_movies: 3,
+            failed_movies: 2,
+            total_series: 2,
+            successful_series: 1,
+            failed_series: 1,
             total_downloads: 10,
             total_conversions: 8,
         };
@@ -362,8 +393,11 @@ mod tests {
     fn test_display_summary_empty() {
         let summary = ProcessingSummary {
             total_movies: 0,
-            successful: 0,
-            failed: 0,
+            successful_movies: 0,
+            failed_movies: 0,
+            total_series: 0,
+            successful_series: 0,
+            failed_series: 0,
             total_downloads: 0,
             total_conversions: 0,
         };
@@ -421,8 +455,11 @@ mod tests {
         // Scenario 1: All successful
         let summary1 = ProcessingSummary {
             total_movies: 10,
-            successful: 10,
-            failed: 0,
+            successful_movies: 10,
+            failed_movies: 0,
+            total_series: 0,
+            successful_series: 0,
+            failed_series: 0,
             total_downloads: 30,
             total_conversions: 25,
         };
@@ -431,8 +468,11 @@ mod tests {
         // Scenario 2: Mixed results
         let summary2 = ProcessingSummary {
             total_movies: 10,
-            successful: 7,
-            failed: 3,
+            successful_movies: 7,
+            failed_movies: 3,
+            total_series: 2,
+            successful_series: 1,
+            failed_series: 1,
             total_downloads: 20,
             total_conversions: 15,
         };
@@ -441,8 +481,11 @@ mod tests {
         // Scenario 3: All failed
         let summary3 = ProcessingSummary {
             total_movies: 5,
-            successful: 0,
-            failed: 5,
+            successful_movies: 0,
+            failed_movies: 5,
+            total_series: 0,
+            successful_series: 0,
+            failed_series: 0,
             total_downloads: 0,
             total_conversions: 0,
         };

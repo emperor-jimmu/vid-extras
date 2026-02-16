@@ -117,8 +117,12 @@ async fn main() {
     display_summary(&summary);
 
     // Exit with appropriate code
-    if summary.failed > 0 {
-        log::warn!("Processing completed with {} failures", summary.failed);
+    if summary.failed_movies > 0 || summary.failed_series > 0 {
+        log::warn!(
+            "Processing completed with {} movie failures and {} series failures",
+            summary.failed_movies,
+            summary.failed_series
+        );
         std::process::exit(1);
     } else {
         log::info!("All movies processed successfully");
