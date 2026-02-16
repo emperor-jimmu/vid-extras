@@ -185,21 +185,39 @@ fn validate_config(args: &CliArgs) -> Result<(), CliError> {
 /// Display colored banner with version
 pub fn display_banner() {
     let version = env!("CARGO_PKG_VERSION");
-    let banner = format!(
-        r#"
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║              {}                    ║
-║                                                           ║
-║     Automated Jellyfin Movie Extras Downloader            ║
-║                    Version {}                        ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-"#,
-        "EXTRAS FETCHER".bright_cyan().bold(),
-        version.bright_yellow()
+    let title = "EXTRAS FETCHER";
+    let subtitle = "Automated Jellyfin Extras Downloader";
+    let version_line = format!("Version {}", version);
+
+    let width = 59; // inner width between the ║ chars
+
+    let pad_title = (width - title.len()) / 2;
+    let pad_subtitle = (width - subtitle.len()) / 2;
+    let pad_version = (width - version_line.len()) / 2;
+
+    println!("╔{}╗", "═".repeat(width));
+    println!("║{}║", " ".repeat(width));
+    println!(
+        "║{}{}{}║",
+        " ".repeat(pad_title),
+        title.bright_cyan().bold(),
+        " ".repeat(width - pad_title - title.len())
     );
-    println!("{}", banner);
+    println!("║{}║", " ".repeat(width));
+    println!(
+        "║{}{}{}║",
+        " ".repeat(pad_subtitle),
+        subtitle.bright_white(),
+        " ".repeat(width - pad_subtitle - subtitle.len())
+    );
+    println!(
+        "║{}{}{}║",
+        " ".repeat(pad_version),
+        version_line.bright_yellow(),
+        " ".repeat(width - pad_version - version_line.len())
+    );
+    println!("║{}║", " ".repeat(width));
+    println!("╚{}╝", "═".repeat(width));
 }
 
 /// Display configuration with all parameters
