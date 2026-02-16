@@ -60,23 +60,19 @@ impl DiscoveryOrchestrator {
                     }
                 }
 
-                // Query Archive.org only for movies before 2010
-                if movie.year < 2010 {
-                    match self.archive.discover(movie).await {
-                        Ok(sources) => {
-                            info!(
-                                "Found {} sources from Archive.org for {}",
-                                sources.len(),
-                                movie
-                            );
-                            all_sources.extend(sources);
-                        }
-                        Err(e) => {
-                            info!("Archive.org discovery failed for {}: {}", movie, e);
-                        }
+                // Query Archive.org (general for pre-2010, DVDXtras for all years)
+                match self.archive.discover(movie).await {
+                    Ok(sources) => {
+                        info!(
+                            "Found {} sources from Archive.org for {}",
+                            sources.len(),
+                            movie
+                        );
+                        all_sources.extend(sources);
                     }
-                } else {
-                    info!("Skipping Archive.org for {} (year >= 2010)", movie);
+                    Err(e) => {
+                        info!("Archive.org discovery failed for {}: {}", movie, e);
+                    }
                 }
 
                 // Query YouTube with metadata for better filtering
