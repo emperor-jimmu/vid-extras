@@ -1,10 +1,11 @@
 // Series discovery orchestrator - coordinates discovery from all sources for TV series
 
 use crate::models::{SeriesEntry, SeriesExtra, SourceMode};
-use log::info;
+use log::{debug, info};
 
 use super::series_tmdb::TmdbSeriesDiscoverer;
 use super::series_youtube::YoutubeSeriesDiscoverer;
+use super::title_matching;
 
 /// Orchestrates series discovery from all sources
 #[allow(dead_code)]
@@ -43,8 +44,30 @@ impl SeriesDiscoveryOrchestrator {
                     Ok(Some(series_id)) => {
                         // Discover series-level extras from TMDB
                         match self.tmdb.discover_series_extras(series_id).await {
-                            Ok(sources) => {
+                            Ok(mut sources) => {
                                 info!("Found {} sources from TMDB for {}", sources.len(), series);
+
+                                // Filter out videos that reference seasons not available on disk
+                                let before_count = sources.len();
+                                sources.retain(|extra| {
+                                    if title_matching::references_unavailable_season(&extra.title, &series.seasons) {
+                                        debug!(
+                                            "Excluding TMDB '{}' - references season not on disk (available: {:?})",
+                                            extra.title, series.seasons
+                                        );
+                                        false
+                                    } else {
+                                        true
+                                    }
+                                });
+                                let filtered = before_count - sources.len();
+                                if filtered > 0 {
+                                    info!(
+                                        "Filtered {} TMDB videos referencing unavailable seasons for {}",
+                                        filtered, series
+                                    );
+                                }
+
                                 all_sources.extend(sources);
                             }
                             Err(e) => {

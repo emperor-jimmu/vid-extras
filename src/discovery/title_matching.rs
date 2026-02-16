@@ -86,6 +86,8 @@ pub fn contains_excluded_keywords(title: &str) -> bool {
         "Ending",
         "Theory",
         "React",
+        "Blooper",
+        "Gag",
     ];
 
     let title_lower = title.to_lowercase();
