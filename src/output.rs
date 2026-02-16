@@ -74,7 +74,6 @@ pub fn display_download_result(title: &str, success: bool, error: Option<&str>) 
 }
 
 /// Display conversion progress for a single video
-#[allow(dead_code)]
 pub fn display_conversion_progress(filename: &str, current: usize, total: usize) {
     println!(
         "  {} Converting [{}/{}]: {}",

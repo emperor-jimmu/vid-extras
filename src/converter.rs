@@ -46,6 +46,8 @@ impl Converter {
     /// Convert a batch of downloaded videos
     pub async fn convert_batch(&self, downloads: Vec<DownloadResult>) -> Vec<ConversionResult> {
         let mut results = Vec::new();
+        let total = downloads.iter().filter(|d| d.success).count();
+        let mut current = 0;
 
         for download in downloads {
             if !download.success {
@@ -55,6 +57,9 @@ impl Converter {
                 );
                 continue;
             }
+
+            current += 1;
+            crate::output::display_conversion_progress(&download.source.title, current, total);
 
             let result = self.convert_single(&download).await;
             results.push(result);
