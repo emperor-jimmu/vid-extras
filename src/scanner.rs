@@ -16,6 +16,7 @@ pub struct Scanner {
     single: bool,
 }
 
+#[allow(dead_code)]
 impl Scanner {
     /// Create a new Scanner instance
     pub fn new(root_dir: PathBuf, force: bool, single: bool) -> Self {
@@ -122,12 +123,13 @@ impl Scanner {
             }
             MediaType::Series => {
                 // Parse as series
-                let (title, year) = Self::parse_series_folder_name(folder_name).ok_or_else(|| {
-                    ScanError::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("Invalid series folder name: {}", folder_name),
-                    ))
-                })?;
+                let (title, year) =
+                    Self::parse_series_folder_name(folder_name).ok_or_else(|| {
+                        ScanError::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("Invalid series folder name: {}", folder_name),
+                        ))
+                    })?;
 
                 let has_done_marker = Self::check_done_marker(&self.root_dir);
 
@@ -400,6 +402,7 @@ impl Scanner {
     /// Supports formats:
     /// - "{Series Name} (YYYY)" - with year
     /// - "{Series Name}" - without year
+    ///
     /// Returns Some((title, year)) where year is None if not present
     pub fn parse_series_folder_name(name: &str) -> Option<(String, Option<u16>)> {
         // Try with year first: "Series Name (YYYY)"
@@ -470,12 +473,11 @@ impl Scanner {
 
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        if season_regex.is_match(name) {
-                            return true;
-                        }
-                    }
+                if entry.path().is_dir()
+                    && let Some(name) = entry.file_name().to_str()
+                    && season_regex.is_match(name)
+                {
+                    return true;
                 }
             }
         }
@@ -492,12 +494,11 @@ impl Scanner {
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
                 let entry_path = entry.path();
-                if entry_path.is_file() {
-                    if let Some(ext) = entry_path.extension().and_then(|e| e.to_str()) {
-                        if video_extensions.contains(&ext.to_lowercase().as_str()) {
-                            return true;
-                        }
-                    }
+                if entry_path.is_file()
+                    && let Some(ext) = entry_path.extension().and_then(|e| e.to_str())
+                    && video_extensions.contains(&ext.to_lowercase().as_str())
+                {
+                    return true;
                 }
             }
         }
@@ -516,16 +517,13 @@ impl Scanner {
 
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        if let Some(caps) = season_regex.captures(name) {
-                            if let Some(season_str) = caps.get(1) {
-                                if let Ok(season_num) = season_str.as_str().parse::<u8>() {
-                                    seasons.push(season_num);
-                                }
-                            }
-                        }
-                    }
+                if entry.path().is_dir()
+                    && let Some(name) = entry.file_name().to_str()
+                    && let Some(caps) = season_regex.captures(name)
+                    && let Some(season_str) = caps.get(1)
+                    && let Ok(season_num) = season_str.as_str().parse::<u8>()
+                {
+                    seasons.push(season_num);
                 }
             }
         }

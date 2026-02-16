@@ -1,7 +1,7 @@
 // YouTube content discoverer for TV series
 
 use crate::error::DiscoveryError;
-use crate::models::{ContentCategory, SeriesEntry, SourceType, SeriesExtra};
+use crate::models::{ContentCategory, SeriesEntry, SeriesExtra, SourceType};
 use log::{debug, error, info};
 
 use super::title_matching;
@@ -36,14 +36,8 @@ impl YoutubeSeriesDiscoverer {
                 format!("{} behind the scenes", base),
                 ContentCategory::BehindTheScenes,
             ),
-            (
-                format!("{} bloopers", base),
-                ContentCategory::Featurette,
-            ),
-            (
-                format!("{} featurette", base),
-                ContentCategory::Featurette,
-            ),
+            (format!("{} bloopers", base), ContentCategory::Featurette),
+            (format!("{} featurette", base), ContentCategory::Featurette),
         ]
     }
 
@@ -69,14 +63,8 @@ impl YoutubeSeriesDiscoverer {
                 format!("{} behind the scenes", base),
                 ContentCategory::BehindTheScenes,
             ),
-            (
-                format!("{} bloopers", base),
-                ContentCategory::Featurette,
-            ),
-            (
-                format!("{} featurette", base),
-                ContentCategory::Featurette,
-            ),
+            (format!("{} bloopers", base), ContentCategory::Featurette),
+            (format!("{} featurette", base), ContentCategory::Featurette),
         ]
     }
 
@@ -299,7 +287,6 @@ impl Default for YoutubeSeriesDiscoverer {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,7 +386,8 @@ mod tests {
 
     #[test]
     fn test_series_query_construction_with_year() {
-        let queries = YoutubeSeriesDiscoverer::build_series_search_queries("Breaking Bad", Some(2008));
+        let queries =
+            YoutubeSeriesDiscoverer::build_series_search_queries("Breaking Bad", Some(2008));
         assert_eq!(queries.len(), 4);
         assert!(queries[0].0.contains("Breaking Bad"));
         assert!(queries[0].0.contains("2008"));

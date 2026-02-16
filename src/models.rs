@@ -298,7 +298,8 @@ pub struct SeriesExtra {
 
 impl fmt::Display for SeriesExtra {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let season_str = self.season_number
+        let season_str = self
+            .season_number
             .map(|s| format!("S{:02}", s))
             .unwrap_or_else(|| "Series".to_string());
         write!(

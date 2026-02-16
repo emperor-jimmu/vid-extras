@@ -44,11 +44,7 @@ impl SeriesDiscoveryOrchestrator {
                         // Discover series-level extras from TMDB
                         match self.tmdb.discover_series_extras(series_id).await {
                             Ok(sources) => {
-                                info!(
-                                    "Found {} sources from TMDB for {}",
-                                    sources.len(),
-                                    series
-                                );
+                                info!("Found {} sources from TMDB for {}", sources.len(), series);
                                 all_sources.extend(sources);
                             }
                             Err(e) => {
@@ -198,10 +194,8 @@ mod tests {
 
     #[test]
     fn test_series_discovery_orchestrator_creation_youtube_only_mode() {
-        let orchestrator = SeriesDiscoveryOrchestrator::new(
-            "test_api_key".to_string(),
-            SourceMode::YoutubeOnly,
-        );
+        let orchestrator =
+            SeriesDiscoveryOrchestrator::new("test_api_key".to_string(), SourceMode::YoutubeOnly);
         assert_eq!(orchestrator.mode, SourceMode::YoutubeOnly);
     }
 

@@ -162,7 +162,10 @@ impl TmdbSeriesDiscoverer {
             DiscoveryError::NetworkError(e)
         })?;
 
-        info!("Found {} videos from TMDB for series", videos_result.results.len());
+        info!(
+            "Found {} videos from TMDB for series",
+            videos_result.results.len()
+        );
 
         // Convert TMDB videos to SeriesExtra
         let extras: Vec<SeriesExtra> = videos_result
@@ -396,7 +399,6 @@ mod tests {
         }
     }
 }
-
 
 #[cfg(test)]
 mod property_tests {

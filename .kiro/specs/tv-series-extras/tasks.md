@@ -99,7 +99,7 @@ The plan is organized into discrete, incremental tasks that build upon each othe
   - Support season-specific discovery when enabled
   - _Requirements: 13.1, 13.2_
 
-- [ ] 7. Checkpoint - Ensure discovery tests pass
+- [x] 7. Checkpoint - Ensure discovery tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 8. Implement series organizer module
