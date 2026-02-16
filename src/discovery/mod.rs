@@ -1,7 +1,10 @@
 // Discovery module - handles content discovery from multiple sources
 
 mod archive;
+mod fuzzy_matching;
 mod orchestrator;
+mod season_pack;
+mod season_zero_import;
 mod series_cache;
 mod series_orchestrator;
 mod series_tmdb;
@@ -12,6 +15,9 @@ mod youtube;
 
 // Re-export public API
 pub use orchestrator::DiscoveryOrchestrator;
+pub use fuzzy_matching::FuzzyMatcher;
+pub use season_pack::SeasonPackProcessor;
+pub use season_zero_import::Season0Importer;
 #[allow(unused_imports)]
 pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};
 #[allow(unused_imports)]

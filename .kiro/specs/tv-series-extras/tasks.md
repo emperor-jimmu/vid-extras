@@ -216,8 +216,8 @@ The plan is organized into discrete, incremental tasks that build upon each othe
 - [x] 14. Checkpoint - Ensure orchestrator and CLI tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 15. Add advanced features
-  - [ ] 15.1 Implement season pack post-processing
+- [x] 15. Add advanced features
+  - [x] 15.1 Implement season pack post-processing
     - Detect archive files in downloads
     - Extract to temporary directory
     - Identify bonus content by filename patterns
@@ -225,29 +225,29 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Organize extracted extras
     - Clean up temporary extraction directory
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9_
-  - [ ] 15.2 Write property test for season pack file identification
+  - [x] 15.2 Write property test for season pack file identification
     - **Property 15: Season Pack File Identification**
     - **Validates: Requirements 15.2, 15.3, 15.4, 15.5, 15.6, 15.7, 15.8**
-  - [ ] 15.3 Implement local Season 0 import scanning
+  - [x] 15.3 Implement local Season 0 import scanning
     - Scan series folder for S00Exx files
     - Detect files outside Season 00 folder
     - Move to Season 00 folder with correct naming
     - Handle duplicate episode numbers
     - Preserve original quality
     - _Requirements: 16.1, 16.2, 16.3, 16.4, 16.5_
-  - [ ] 15.4 Write property test for local Season 0 import
+  - [x] 15.4 Write property test for local Season 0 import
     - **Property 16: Local Season 0 Import**
     - **Validates: Requirements 16.1, 16.2, 16.3**
-  - [ ] 15.5 Implement fuzzy title matching
+  - [x] 15.5 Implement fuzzy title matching
     - Normalize strings (lowercase, remove special characters)
     - Calculate Levenshtein distance
     - Apply 80% similarity threshold
     - Log similarity scores for debugging
     - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5_
-  - [ ] 15.6 Write property test for fuzzy title matching threshold
+  - [x] 15.6 Write property test for fuzzy title matching threshold
     - **Property 17: Fuzzy Title Matching Threshold**
     - **Validates: Requirements 17.1, 17.2, 17.3, 17.4**
-  - [ ] 15.7 Write unit tests for advanced features
+  - [x] 15.7 Write unit tests for advanced features
     - Test archive extraction
     - Test filename pattern matching
     - Test Season 0 file detection
