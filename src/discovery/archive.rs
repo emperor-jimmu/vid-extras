@@ -211,6 +211,7 @@ impl ArchiveOrgDiscoverer {
             source_type: SourceType::ArchiveOrg,
             category: cat,
             title: doc.title,
+            season_number: None,
         })
     }
 }

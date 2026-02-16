@@ -36,6 +36,8 @@ pub struct VideoSource {
     pub category: ContentCategory,
     /// Title/description of the video
     pub title: String,
+    /// Optional season number for series extras (None = series-level or movie)
+    pub season_number: Option<u8>,
 }
 
 impl fmt::Display for VideoSource {
@@ -89,6 +91,8 @@ pub struct ConversionResult {
     pub output_path: PathBuf,
     /// Content category for organization
     pub category: ContentCategory,
+    /// Optional season number for series extras
+    pub season_number: Option<u8>,
     /// Whether conversion succeeded
     pub success: bool,
     /// Error message if conversion failed
@@ -317,6 +321,7 @@ impl From<SeriesExtra> for VideoSource {
             source_type: extra.source_type,
             category: extra.category,
             title: extra.title,
+            season_number: extra.season_number,
         }
     }
 }

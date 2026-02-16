@@ -361,6 +361,7 @@ impl ContentDiscoverer for TmdbDiscoverer {
                     source_type: SourceType::TMDB,
                     category,
                     title: v.name,
+                    season_number: None,
                 })
             })
             .collect();

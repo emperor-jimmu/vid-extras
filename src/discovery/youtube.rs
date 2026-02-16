@@ -198,6 +198,7 @@ impl YoutubeDiscoverer {
                             source_type: SourceType::YouTube,
                             category,
                             title,
+                            season_number: None,
                         });
                         debug!("Added YouTube video: {}", sources.last().unwrap().title);
                     }

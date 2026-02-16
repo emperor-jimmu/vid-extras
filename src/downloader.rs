@@ -460,6 +460,7 @@ mod tests {
             source_type: SourceType::YouTube,
             category: ContentCategory::Trailer,
             title: "Test Video".to_string(),
+            season_number: None,
         }];
 
         let results = downloader.download_all("movie_fail", sources).await;

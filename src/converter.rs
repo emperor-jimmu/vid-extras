@@ -98,6 +98,7 @@ impl Converter {
                         input_path: input_path.clone(),
                         output_path: final_output_path.clone(),
                         category: download.source.category,
+                        season_number: download.source.season_number,
                         success: false,
                         error: Some(format!("Failed to rename output: {}", e)),
                     };
@@ -114,6 +115,7 @@ impl Converter {
                     input_path: input_path.clone(),
                     output_path: final_output_path.clone(),
                     category: download.source.category,
+                    season_number: download.source.season_number,
                     success: true,
                     error: None,
                 }
@@ -137,6 +139,7 @@ impl Converter {
                     input_path: input_path.clone(),
                     output_path: final_output_path.clone(),
                     category: download.source.category,
+                    season_number: download.source.season_number,
                     success: false,
                     error: Some(e.to_string()),
                 }
@@ -294,6 +297,7 @@ mod tests {
                 source_type: SourceType::YouTube,
                 category: ContentCategory::Trailer,
                 title: "Test Video".to_string(),
+                season_number: None,
             },
             local_path: path,
             success: true,
@@ -377,8 +381,8 @@ mod tests {
 
         let cmd_str = format!("{:?}", cmd);
         assert!(cmd_str.contains("hevc_videotoolbox"));
-        assert!(cmd_str.contains("-hwaccel"));
-        assert!(cmd_str.contains("videotoolbox"));
+        // No -hwaccel flag — only encoding uses VideoToolbox to avoid AV1 decode issues
+        assert!(!cmd_str.contains("-hwaccel"));
         assert!(cmd_str.contains("-q:v"));
     }
 
@@ -470,6 +474,7 @@ mod tests {
                 source_type: SourceType::YouTube,
                 category: ContentCategory::Trailer,
                 title: "Test Video".to_string(),
+                season_number: None,
             },
             local_path: input_path.clone(),
             success: true,
@@ -519,6 +524,7 @@ mod tests {
                 source_type: SourceType::YouTube,
                 category: ContentCategory::Trailer,
                 title: "Failed Video".to_string(),
+                season_number: None,
             },
             local_path: PathBuf::from("/nonexistent/path.mp4"),
             success: false,
@@ -729,9 +735,11 @@ mod property_tests {
                         cmd_str.contains("hevc_videotoolbox"),
                         "VideoToolbox should use hevc_videotoolbox encoder"
                     );
+                    // No -hwaccel flag — only encoding uses VideoToolbox
+                    // to avoid AV1 decode compatibility issues on macOS
                     prop_assert!(
-                        cmd_str.contains("-hwaccel") && cmd_str.contains("videotoolbox"),
-                        "VideoToolbox should use videotoolbox hardware acceleration"
+                        !cmd_str.contains("-hwaccel"),
+                        "VideoToolbox should not use -hwaccel flag for decoding"
                     );
                 }
                 HardwareAccel::Software => {
@@ -788,6 +796,7 @@ mod property_tests {
                         source_type: SourceType::YouTube,
                         category: ContentCategory::Trailer,
                         title: "Test Video".to_string(),
+                        season_number: None,
                     },
                     local_path: input_path.clone(),
                     success: true,
@@ -839,6 +848,7 @@ mod property_tests {
                         source_type: SourceType::YouTube,
                         category: ContentCategory::Trailer,
                         title: "Test Video".to_string(),
+                        season_number: None,
                     },
                     local_path: input_path.clone(),
                     success: true,

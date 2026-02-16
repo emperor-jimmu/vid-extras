@@ -5,7 +5,7 @@ use crate::discovery::{DiscoveryOrchestrator, SeriesDiscoveryOrchestrator};
 use crate::downloader::Downloader;
 use crate::error::OrchestratorError;
 use crate::models::{MovieEntry, ProcessingMode, SeriesEntry, SourceMode, VideoSource};
-use crate::organizer::Organizer;
+use crate::organizer::{Organizer, SeriesOrganizer};
 use crate::scanner::Scanner;
 use log::{debug, error, info, warn};
 use std::path::PathBuf;
@@ -518,31 +518,58 @@ impl Orchestrator {
     ) -> SeriesResult {
         info!("Processing series: {}", series);
 
-        // Generate series ID for temp directory
         let series_id = format!(
             "{}_{}",
             series.title.replace(' ', "_"),
             series.year.unwrap_or(0)
         );
 
-        // Phase 2: Discovery
+        // Phase 2: Discovery — series-level + per-season extras
         info!("Phase 2: Discovering content for {}", series);
-        let extras = series_discovery.discover_all(&series).await;
+        let mut all_extras = series_discovery.discover_all(&series).await;
 
-        if extras.is_empty() {
+        for &season in &series.seasons {
+            let season_extras = series_discovery
+                .discover_season_extras(&series, season)
+                .await;
+            info!(
+                "Found {} season {} extras for {}",
+                season_extras.len(),
+                season,
+                series
+            );
+            all_extras.extend(season_extras);
+        }
+
+        if all_extras.is_empty() {
             warn!("No extras found for {}", series);
             return SeriesResult::success(series, 0, 0);
         }
 
-        info!("Found {} extras for {}", extras.len(), series);
+        // Deduplicate by URL before downloading
+        let before_dedup = all_extras.len();
+        let mut seen_urls = std::collections::HashSet::new();
+        all_extras.retain(|extra| seen_urls.insert(extra.url.clone()));
+        let deduped = before_dedup - all_extras.len();
+        if deduped > 0 {
+            info!(
+                "Deduplicated {} duplicate URLs for {} ({} -> {})",
+                deduped,
+                series,
+                before_dedup,
+                all_extras.len()
+            );
+        }
+
+        info!("Found {} unique extras for {}", all_extras.len(), series);
 
         // Phase 3: Download
         info!(
             "Phase 3: Downloading {} videos for {}",
-            extras.len(),
+            all_extras.len(),
             series
         );
-        let video_sources: Vec<VideoSource> = extras.into_iter().map(|e| e.into()).collect();
+        let video_sources: Vec<VideoSource> = all_extras.into_iter().map(|e| e.into()).collect();
         let downloads = downloader.download_all(&series_id, video_sources).await;
 
         let download_count = downloads.len();
@@ -555,7 +582,6 @@ impl Orchestrator {
 
         if successful_download_count == 0 {
             warn!("No successful downloads for {}", series);
-            // Clean up temp directory
             let temp_dir = temp_base.join(&series_id);
             if temp_dir.exists()
                 && let Err(e) = tokio::fs::remove_dir_all(&temp_dir).await
@@ -573,17 +599,17 @@ impl Orchestrator {
         let conversions = converter.convert_batch(downloads).await;
         info!("Conversion batch complete for {}", series);
 
-        let conversion_count = conversions.len();
         let successful_conversion_count = conversions.iter().filter(|c| c.success).count();
 
         info!(
             "Converted {}/{} videos for {}",
-            successful_conversion_count, conversion_count, series
+            successful_conversion_count,
+            conversions.len(),
+            series
         );
 
         if successful_conversion_count == 0 {
             warn!("No successful conversions for {}", series);
-            // Clean up temp directory
             let temp_dir = temp_base.join(&series_id);
             if temp_dir.exists()
                 && let Err(e) = tokio::fs::remove_dir_all(&temp_dir).await
@@ -593,29 +619,52 @@ impl Orchestrator {
             return SeriesResult::success(series, successful_download_count, 0);
         }
 
-        // Phase 5: Organization
+        // Phase 5: Organization — group by season and use SeriesOrganizer
         info!(
             "Phase 5: Organizing {} files for {}",
             successful_conversion_count, series
         );
-        let organizer = Organizer::new(series.path.clone());
+        let organizer = SeriesOrganizer::new(series.path.clone());
         let temp_dir = temp_base.join(&series_id);
 
-        match organizer.organize(conversions, &temp_dir).await {
-            Ok(_) => {
-                info!("Successfully organized files for {}", series);
-                info!("✓ Series processing complete: {}", series);
-                SeriesResult::success(
-                    series,
-                    successful_download_count,
-                    successful_conversion_count,
-                )
+        // Group conversions by season_number
+        let mut by_season: std::collections::HashMap<Option<u8>, Vec<_>> =
+            std::collections::HashMap::new();
+        for conversion in conversions {
+            by_season
+                .entry(conversion.season_number)
+                .or_default()
+                .push(conversion);
+        }
+
+        let mut org_failed = false;
+        for (season, season_conversions) in by_season {
+            if let Err(e) = organizer.organize_extras(season_conversions, season).await {
+                error!(
+                    "Organization failed for {} season {:?}: {}",
+                    series, season, e
+                );
+                org_failed = true;
             }
-            Err(e) => {
-                error!("Organization failed for {}: {}", series, e);
-                error!("✗ Series processing failed: {}", series);
-                SeriesResult::failed(series, "organization", e.to_string())
-            }
+        }
+
+        // Clean up temp directory
+        if temp_dir.exists()
+            && let Err(e) = tokio::fs::remove_dir_all(&temp_dir).await
+        {
+            warn!("Failed to cleanup temp dir {:?}: {}", temp_dir, e);
+        }
+
+        if org_failed {
+            error!("✗ Series processing had organization errors: {}", series);
+            SeriesResult::failed(series, "organization", "Some seasons failed".to_string())
+        } else {
+            info!("✓ Series processing complete: {}", series);
+            SeriesResult::success(
+                series,
+                successful_download_count,
+                successful_conversion_count,
+            )
         }
     }
 
