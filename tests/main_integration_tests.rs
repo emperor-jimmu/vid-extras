@@ -393,6 +393,7 @@ async fn test_complete_execution_flow() {
             ProcessingMode::Both,
             false,
             false,
+            "Specials".to_string(),
         );
 
         // Orchestrator creation should succeed

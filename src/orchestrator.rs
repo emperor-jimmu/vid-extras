@@ -138,6 +138,7 @@ pub struct Orchestrator {
     processing_mode: ProcessingMode,
     season_extras: bool,
     specials: bool,
+    specials_folder: String,
 }
 
 impl Orchestrator {
@@ -154,6 +155,7 @@ impl Orchestrator {
     /// * `processing_mode` - Which media types to process (Both, MoviesOnly, SeriesOnly)
     /// * `season_extras` - Enable season-specific extras discovery for series
     /// * `specials` - Enable Season 0 specials discovery for series
+    /// * `specials_folder` - Folder name for Season 0 specials (e.g., "Specials", "Season 00")
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         root_dir: PathBuf,
@@ -165,6 +167,7 @@ impl Orchestrator {
         processing_mode: ProcessingMode,
         season_extras: bool,
         specials: bool,
+        specials_folder: String,
     ) -> Result<Self, OrchestratorError> {
         // Validate root directory exists
         if !root_dir.exists() {
@@ -193,6 +196,9 @@ impl Orchestrator {
         info!("  Processing mode: {}", processing_mode);
         info!("  Season extras: {}", season_extras);
         info!("  Specials (Season 0): {}", specials);
+        if specials {
+            info!("  Specials folder: {}", specials_folder);
+        }
 
         Ok(Self {
             scanner: Scanner::new(root_dir, force, single),
@@ -205,6 +211,7 @@ impl Orchestrator {
             processing_mode,
             season_extras,
             specials,
+            specials_folder,
         })
     }
 
@@ -483,6 +490,7 @@ impl Orchestrator {
         let temp_base = self.temp_base.clone();
         let season_extras = self.season_extras;
         let specials = self.specials;
+        let specials_folder = self.specials_folder.clone();
 
         for series in series_list {
             let sem = semaphore.clone();
@@ -490,6 +498,7 @@ impl Orchestrator {
             let downloader = downloader.clone();
             let converter = converter.clone();
             let temp_base = temp_base.clone();
+            let specials_folder = specials_folder.clone();
 
             let task = tokio::spawn(async move {
                 // Acquire semaphore permit
@@ -504,6 +513,7 @@ impl Orchestrator {
                     temp_base,
                     season_extras,
                     specials,
+                    specials_folder,
                 )
                 .await
             });
@@ -531,6 +541,7 @@ impl Orchestrator {
             self.temp_base.clone(),
             self.season_extras,
             self.specials,
+            self.specials_folder.clone(),
         )
         .await
     }
@@ -544,6 +555,7 @@ impl Orchestrator {
         temp_base: PathBuf,
         season_extras: bool,
         specials: bool,
+        specials_folder: String,
     ) -> SeriesResult {
         info!("Processing series: {}", series);
 
@@ -883,6 +895,7 @@ mod tests {
             ProcessingMode::Both,
             false,
             false,
+            "Specials".to_string(),
         );
 
         assert!(result.is_err());
@@ -914,6 +927,7 @@ mod tests {
             ProcessingMode::Both,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -944,6 +958,7 @@ mod tests {
             ProcessingMode::Both,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -979,6 +994,7 @@ mod tests {
             ProcessingMode::Both,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -993,6 +1009,7 @@ mod tests {
             ProcessingMode::Both,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -1023,6 +1040,7 @@ mod tests {
                 ProcessingMode::Both,
                 false,
                 false,
+                "Specials".to_string(),
             )
             .unwrap();
 
@@ -1145,6 +1163,7 @@ mod tests {
             ProcessingMode::Both,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -1162,6 +1181,7 @@ mod tests {
             ProcessingMode::Both,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -1189,6 +1209,7 @@ mod tests {
                 ProcessingMode::Both,
                 false,
                 false,
+                "Specials".to_string(),
             )
             .unwrap();
 
@@ -1280,6 +1301,7 @@ mod tests {
             ProcessingMode::Both,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -1296,6 +1318,7 @@ mod tests {
             ProcessingMode::MoviesOnly,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -1315,6 +1338,7 @@ mod tests {
             ProcessingMode::SeriesOnly,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -1356,6 +1380,7 @@ mod tests {
             ProcessingMode::Both,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -1374,6 +1399,7 @@ mod tests {
             ProcessingMode::MoviesOnly,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 
@@ -1396,6 +1422,7 @@ mod tests {
             ProcessingMode::SeriesOnly,
             false,
             false,
+            "Specials".to_string(),
         )
         .unwrap();
 

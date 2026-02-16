@@ -88,6 +88,7 @@ async fn main() {
         config.processing_mode,
         config.season_extras,
         config.specials,
+        config.specials_folder,
     ) {
         Ok(orch) => orch,
         Err(e) => {

@@ -83,6 +83,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub specials: bool,
 
+    /// Folder name for Season 0 specials (default: "Specials")
+    #[arg(long, default_value = "Specials")]
+    pub specials_folder: String,
+
     /// Force classification as either 'movie' or 'series'
     #[arg(long, value_name = "TYPE")]
     pub r#type: Option<String>,
@@ -100,6 +104,7 @@ pub struct CliConfig {
     pub processing_mode: crate::models::ProcessingMode,
     pub season_extras: bool,
     pub specials: bool,
+    pub specials_folder: String,
     pub media_type: Option<String>,
 }
 
@@ -124,6 +129,7 @@ impl From<CliArgs> for CliConfig {
             processing_mode,
             season_extras: args.season_extras,
             specials: args.specials,
+            specials_folder: args.specials_folder,
             media_type: args.r#type,
         }
     }
@@ -280,6 +286,13 @@ pub fn display_config(config: &CliConfig) {
             "No".bright_white()
         }
     );
+    if config.specials {
+        println!(
+            "  {} {}",
+            "Specials Folder:".bright_white(),
+            config.specials_folder.bright_cyan()
+        );
+    }
     if let Some(ref media_type) = config.media_type {
         println!(
             "  {} {}",
@@ -315,6 +328,7 @@ mod tests {
             movies_only: false,
             season_extras: true,
             specials: true,
+            specials_folder: "Specials".to_string(),
             r#type: Some("series".to_string()),
         };
 
@@ -345,6 +359,7 @@ mod tests {
             movies_only: false,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: None,
         };
 
@@ -365,6 +380,7 @@ mod tests {
             movies_only: false,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: None,
         };
 
@@ -396,6 +412,7 @@ mod tests {
             movies_only: false,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: None,
         };
 
@@ -423,6 +440,7 @@ mod tests {
             movies_only: false,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: None,
         };
 
@@ -450,6 +468,7 @@ mod tests {
             movies_only: false,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: None,
         };
 
@@ -486,6 +505,7 @@ mod tests {
             processing_mode: crate::models::ProcessingMode::SeriesOnly,
             season_extras: true,
             specials: true,
+            specials_folder: "Specials".to_string(),
             media_type: Some("series".to_string()),
         };
 
@@ -507,6 +527,7 @@ mod tests {
             movies_only: false,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: None,
         };
 
@@ -531,6 +552,7 @@ mod tests {
             movies_only: true,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: None,
         };
 
@@ -555,6 +577,7 @@ mod tests {
             movies_only: true,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: None,
         };
 
@@ -582,6 +605,7 @@ mod tests {
             movies_only: false,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: Some("movie".to_string()),
         };
 
@@ -603,6 +627,7 @@ mod tests {
             movies_only: false,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: Some("series".to_string()),
         };
 
@@ -624,6 +649,7 @@ mod tests {
             movies_only: false,
             season_extras: false,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: Some("invalid".to_string()),
         };
 
@@ -651,6 +677,7 @@ mod tests {
             movies_only: false,
             season_extras: true,
             specials: false,
+            specials_folder: "Specials".to_string(),
             r#type: None,
         };
 
@@ -672,6 +699,7 @@ mod tests {
             movies_only: false,
             season_extras: false,
             specials: true,
+            specials_folder: "Specials".to_string(),
             r#type: None,
         };
 
@@ -713,6 +741,7 @@ mod property_tests {
                 processing_mode: crate::models::ProcessingMode::Both,
                 season_extras: false,
                 specials: false,
+                specials_folder: "Specials".to_string(),
                 media_type: None,
             };
 
@@ -778,6 +807,7 @@ mod property_tests {
                 processing_mode: crate::models::ProcessingMode::Both,
                 season_extras: false,
                 specials: false,
+                specials_folder: "Specials".to_string(),
                 media_type: None,
             };
 

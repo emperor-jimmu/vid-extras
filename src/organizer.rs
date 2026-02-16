@@ -287,14 +287,20 @@ impl SeriesOrganizer {
     /// Organize Season 0 special episodes
     ///
     /// This method:
-    /// 1. Creates a Season 00 folder
+    /// 1. Creates a specials folder (default: "Season 00", configurable via folder_name)
     /// 2. Formats filenames as "{Series Name} - S00E{num} - {title}.mp4"
     /// 3. Zero-pads episode numbers
     /// 4. Sanitizes filenames
+    ///
+    /// # Arguments
+    /// * `series_name` - Name of the series for filename formatting
+    /// * `specials` - List of special episodes to organize
+    /// * `folder_name` - Name of the folder for specials (e.g., "Specials", "Season 00")
     pub async fn organize_specials(
         &self,
         series_name: &str,
         specials: Vec<SpecialEpisode>,
+        folder_name: &str,
     ) -> Result<(), OrganizerError> {
         if specials.is_empty() {
             debug!("No specials to organize");
@@ -302,18 +308,19 @@ impl SeriesOrganizer {
         }
 
         info!(
-            "Organizing {} special episodes for series at {:?}",
+            "Organizing {} special episodes for series at {:?} into folder '{}'",
             specials.len(),
-            self.series_path
+            self.series_path,
+            folder_name
         );
 
-        let season_00_dir = self.series_path.join("Season 00");
-        tokio::fs::create_dir_all(&season_00_dir)
+        let specials_dir = self.series_path.join(folder_name);
+        tokio::fs::create_dir_all(&specials_dir)
             .await
             .map_err(|e| {
                 OrganizerError::SubdirectoryCreation(format!(
-                    "Failed to create Season 00 folder: {}",
-                    e
+                    "Failed to create {} folder: {}",
+                    folder_name, e
                 ))
             })?;
 
@@ -325,7 +332,7 @@ impl SeriesOrganizer {
                     series_name, special.episode_number, sanitized_title
                 );
 
-                let target_path = season_00_dir.join(&filename);
+                let target_path = specials_dir.join(&filename);
 
                 debug!(
                     "Moving special episode: {:?} -> {:?}",
@@ -880,7 +887,7 @@ mod tests {
 
         let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
         organizer
-            .organize_specials("Breaking Bad", specials)
+            .organize_specials("Breaking Bad", specials, "Season 00")
             .await
             .unwrap();
 
@@ -1244,7 +1251,7 @@ mod property_tests {
                 }];
 
                 let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
-                organizer.organize_specials("TestSeries", specials).await.unwrap();
+                organizer.organize_specials("TestSeries", specials, "Season 00").await.unwrap();
 
                 // Verify Season 00 folder exists
                 prop_assert!(series_path.join("Season 00").exists());
