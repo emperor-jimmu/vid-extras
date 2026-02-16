@@ -624,7 +624,7 @@ impl Orchestrator {
             "Phase 5: Organizing {} files for {}",
             successful_conversion_count, series
         );
-        let organizer = SeriesOrganizer::new(series.path.clone());
+        let organizer = SeriesOrganizer::new(series.path.clone(), series.seasons.clone());
         let temp_dir = temp_base.join(&series_id);
 
         // Group conversions by season_number

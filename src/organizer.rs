@@ -200,13 +200,18 @@ impl Organizer {
 pub struct SeriesOrganizer {
     /// Path to the series folder
     series_path: PathBuf,
+    /// Available seasons on disk (for validation)
+    available_seasons: Vec<u8>,
 }
 
 #[allow(dead_code)]
 impl SeriesOrganizer {
     /// Create a new SeriesOrganizer for a specific series folder
-    pub fn new(series_path: PathBuf) -> Self {
-        Self { series_path }
+    pub fn new(series_path: PathBuf, available_seasons: Vec<u8>) -> Self {
+        Self {
+            series_path,
+            available_seasons,
+        }
     }
 
     /// Organize series extras into appropriate subdirectories
@@ -220,6 +225,17 @@ impl SeriesOrganizer {
         conversions: Vec<ConversionResult>,
         season: Option<u8>,
     ) -> Result<(), OrganizerError> {
+        // Validate that the season exists on disk if specified
+        if let Some(s) = season
+            && !self.available_seasons.contains(&s)
+        {
+            warn!(
+                "Skipping organization for non-existent season {} at {:?}",
+                s, self.series_path
+            );
+            return Ok(());
+        }
+
         info!(
             "Organizing {} files for series at {:?}, season: {:?}",
             conversions.len(),
@@ -776,7 +792,7 @@ mod tests {
             error: None,
         }];
 
-        let organizer = SeriesOrganizer::new(series_path.clone());
+        let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
         organizer.organize_extras(conversions, None).await.unwrap();
 
         // Verify series-level subdirectory was created
@@ -808,7 +824,7 @@ mod tests {
             error: None,
         }];
 
-        let organizer = SeriesOrganizer::new(series_path.clone());
+        let organizer = SeriesOrganizer::new(series_path.clone(), vec![1]);
         organizer
             .organize_extras(conversions, Some(1))
             .await
@@ -843,7 +859,7 @@ mod tests {
             local_path: Some(special_file.clone()),
         }];
 
-        let organizer = SeriesOrganizer::new(series_path.clone());
+        let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
         organizer
             .organize_specials("Breaking Bad", specials)
             .await
@@ -911,7 +927,7 @@ mod tests {
             },
         ];
 
-        let organizer = SeriesOrganizer::new(series_path.clone());
+        let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
         organizer.organize_extras(conversions, None).await.unwrap();
 
         assert!(series_path.join("trailers/trailer.mp4").exists());
@@ -949,11 +965,51 @@ mod tests {
             },
         ];
 
-        let organizer = SeriesOrganizer::new(series_path.clone());
+        let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
         organizer.organize_extras(conversions, None).await.unwrap();
 
         assert!(series_path.join("trailers/success.mp4").exists());
         assert!(!series_path.join("featurettes").exists());
+    }
+
+    #[tokio::test]
+    async fn test_series_organizer_skips_nonexistent_season() {
+        let temp = TempDir::new().unwrap();
+        let series_path = temp.path().join("Breaking Bad (2008)");
+        fs::create_dir(&series_path).await.unwrap();
+
+        // Only Season 1 exists on disk
+        let season_dir = series_path.join("Season 01");
+        fs::create_dir(&season_dir).await.unwrap();
+
+        let temp_dir = temp.path().join("tmp_downloads");
+        fs::create_dir(&temp_dir).await.unwrap();
+
+        let file = temp_dir.join("extra.mp4");
+        fs::write(&file, b"content").await.unwrap();
+
+        let conversions = vec![ConversionResult {
+            input_path: temp_dir.join("extra.mp4"),
+            output_path: file.clone(),
+            category: ContentCategory::Trailer,
+            season_number: None,
+            success: true,
+            error: None,
+        }];
+
+        // Try to organize for Season 5 (which doesn't exist)
+        let organizer = SeriesOrganizer::new(series_path.clone(), vec![1]);
+        organizer
+            .organize_extras(conversions, Some(5))
+            .await
+            .unwrap();
+
+        // Verify Season 5 folder was NOT created
+        assert!(!series_path.join("Season 05").exists());
+        // Verify Season 1 folder still exists
+        assert!(series_path.join("Season 01").exists());
+        // Verify file was not moved
+        assert!(file.exists());
     }
 }
 
@@ -1038,9 +1094,11 @@ mod property_tests {
                 tokio::fs::create_dir(&series_path).await.unwrap();
 
                 // Create season folder if needed
+                let mut available_seasons = vec![];
                 if let Some(s) = season {
                     let season_dir = series_path.join(format!("Season {:02}", s));
                     tokio::fs::create_dir(&season_dir).await.unwrap();
+                    available_seasons.push(s);
                 }
 
                 let temp_dir = temp.path().join("tmp_downloads");
@@ -1058,7 +1116,7 @@ mod property_tests {
                     error: None,
                 }];
 
-                let organizer = SeriesOrganizer::new(series_path.clone());
+                let organizer = SeriesOrganizer::new(series_path.clone(), available_seasons);
                 organizer.organize_extras(conversions, season).await.unwrap();
 
                 // Verify file was organized in correct location
@@ -1098,9 +1156,11 @@ mod property_tests {
                 let series_path = temp.path().join("Series (2020)");
                 tokio::fs::create_dir(&series_path).await.unwrap();
 
+                let mut available_seasons = vec![];
                 if let Some(s) = season {
                     let season_dir = series_path.join(format!("Season {:02}", s));
                     tokio::fs::create_dir(&season_dir).await.unwrap();
+                    available_seasons.push(s);
                 }
 
                 let temp_dir = temp.path().join("tmp_downloads");
@@ -1118,7 +1178,7 @@ mod property_tests {
                     error: None,
                 }];
 
-                let organizer = SeriesOrganizer::new(series_path.clone());
+                let organizer = SeriesOrganizer::new(series_path.clone(), available_seasons);
                 organizer.organize_extras(conversions, season).await.unwrap();
 
                 // Verify file was organized in correct subdirectory
@@ -1164,7 +1224,7 @@ mod property_tests {
                     local_path: Some(file),
                 }];
 
-                let organizer = SeriesOrganizer::new(series_path.clone());
+                let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
                 organizer.organize_specials("TestSeries", specials).await.unwrap();
 
                 // Verify Season 00 folder exists
