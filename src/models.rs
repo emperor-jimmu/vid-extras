@@ -349,6 +349,8 @@ pub enum HardwareAccel {
     Nvenc,
     /// Intel Quick Sync Video
     Qsv,
+    /// Apple VideoToolbox (M-series chips)
+    VideoToolbox,
     /// Software encoding (no hardware acceleration)
     Software,
 }
@@ -358,6 +360,7 @@ impl fmt::Display for HardwareAccel {
         match self {
             HardwareAccel::Nvenc => write!(f, "NVIDIA NVENC"),
             HardwareAccel::Qsv => write!(f, "Intel Quick Sync"),
+            HardwareAccel::VideoToolbox => write!(f, "Apple VideoToolbox"),
             HardwareAccel::Software => write!(f, "Software"),
         }
     }

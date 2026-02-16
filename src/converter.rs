@@ -197,6 +197,15 @@ impl Converter {
                 cmd.arg("-c:a").arg("copy");
                 cmd.arg(output);
             }
+            HardwareAccel::VideoToolbox => {
+                // Apple VideoToolbox hardware acceleration (M-series chips)
+                cmd.arg("-hwaccel").arg("videotoolbox");
+                cmd.arg("-i").arg(input);
+                cmd.arg("-c:v").arg("hevc_videotoolbox");
+                cmd.arg("-q:v").arg(self.crf.to_string());
+                cmd.arg("-c:a").arg("copy");
+                cmd.arg(output);
+            }
             HardwareAccel::Software => {
                 // Software encoding with libx265
                 cmd.arg("-i").arg(input);
@@ -221,6 +230,11 @@ impl Converter {
         // Try QSV next
         if Self::check_encoder_support("hevc_qsv") {
             return HardwareAccel::Qsv;
+        }
+
+        // Try VideoToolbox (Apple Silicon)
+        if Self::check_encoder_support("hevc_videotoolbox") {
+            return HardwareAccel::VideoToolbox;
         }
 
         // Fall back to software encoding
@@ -292,7 +306,10 @@ mod tests {
         // Should detect some form of hardware acceleration or fall back to software
         assert!(matches!(
             converter.hw_accel(),
-            HardwareAccel::Nvenc | HardwareAccel::Qsv | HardwareAccel::Software
+            HardwareAccel::Nvenc
+                | HardwareAccel::Qsv
+                | HardwareAccel::VideoToolbox
+                | HardwareAccel::Software
         ));
         // Default CRF should be 25
         assert_eq!(converter.crf(), 25);
@@ -353,6 +370,18 @@ mod tests {
     }
 
     #[test]
+    fn test_build_ffmpeg_command_videotoolbox() {
+        let converter = Converter::with_config(HardwareAccel::VideoToolbox, 25);
+        let cmd = converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
+
+        let cmd_str = format!("{:?}", cmd);
+        assert!(cmd_str.contains("hevc_videotoolbox"));
+        assert!(cmd_str.contains("-hwaccel"));
+        assert!(cmd_str.contains("videotoolbox"));
+        assert!(cmd_str.contains("-q:v"));
+    }
+
+    #[test]
     fn test_crf_values_in_range() {
         // Test all valid CRF values
         for crf in 24..=26 {
@@ -387,6 +416,9 @@ mod tests {
         let qsv = Converter::with_config(HardwareAccel::Qsv, 25);
         assert_eq!(qsv.hw_accel(), HardwareAccel::Qsv);
 
+        let videotoolbox = Converter::with_config(HardwareAccel::VideoToolbox, 25);
+        assert_eq!(videotoolbox.hw_accel(), HardwareAccel::VideoToolbox);
+
         let software = Converter::with_config(HardwareAccel::Software, 25);
         assert_eq!(software.hw_accel(), HardwareAccel::Software);
     }
@@ -409,6 +441,7 @@ mod tests {
         for hw_accel in [
             HardwareAccel::Nvenc,
             HardwareAccel::Qsv,
+            HardwareAccel::VideoToolbox,
             HardwareAccel::Software,
         ] {
             let converter = Converter::with_config(hw_accel, 25);
@@ -463,10 +496,13 @@ mod tests {
     fn test_detect_hardware_accel_returns_valid_type() {
         let hw_accel = Converter::detect_hardware_accel();
 
-        // Should return one of the three valid types
+        // Should return one of the four valid types
         assert!(matches!(
             hw_accel,
-            HardwareAccel::Nvenc | HardwareAccel::Qsv | HardwareAccel::Software
+            HardwareAccel::Nvenc
+                | HardwareAccel::Qsv
+                | HardwareAccel::VideoToolbox
+                | HardwareAccel::Software
         ));
     }
 
@@ -527,6 +563,7 @@ mod property_tests {
             hw_accel in prop_oneof![
                 Just(HardwareAccel::Nvenc),
                 Just(HardwareAccel::Qsv),
+                Just(HardwareAccel::VideoToolbox),
                 Just(HardwareAccel::Software),
             ],
             crf in 24u8..=26u8
@@ -542,6 +579,7 @@ mod property_tests {
             // Verify that one of the HEVC codecs is used
             let has_hevc_codec = cmd_str.contains("hevc_nvenc")
                 || cmd_str.contains("hevc_qsv")
+                || cmd_str.contains("hevc_videotoolbox")
                 || cmd_str.contains("libx265");
 
             prop_assert!(
@@ -558,6 +596,9 @@ mod property_tests {
                 HardwareAccel::Qsv => {
                     prop_assert!(cmd_str.contains("hevc_qsv"));
                 }
+                HardwareAccel::VideoToolbox => {
+                    prop_assert!(cmd_str.contains("hevc_videotoolbox"));
+                }
                 HardwareAccel::Software => {
                     prop_assert!(cmd_str.contains("libx265"));
                 }
@@ -573,6 +614,7 @@ mod property_tests {
             hw_accel in prop_oneof![
                 Just(HardwareAccel::Nvenc),
                 Just(HardwareAccel::Qsv),
+                Just(HardwareAccel::VideoToolbox),
                 Just(HardwareAccel::Software),
             ],
             crf in 24u8..=26u8
@@ -612,6 +654,7 @@ mod property_tests {
             hw_accel in prop_oneof![
                 Just(HardwareAccel::Nvenc),
                 Just(HardwareAccel::Qsv),
+                Just(HardwareAccel::VideoToolbox),
                 Just(HardwareAccel::Software),
             ],
             invalid_crf in prop_oneof![
@@ -639,6 +682,7 @@ mod property_tests {
             hw_accel in prop_oneof![
                 Just(HardwareAccel::Nvenc),
                 Just(HardwareAccel::Qsv),
+                Just(HardwareAccel::VideoToolbox),
                 Just(HardwareAccel::Software),
             ]
         ) {
@@ -679,6 +723,16 @@ mod property_tests {
                         "QSV should use QSV hardware acceleration"
                     );
                 }
+                HardwareAccel::VideoToolbox => {
+                    prop_assert!(
+                        cmd_str.contains("hevc_videotoolbox"),
+                        "VideoToolbox should use hevc_videotoolbox encoder"
+                    );
+                    prop_assert!(
+                        cmd_str.contains("-hwaccel") && cmd_str.contains("videotoolbox"),
+                        "VideoToolbox should use videotoolbox hardware acceleration"
+                    );
+                }
                 HardwareAccel::Software => {
                     prop_assert!(
                         cmd_str.contains("libx265"),
@@ -699,11 +753,11 @@ mod property_tests {
         fn prop_hardware_detection_returns_valid_type(_dummy in 0u8..10u8) {
             let hw_accel = Converter::detect_hardware_accel();
 
-            // Should return one of the three valid types
+            // Should return one of the four valid types
             prop_assert!(
                 matches!(
                     hw_accel,
-                    HardwareAccel::Nvenc | HardwareAccel::Qsv | HardwareAccel::Software
+                    HardwareAccel::Nvenc | HardwareAccel::Qsv | HardwareAccel::VideoToolbox | HardwareAccel::Software
                 ),
                 "Hardware detection must return a valid acceleration type"
             );
