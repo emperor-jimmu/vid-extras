@@ -391,6 +391,8 @@ async fn test_complete_execution_flow() {
             1,
             false,
             ProcessingMode::Both,
+            false,
+            false,
         );
 
         // Orchestrator creation should succeed

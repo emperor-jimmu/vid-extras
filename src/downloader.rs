@@ -379,19 +379,22 @@ impl Downloader {
             let clean_filename = filename.replace(hash_suffix, "");
 
             if clean_filename != filename {
+                // Sanitize filename for Windows compatibility
+                let sanitized_filename = Self::sanitize_filename(&clean_filename);
+                
                 let clean_path = path
                     .parent()
                     .unwrap_or_else(|| Path::new("."))
-                    .join(&clean_filename);
+                    .join(&sanitized_filename);
 
-                // Rename the file to remove the hash
+                // Rename the file to remove the hash and sanitize
                 match fs::rename(path, &clean_path).await {
                     Ok(_) => {
-                        debug!("Renamed {} to {}", filename, clean_filename);
+                        debug!("Renamed {} to {}", filename, sanitized_filename);
                         return Ok(clean_path);
                     }
                     Err(e) => {
-                        warn!("Failed to rename {} to {}: {}", filename, clean_filename, e);
+                        warn!("Failed to rename {} to {}: {}", filename, sanitized_filename, e);
                         // Return original path if rename fails
                         return Ok(path.to_path_buf());
                     }
@@ -400,6 +403,15 @@ impl Downloader {
         }
 
         Ok(path.to_path_buf())
+    }
+
+    /// Sanitize filename for Windows compatibility
+    /// Replaces characters that are problematic on Windows filesystems
+    fn sanitize_filename(filename: &str) -> String {
+        filename
+            .replace(['|', '<', '>', ':', '/', '\\', '*'], "-")
+            .replace('"', "'")
+            .replace('?', "")
     }
 
     /// Clean up partial files after a failed download

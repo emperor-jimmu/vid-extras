@@ -136,10 +136,25 @@ pub struct Orchestrator {
     temp_base: PathBuf,
     concurrency: usize,
     processing_mode: ProcessingMode,
+    season_extras: bool,
+    specials: bool,
 }
 
 impl Orchestrator {
     /// Create a new Orchestrator with the given configuration
+    /// Create a new Orchestrator with the given configuration
+    ///
+    /// # Arguments
+    /// * `root_dir` - Root directory containing media folders
+    /// * `tmdb_api_key` - TMDB API key for content discovery
+    /// * `mode` - Content source mode (All or YoutubeOnly)
+    /// * `force` - Ignore done markers and reprocess all media
+    /// * `concurrency` - Maximum number of media items to process concurrently
+    /// * `single` - Process a single folder directly instead of scanning
+    /// * `processing_mode` - Which media types to process (Both, MoviesOnly, SeriesOnly)
+    /// * `season_extras` - Enable season-specific extras discovery for series
+    /// * `specials` - Enable Season 0 specials discovery for series
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         root_dir: PathBuf,
         tmdb_api_key: String,
@@ -148,6 +163,8 @@ impl Orchestrator {
         concurrency: usize,
         single: bool,
         processing_mode: ProcessingMode,
+        season_extras: bool,
+        specials: bool,
     ) -> Result<Self, OrchestratorError> {
         // Validate root directory exists
         if !root_dir.exists() {
@@ -174,6 +191,8 @@ impl Orchestrator {
         info!("  Concurrency: {}", concurrency);
         info!("  Single folder mode: {}", single);
         info!("  Processing mode: {}", processing_mode);
+        info!("  Season extras: {}", season_extras);
+        info!("  Specials (Season 0): {}", specials);
 
         Ok(Self {
             scanner: Scanner::new(root_dir, force, single),
@@ -184,6 +203,8 @@ impl Orchestrator {
             temp_base,
             concurrency,
             processing_mode,
+            season_extras,
+            specials,
         })
     }
 
@@ -460,6 +481,8 @@ impl Orchestrator {
         let downloader = self.downloader.clone();
         let converter = self.converter.clone();
         let temp_base = self.temp_base.clone();
+        let season_extras = self.season_extras;
+        let specials = self.specials;
 
         for series in series_list {
             let sem = semaphore.clone();
@@ -479,6 +502,8 @@ impl Orchestrator {
                     downloader,
                     converter,
                     temp_base,
+                    season_extras,
+                    specials,
                 )
                 .await
             });
@@ -504,6 +529,8 @@ impl Orchestrator {
             self.downloader.clone(),
             self.converter.clone(),
             self.temp_base.clone(),
+            self.season_extras,
+            self.specials,
         )
         .await
     }
@@ -515,6 +542,8 @@ impl Orchestrator {
         downloader: Arc<Downloader>,
         converter: Arc<Converter>,
         temp_base: PathBuf,
+        season_extras: bool,
+        specials: bool,
     ) -> SeriesResult {
         info!("Processing series: {}", series);
 
@@ -524,21 +553,32 @@ impl Orchestrator {
             series.year.unwrap_or(0)
         );
 
-        // Phase 2: Discovery — series-level + per-season extras
+        // Phase 2: Discovery — series-level + per-season extras + specials
         info!("Phase 2: Discovering content for {}", series);
         let mut all_extras = series_discovery.discover_all(&series).await;
 
-        for &season in &series.seasons {
-            let season_extras = series_discovery
-                .discover_season_extras(&series, season)
-                .await;
-            info!(
-                "Found {} season {} extras for {}",
-                season_extras.len(),
-                season,
-                series
-            );
-            all_extras.extend(season_extras);
+        // Discover season-specific extras if enabled
+        if season_extras {
+            for &season in &series.seasons {
+                let season_extras = series_discovery
+                    .discover_season_extras(&series, season)
+                    .await;
+                info!(
+                    "Found {} season {} extras for {}",
+                    season_extras.len(),
+                    season,
+                    series
+                );
+                all_extras.extend(season_extras);
+            }
+        }
+
+        // Discover Season 0 specials if enabled
+        if specials {
+            info!("Discovering Season 0 specials for {}", series);
+            // TODO: Implement Season 0 discovery
+            // This would call series_discovery.discover_season_zero() when implemented
+            warn!("Season 0 specials discovery not yet implemented");
         }
 
         if all_extras.is_empty() {
@@ -841,6 +881,8 @@ mod tests {
             2,
             false,
             ProcessingMode::Both,
+            false,
+            false,
         );
 
         assert!(result.is_err());
@@ -870,6 +912,8 @@ mod tests {
             1,
             false,
             ProcessingMode::Both,
+            false,
+            false,
         )
         .unwrap();
 
@@ -898,6 +942,8 @@ mod tests {
             1,
             false,
             ProcessingMode::Both,
+            false,
+            false,
         )
         .unwrap();
 
@@ -931,6 +977,8 @@ mod tests {
             1,
             false,
             ProcessingMode::Both,
+            false,
+            false,
         )
         .unwrap();
 
@@ -943,6 +991,8 @@ mod tests {
             2,
             false,
             ProcessingMode::Both,
+            false,
+            false,
         )
         .unwrap();
 
@@ -971,6 +1021,8 @@ mod tests {
                 1,
                 false,
                 ProcessingMode::Both,
+                false,
+                false,
             )
             .unwrap();
 
@@ -1091,6 +1143,8 @@ mod tests {
             1,
             false,
             ProcessingMode::Both,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1106,6 +1160,8 @@ mod tests {
             1,
             false,
             ProcessingMode::Both,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1131,6 +1187,8 @@ mod tests {
                 concurrency,
                 false,
                 ProcessingMode::Both,
+                false,
+                false,
             )
             .unwrap();
 
@@ -1220,6 +1278,8 @@ mod tests {
             1,
             false,
             ProcessingMode::Both,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1234,6 +1294,8 @@ mod tests {
             1,
             false,
             ProcessingMode::MoviesOnly,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1251,6 +1313,8 @@ mod tests {
             1,
             false,
             ProcessingMode::SeriesOnly,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1290,6 +1354,8 @@ mod tests {
             1,
             false,
             ProcessingMode::Both,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1306,6 +1372,8 @@ mod tests {
             1,
             false,
             ProcessingMode::MoviesOnly,
+            false,
+            false,
         )
         .unwrap();
 
@@ -1326,6 +1394,8 @@ mod tests {
             1,
             false,
             ProcessingMode::SeriesOnly,
+            false,
+            false,
         )
         .unwrap();
 
