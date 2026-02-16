@@ -36,21 +36,35 @@ The tool scans a Jellyfin library, discovers extras from multiple sources (TMDB,
 
 - Automatic series vs movie detection
 - Series folder name parsing (with/without year)
-- Season 0 specials discovery and organization
+- **Season 0 specials discovery via TheTVDB API v4** (official special episodes with rich metadata)
 - Season-specific extras discovery
 - Metadata caching with 7-day TTL
 - Season pack post-processing with bonus content extraction
 - Local Season 0 file import and organization
 - Fuzzy title matching (80% similarity threshold)
+- TMDB-to-TVDB ID resolution with fallback search
+- Selective episode monitoring (auto-monitor movies, latest season, manual lists)
+- Sonarr-compatible Season 0 file naming
 - Comprehensive error handling with graceful degradation
 - **Customizable Season 0 folder name** (default: "Specials")
+
+### TheTVDB Integration
+
+- **API v4 authentication** with automatic token management
+- **Season 0 episode fetching** with pagination support
+- **Extended metadata enrichment** (absolute numbers, airing context, movie flags)
+- **ID bridging** from TMDB to TVDB with fuzzy matching fallback (80% threshold)
+- **Episode filtering** with auto-monitor policies
+- **Search query construction** for standard, fallback, movie, and anime episodes
+- **Metadata caching** with 7-day TTL and no expiration for ID mappings
+- **Network resilience** with timeout retry and 401 re-authentication
 
 ### Configuration Options
 
 - `--series-only` - Process only TV series
 - `--movies-only` - Process only movies
 - `--season-extras` - Enable season-specific extras discovery
-- `--specials` - Enable Season 0 specials discovery
+- `--specials` - Enable Season 0 specials discovery via TheTVDB
 - `--specials-folder <NAME>` - Customize Season 0 folder name (default: "Specials")
 - `--force` - Reprocess completed items
 - `--mode` - Content source filtering (all or youtube-only)
