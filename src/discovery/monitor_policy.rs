@@ -70,18 +70,16 @@ impl MonitorPolicy {
         let config_path = series_folder.join("specials_monitor.json");
 
         match fs::read_to_string(&config_path).await {
-            Ok(content) => {
-                match serde_json::from_str::<ManualMonitorConfig>(&content) {
-                    Ok(config) => config.monitored_episodes,
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to parse specials_monitor.json: {}. Using empty list.",
-                            e
-                        );
-                        Vec::new()
-                    }
+            Ok(content) => match serde_json::from_str::<ManualMonitorConfig>(&content) {
+                Ok(config) => config.monitored_episodes,
+                Err(e) => {
+                    log::warn!(
+                        "Failed to parse specials_monitor.json: {}. Using empty list.",
+                        e
+                    );
+                    Vec::new()
                 }
-            }
+            },
             Err(_) => {
                 // File doesn't exist or can't be read - this is normal, just use empty list
                 Vec::new()
@@ -177,11 +175,11 @@ mod tests {
     #[test]
     fn test_filter_monitored_mixed() {
         let episodes = vec![
-            create_test_episode(1, Some(5), None),      // monitored: airs_after_season
-            create_test_episode(2, None, None),         // unmonitored
-            create_test_episode(3, None, Some(true)),   // monitored: is_movie
-            create_test_episode(4, None, None),         // unmonitored
-            create_test_episode(5, None, None),         // monitored: in manual list
+            create_test_episode(1, Some(5), None), // monitored: airs_after_season
+            create_test_episode(2, None, None),    // unmonitored
+            create_test_episode(3, None, Some(true)), // monitored: is_movie
+            create_test_episode(4, None, None),    // unmonitored
+            create_test_episode(5, None, None),    // monitored: in manual list
         ];
 
         let filtered = MonitorPolicy::filter_monitored(&episodes, 5, &[5]);
@@ -248,7 +246,6 @@ mod tests {
         assert_eq!(list, Vec::<u8>::new());
     }
 }
-
 
 #[cfg(test)]
 mod property_tests {

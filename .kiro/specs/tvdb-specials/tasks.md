@@ -85,18 +85,18 @@ Incremental implementation of TheTVDB API v4 integration for Season 0 specials d
     - **Property 4: Monitor Policy Correctness**
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4**
 
-- [ ] 7. Implement SpecialSearcher
-  - [ ] 7.1 Create `src/discovery/special_searcher.rs` with `SpecialSearcher::build_queries`
+- [x] 7. Implement SpecialSearcher
+  - [x] 7.1 Create `src/discovery/special_searcher.rs` with `SpecialSearcher::build_queries`
     - Standard query: `{title} S00E{number:02} {episode_title}`
     - Fallback query: `{title} {episode_title}`
     - Movie query: `{title} {episode_title} movie` (when is_movie=true)
     - Anime query: `{title} OVA {absolute_number}` (when absolute_number present)
     - Title similarity filtering: skip YouTube results below 60% match
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.6_
-  - [ ] 7.2 Write property test for search query construction
+  - [x] 7.2 Write property test for search query construction
     - **Property 6: Search Query Construction Correctness**
     - **Validates: Requirements 6.1, 6.2, 6.3, 6.4**
-  - [ ] 7.3 Write property test for monitored-only query generation
+  - [x] 7.3 Write property test for monitored-only query generation
     - **Property 5: Only Monitored Episodes Produce Search Queries**
     - **Validates: Requirements 5.5**
 

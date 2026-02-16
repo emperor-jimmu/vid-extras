@@ -11,6 +11,7 @@ mod series_cache;
 mod series_orchestrator;
 mod series_tmdb;
 mod series_youtube;
+mod special_searcher;
 mod title_matching;
 mod tmdb;
 mod tvdb;
@@ -32,6 +33,8 @@ pub use season_zero_import::Season0Importer;
 pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};
 #[allow(unused_imports)]
 pub use series_orchestrator::SeriesDiscoveryOrchestrator;
+#[allow(dead_code, unused_imports)]
+pub use special_searcher::SpecialSearcher;
 #[allow(dead_code, unused_imports)]
 pub use tvdb::{
     TvdbApiResponse, TvdbClient, TvdbEpisode, TvdbEpisodeExtended, TvdbEpisodesPage,
