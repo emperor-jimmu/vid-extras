@@ -50,23 +50,36 @@ impl ArchiveOrgDiscoverer {
     /// Build Archive.org search query for a movie
     fn build_query(title: &str, year: u16) -> String {
         format!(
-            "title:\"{}\" AND year:{} AND (subject:\"EPK\" OR subject:\"Making of\")",
+            "title:\"{}\" AND year:{} AND mediatype:movies AND (subject:trailer OR subject:featurette OR subject:\"behind the scenes\" OR subject:\"deleted scene\" OR subject:clip)",
             title, year
         )
     }
 
     /// Map Archive.org subjects to content categories
     fn map_subjects(subjects: &[String]) -> Option<ContentCategory> {
-        // Check for EPK first, then Making of
-        if subjects.iter().any(|s| s.eq_ignore_ascii_case("EPK")) {
-            // EPK can be either featurette or behind the scenes
-            // Default to featurette as it's more general
-            Some(ContentCategory::Featurette)
-        } else if subjects
+        let subjects_lower: Vec<String> = subjects.iter().map(|s| s.to_lowercase()).collect();
+
+        // Check for specific content types in order of priority
+        if subjects_lower.iter().any(|s| s.contains("trailer")) {
+            Some(ContentCategory::Trailer)
+        } else if subjects_lower
             .iter()
-            .any(|s| s.to_lowercase().contains("making of"))
+            .any(|s| s.contains("behind the scenes") || s.contains("making of"))
         {
             Some(ContentCategory::BehindTheScenes)
+        } else if subjects_lower
+            .iter()
+            .any(|s| s.contains("deleted scene") || s.contains("deleted"))
+        {
+            Some(ContentCategory::DeletedScene)
+        } else if subjects_lower
+            .iter()
+            .any(|s| s.contains("featurette") || s.eq("epk"))
+        {
+            Some(ContentCategory::Featurette)
+        } else if subjects_lower.iter().any(|s| s.contains("clip")) {
+            // Generic clips default to featurette
+            Some(ContentCategory::Featurette)
         } else {
             None
         }
@@ -119,6 +132,10 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
             );
             return Ok(Vec::new());
         }
+
+        // NOTE: Archive.org URLs may not be directly downloadable via yt-dlp
+        // The detail page URLs returned here might require special handling or
+        // may not work with yt-dlp at all. This is a known limitation.
 
         info!("Discovering Archive.org content for: {}", movie);
 
