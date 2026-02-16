@@ -77,10 +77,37 @@ async fn main() {
         }
     };
 
+    // Load configuration with TVDB key if specials are enabled
+    // Requirements: 1.1, 8.1
+    let tvdb_api_key = if config.specials {
+        log::info!("Season 0 specials enabled, loading TVDB configuration");
+        match config::Config::load_or_create_with_tvdb(true) {
+            Ok(cfg) => {
+                log::info!("TVDB API key loaded successfully");
+                cfg.tvdb_api_key
+            }
+            Err(e) => {
+                eprintln!("\n✗ Failed to load TVDB API key");
+                eprintln!("  Error: {}", e);
+                eprintln!("\nPlease ensure:");
+                eprintln!("  • TheTVDB API key is configured in config.cfg");
+                eprintln!("    (You will be prompted to enter it)");
+                eprintln!("\nHow to get a TheTVDB API key:");
+                eprintln!("  1. Visit: https://www.thetvdb.com/api-information");
+                eprintln!("  2. Sign up for a free account");
+                eprintln!("  3. Request an API key from your account settings");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
+
     // Create orchestrator with validated configuration
     let orchestrator = match Orchestrator::new(
         config.root_directory.clone(),
         tmdb_api_key,
+        tvdb_api_key,
         config.mode.to_models_source_mode(),
         config.force,
         config.concurrency,

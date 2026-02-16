@@ -28,10 +28,10 @@ impl MonitorPolicy {
         manual_monitor_list: &[u8],
     ) -> bool {
         // Check if airs_after_season matches latest season
-        if let Some(airs_after) = episode.airs_after_season {
-            if airs_after == latest_season {
-                return true;
-            }
+        if let Some(airs_after) = episode.airs_after_season
+            && airs_after == latest_season
+        {
+            return true;
         }
 
         // Check if is_movie is true

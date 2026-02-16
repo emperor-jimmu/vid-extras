@@ -194,16 +194,13 @@ impl IdBridge {
                             if let Some(name) = result.get("name").and_then(|n| n.as_str()) {
                                 let score = FuzzyMatcher::get_similarity_score(series_title, name);
 
-                                if score >= 80 {
-                                    if best_match.is_none() || score > best_match.unwrap().1 {
-                                        if let Some(tvdb_id_str) =
-                                            result.get("tvdb_id").and_then(|id| id.as_str())
-                                        {
-                                            if let Ok(tvdb_id) = tvdb_id_str.parse::<u64>() {
-                                                best_match = Some((tvdb_id, score));
-                                            }
-                                        }
-                                    }
+                                if score >= 80
+                                    && (best_match.is_none() || score > best_match.unwrap().1)
+                                    && let Some(tvdb_id_str) =
+                                        result.get("tvdb_id").and_then(|id| id.as_str())
+                                    && let Ok(tvdb_id) = tvdb_id_str.parse::<u64>()
+                                {
+                                    best_match = Some((tvdb_id, score));
                                 }
                             }
                         }

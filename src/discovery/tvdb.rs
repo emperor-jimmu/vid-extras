@@ -58,6 +58,7 @@ pub struct TvdbEpisodeExtended {
 
 /// Search result from the TVDB `/search` endpoint
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct TvdbSearchResult {
     /// TheTVDB series ID
     pub tvdb_id: String,
@@ -70,6 +71,7 @@ pub struct TvdbSearchResult {
 
 /// Generic API response wrapper
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TvdbApiResponse<T> {
     /// Response status
     pub status: String,
@@ -96,6 +98,7 @@ pub struct TvdbLoginResponse {
 
 /// Search response containing results
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TvdbSearchResponse {
     /// List of search results
     pub data: Vec<TvdbSearchResult>,

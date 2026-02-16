@@ -127,25 +127,25 @@ Incremental implementation of TheTVDB API v4 integration for Season 0 specials d
     - Support force flag to bypass cache
     - _Requirements: 9.1, 9.2, 9.3_
 
-- [ ] 11. Wire into orchestrator and discovery pipeline
-  - [ ] 11.1 Register `tvdb` module in `src/discovery/mod.rs` and re-export public types
+- [x] 11. Wire into orchestrator and discovery pipeline
+  - [x] 11.1 Register `tvdb` module in `src/discovery/mod.rs` and re-export public types
     - Add `mod tvdb`, `mod id_bridge`, `mod monitor_policy`, `mod special_searcher`
     - Re-export `TvdbClient`, `IdBridge`, `MonitorPolicy`, `SpecialSearcher`
     - _Requirements: 6.5_
-  - [ ] 11.2 Update `SeriesDiscoveryOrchestrator` in `src/discovery/series_orchestrator.rs` to integrate TVDB specials flow
+  - [x] 11.2 Update `SeriesDiscoveryOrchestrator` in `src/discovery/series_orchestrator.rs` to integrate TVDB specials flow
     - When specials enabled: resolve TVDB ID via IdBridge, fetch Season 0, enrich, filter via MonitorPolicy, build queries via SpecialSearcher, pass to YouTube pipeline
     - Wire downloaded specials through existing download/convert/organize pipeline
     - _Requirements: 5.5, 6.5_
-  - [ ] 11.3 Update `Orchestrator::new` in `src/orchestrator.rs` to accept and pass TVDB API key
+  - [x] 11.3 Update `Orchestrator::new` in `src/orchestrator.rs` to accept and pass TVDB API key
     - Create `TvdbClient` and `IdBridge` when specials are enabled
     - Pass through to `SeriesDiscoveryOrchestrator`
     - _Requirements: 1.1, 1.2_
-  - [ ] 11.4 Update `main.rs` to load TVDB API key from Config and pass to orchestrator
+  - [x] 11.4 Update `main.rs` to load TVDB API key from Config and pass to orchestrator
     - Load config, check for tvdb_api_key when specials enabled
     - Pass key to orchestrator
     - _Requirements: 1.1, 8.1_
 
-- [ ] 12. Final checkpoint - Ensure all tests pass
+- [x] 12. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

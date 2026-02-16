@@ -52,6 +52,7 @@ impl Validator {
     /// - TVDB API key is configured (if specials_enabled is true)
     ///
     /// Returns Ok((tmdb_key, tvdb_key)) if all checks pass, or ValidationError describing the issue
+    #[allow(dead_code)]
     pub fn validate_dependencies_with_tvdb(
         &self,
         specials_enabled: bool,
@@ -91,6 +92,7 @@ impl Validator {
     /// 2. Verifies connectivity with test authentication
     ///
     /// Returns the TVDB API key if successful, or ValidationError if missing/invalid
+    #[allow(dead_code)]
     fn check_tvdb_api_key(&self) -> Result<String, ValidationError> {
         self.check_tvdb_api_key_internal(true)
     }
@@ -126,9 +128,7 @@ impl Validator {
             }
         }
 
-        Err(ValidationError::MissingApiKey(
-            "TVDB_API_KEY".to_string(),
-        ))
+        Err(ValidationError::MissingApiKey("TVDB_API_KEY".to_string()))
     }
 
     /// Check if a binary exists in the system PATH

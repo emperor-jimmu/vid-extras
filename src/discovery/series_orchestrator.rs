@@ -1,11 +1,17 @@
 // Series discovery orchestrator - coordinates discovery from all sources for TV series
 
-use crate::models::{SeriesEntry, SeriesExtra, SourceMode};
-use log::{debug, info};
+use crate::models::{ContentCategory, SeriesEntry, SeriesExtra, SourceMode, SourceType};
+use log::{debug, info, warn};
+use std::path::PathBuf;
+use std::sync::Arc;
 
+use super::id_bridge::IdBridge;
+use super::monitor_policy::MonitorPolicy;
 use super::series_tmdb::TmdbSeriesDiscoverer;
 use super::series_youtube::YoutubeSeriesDiscoverer;
+use super::special_searcher::SpecialSearcher;
 use super::title_matching;
+use super::tvdb::TvdbClient;
 
 /// Orchestrates series discovery from all sources
 #[allow(dead_code)]
@@ -13,6 +19,8 @@ pub struct SeriesDiscoveryOrchestrator {
     tmdb: TmdbSeriesDiscoverer,
     youtube: YoutubeSeriesDiscoverer,
     mode: SourceMode,
+    tvdb_client: Option<Arc<TvdbClient>>,
+    id_bridge: Option<Arc<IdBridge>>,
 }
 
 impl SeriesDiscoveryOrchestrator {
@@ -23,6 +31,32 @@ impl SeriesDiscoveryOrchestrator {
             tmdb: TmdbSeriesDiscoverer::new(tmdb_api_key),
             youtube: YoutubeSeriesDiscoverer::new(),
             mode,
+            tvdb_client: None,
+            id_bridge: None,
+        }
+    }
+
+    /// Creates a new SeriesDiscoveryOrchestrator with TVDB support enabled
+    #[allow(dead_code)]
+    pub fn new_with_tvdb(
+        tmdb_api_key: String,
+        tvdb_api_key: String,
+        mode: SourceMode,
+        cache_dir: PathBuf,
+    ) -> Self {
+        let tvdb_client = Arc::new(TvdbClient::new(tvdb_api_key));
+        let id_bridge = Arc::new(IdBridge::new(
+            tmdb_api_key.clone(),
+            tvdb_client.clone(),
+            cache_dir,
+        ));
+
+        Self {
+            tmdb: TmdbSeriesDiscoverer::new(tmdb_api_key),
+            youtube: YoutubeSeriesDiscoverer::new(),
+            mode,
+            tvdb_client: Some(tvdb_client),
+            id_bridge: Some(id_bridge),
         }
     }
 
@@ -220,6 +254,152 @@ impl SeriesDiscoveryOrchestrator {
         );
         all_sources
     }
+
+    /// Discovers Season 0 specials for a series via TheTVDB
+    ///
+    /// This method:
+    /// 1. Resolves TMDB ID to TVDB ID via IdBridge
+    /// 2. Fetches Season 0 episodes from TVDB
+    /// 3. Enriches episodes with extended metadata
+    /// 4. Filters episodes via MonitorPolicy
+    /// 5. Builds search queries via SpecialSearcher
+    /// 6. Returns SeriesExtra items for the YouTube pipeline
+    ///
+    /// Requirements: 5.5, 6.5
+    #[allow(dead_code)]
+    pub async fn discover_season_zero(&self, series: &SeriesEntry) -> Vec<SeriesExtra> {
+        // Check if TVDB support is enabled
+        let (tvdb_client, id_bridge) = match (&self.tvdb_client, &self.id_bridge) {
+            (Some(client), Some(bridge)) => (client, bridge),
+            _ => {
+                warn!("TVDB support not enabled, skipping Season 0 discovery");
+                return Vec::new();
+            }
+        };
+
+        // Get TMDB ID for the series
+        let tmdb_id = match self.tmdb.search_series(&series.title, series.year).await {
+            Ok(Some(id)) => id,
+            Ok(None) => {
+                info!("Series not found on TMDB: {}", series);
+                return Vec::new();
+            }
+            Err(e) => {
+                warn!("TMDB series search failed for {}: {}", series, e);
+                return Vec::new();
+            }
+        };
+
+        // Resolve TVDB ID via IdBridge
+        let tvdb_id = match id_bridge.resolve(tmdb_id, &series.title).await {
+            Ok(Some(id)) => id,
+            Ok(None) => {
+                info!("No TVDB ID found for {}", series);
+                return Vec::new();
+            }
+            Err(e) => {
+                warn!("TVDB ID resolution failed for {}: {}", series, e);
+                return Vec::new();
+            }
+        };
+
+        info!("Resolved TVDB ID {} for {}", tvdb_id, series);
+
+        // Fetch Season 0 episodes
+        let episodes = match tvdb_client.get_season_zero(tvdb_id).await {
+            Ok(eps) => eps,
+            Err(e) => {
+                warn!("Failed to fetch Season 0 episodes for {}: {}", series, e);
+                return Vec::new();
+            }
+        };
+
+        if episodes.is_empty() {
+            info!("No Season 0 episodes found for {}", series);
+            return Vec::new();
+        }
+
+        info!("Found {} Season 0 episodes for {}", episodes.len(), series);
+
+        // Enrich episodes with extended metadata
+        let mut enriched_episodes = Vec::new();
+        for episode in episodes {
+            match tvdb_client.get_episode_extended(episode.id).await {
+                Ok(extended) => enriched_episodes.push(extended),
+                Err(e) => {
+                    debug!(
+                        "Failed to enrich episode {} ({}): {}. Using base metadata.",
+                        episode.number, episode.name, e
+                    );
+                    // Convert base episode to extended with None for extended fields
+                    enriched_episodes.push(super::tvdb::TvdbEpisodeExtended {
+                        id: episode.id,
+                        number: episode.number,
+                        name: episode.name,
+                        aired: episode.aired,
+                        overview: episode.overview,
+                        absolute_number: None,
+                        airs_before_season: None,
+                        airs_after_season: None,
+                        airs_before_episode: None,
+                        is_movie: None,
+                    });
+                }
+            }
+        }
+
+        // Load manual monitor list
+        let manual_list = MonitorPolicy::load_manual_monitor_list(&series.path).await;
+
+        // Determine latest season on disk
+        let latest_season = *series.seasons.iter().max().unwrap_or(&0);
+
+        // Filter via MonitorPolicy
+        let monitored =
+            MonitorPolicy::filter_monitored(&enriched_episodes, latest_season, &manual_list);
+
+        info!(
+            "Filtered to {} monitored Season 0 episodes for {}",
+            monitored.len(),
+            series
+        );
+
+        if monitored.is_empty() {
+            return Vec::new();
+        }
+
+        // Build search queries and create SeriesExtra items
+        let mut specials = Vec::new();
+        for episode in monitored {
+            let queries = SpecialSearcher::build_queries(&series.title, episode);
+
+            for query in queries {
+                // Create a SeriesExtra for each query
+                // The YouTube discoverer will handle the actual search
+                specials.push(SeriesExtra {
+                    series_id: format!(
+                        "{}_{}",
+                        series.title.replace(' ', "_"),
+                        series.year.unwrap_or(0)
+                    ),
+                    season_number: Some(0), // Season 0 for specials
+                    category: ContentCategory::Featurette, // Default category for specials
+                    title: format!("S00E{:02} - {}", episode.number, episode.name),
+                    url: format!("ytsearch1:{}", query), // Use yt-dlp search syntax
+                    source_type: SourceType::TheTVDB,
+                    local_path: None,
+                });
+            }
+        }
+
+        info!(
+            "Generated {} search queries for Season 0 specials of {}",
+            specials.len(),
+            series
+        );
+
+        specials
+    }
 }
 
 #[cfg(test)]
@@ -251,6 +431,22 @@ mod tests {
         let orchestrator =
             SeriesDiscoveryOrchestrator::new("test_api_key".to_string(), SourceMode::YoutubeOnly);
         assert_eq!(orchestrator.mode, SourceMode::YoutubeOnly);
+    }
+
+    #[test]
+    fn test_series_discovery_orchestrator_creation_with_tvdb() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let orchestrator = SeriesDiscoveryOrchestrator::new_with_tvdb(
+            "tmdb_key".to_string(),
+            "tvdb_key".to_string(),
+            SourceMode::All,
+            temp_dir.path().to_path_buf(),
+        );
+        assert_eq!(orchestrator.mode, SourceMode::All);
+        assert!(orchestrator.tvdb_client.is_some());
+        assert!(orchestrator.id_bridge.is_some());
     }
 
     #[test]

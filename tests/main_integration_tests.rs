@@ -386,6 +386,7 @@ async fn test_complete_execution_flow() {
         let orchestrator = Orchestrator::new(
             root,
             api_key,
+            None,
             SourceMode::YoutubeOnly,
             false,
             1,

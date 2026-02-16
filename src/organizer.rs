@@ -333,7 +333,7 @@ impl SeriesOrganizer {
                 // Sanitize both series name and episode title for filename safety
                 let sanitized_series = Self::sanitize_filename(series_name);
                 let sanitized_title = Self::sanitize_filename(&special.title);
-                
+
                 // Sonarr-compatible naming: "{series_title} - S00E{episode_number:02} - {sanitized_title}.mkv"
                 // Use aired_episode_number from TVDB (stored in episode_number field)
                 let filename = format!(
@@ -931,7 +931,9 @@ mod tests {
 
         // Create an existing target file
         let existing_target = season_00_dir.join("Breaking Bad - S00E01 - Pilot.mkv");
-        fs::write(&existing_target, b"existing content").await.unwrap();
+        fs::write(&existing_target, b"existing content")
+            .await
+            .unwrap();
 
         let temp_dir = temp.path().join("tmp_downloads");
         fs::create_dir(&temp_dir).await.unwrap();
@@ -1483,7 +1485,7 @@ mod property_tests {
                     "{} - S00E{:02} - {}.mkv",
                     sanitized_series, episode_number, sanitized_title
                 );
-                
+
                 // Requirement 7.3: Uses aired_episode_number from TVDB (stored in episode_number field)
                 let expected_path = specials_dir.join(&expected_filename);
                 prop_assert!(expected_path.exists(), "Expected file not found: {:?}", expected_path);
@@ -1506,7 +1508,7 @@ mod property_tests {
             input in "[\u{0020}-\u{007E}]{1,100}",
         ) {
             let sanitized = SeriesOrganizer::sanitize_filename(&input);
-            
+
             // Property 1: Sanitized output SHALL contain none of the Windows-invalid characters
             let invalid_chars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
             for invalid_char in &invalid_chars {
@@ -1517,7 +1519,7 @@ mod property_tests {
                     sanitized
                 );
             }
-            
+
             // Property 2: Sanitized output SHALL have length <= original string length
             prop_assert!(
                 sanitized.len() <= input.len(),
@@ -1525,7 +1527,7 @@ mod property_tests {
                 sanitized.len(),
                 input.len()
             );
-            
+
             // Additional verification: If input had no invalid chars, output should be identical
             let has_invalid = input.chars().any(|c| invalid_chars.contains(&c));
             if !has_invalid {

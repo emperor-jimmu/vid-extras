@@ -143,11 +143,11 @@ pub struct Orchestrator {
 
 impl Orchestrator {
     /// Create a new Orchestrator with the given configuration
-    /// Create a new Orchestrator with the given configuration
     ///
     /// # Arguments
     /// * `root_dir` - Root directory containing media folders
     /// * `tmdb_api_key` - TMDB API key for content discovery
+    /// * `tvdb_api_key` - Optional TheTVDB API key for Season 0 specials discovery
     /// * `mode` - Content source mode (All or YoutubeOnly)
     /// * `force` - Ignore done markers and reprocess all media
     /// * `concurrency` - Maximum number of media items to process concurrently
@@ -160,6 +160,7 @@ impl Orchestrator {
     pub fn new(
         root_dir: PathBuf,
         tmdb_api_key: String,
+        tvdb_api_key: Option<String>,
         mode: SourceMode,
         force: bool,
         concurrency: usize,
@@ -200,10 +201,24 @@ impl Orchestrator {
             info!("  Specials folder: {}", specials_folder);
         }
 
+        // Create SeriesDiscoveryOrchestrator with or without TVDB support
+        let series_discovery = if let (true, Some(tvdb_key)) = (specials, tvdb_api_key) {
+            let cache_dir = root_dir.join(".cache").join("tvdb_ids");
+            info!("  TVDB support enabled for Season 0 specials");
+            Arc::new(SeriesDiscoveryOrchestrator::new_with_tvdb(
+                tmdb_api_key.clone(),
+                tvdb_key,
+                mode,
+                cache_dir,
+            ))
+        } else {
+            Arc::new(SeriesDiscoveryOrchestrator::new(tmdb_api_key.clone(), mode))
+        };
+
         Ok(Self {
             scanner: Scanner::new(root_dir, force, single),
             discovery: Arc::new(DiscoveryOrchestrator::new(tmdb_api_key.clone(), mode)),
-            series_discovery: Arc::new(SeriesDiscoveryOrchestrator::new(tmdb_api_key, mode)),
+            series_discovery,
             downloader: Arc::new(Downloader::new(temp_base.clone())),
             converter: Arc::new(Converter::new()),
             temp_base,
@@ -547,6 +562,7 @@ impl Orchestrator {
     }
 
     /// Static version of process_series for parallel execution
+    #[allow(clippy::too_many_arguments)]
     async fn process_series_static(
         series: SeriesEntry,
         series_discovery: Arc<SeriesDiscoveryOrchestrator>,
@@ -588,9 +604,13 @@ impl Orchestrator {
         // Discover Season 0 specials if enabled
         if specials {
             info!("Discovering Season 0 specials for {}", series);
-            // TODO: Implement Season 0 discovery
-            // This would call series_discovery.discover_season_zero() when implemented
-            warn!("Season 0 specials discovery not yet implemented");
+            let season_zero_extras = series_discovery.discover_season_zero(&series).await;
+            info!(
+                "Found {} Season 0 specials for {}",
+                season_zero_extras.len(),
+                series
+            );
+            all_extras.extend(season_zero_extras);
         }
 
         if all_extras.is_empty() {
@@ -888,6 +908,7 @@ mod tests {
         let result = Orchestrator::new(
             nonexistent,
             "fake_api_key".to_string(),
+            None,
             SourceMode::All,
             false,
             2,
@@ -920,6 +941,7 @@ mod tests {
         let mut orchestrator = Orchestrator::new(
             root_dir,
             "fake_api_key".to_string(),
+            None,
             SourceMode::All,
             false,
             1,
@@ -951,6 +973,7 @@ mod tests {
         let orchestrator = Orchestrator::new(
             root_dir,
             "fake_api_key".to_string(),
+            None,
             SourceMode::All,
             false,
             1,
@@ -987,6 +1010,7 @@ mod tests {
         let orchestrator_seq = Orchestrator::new(
             root_dir.clone(),
             "fake_api_key".to_string(),
+            None,
             SourceMode::YoutubeOnly,
             false,
             1,
@@ -1002,6 +1026,7 @@ mod tests {
         let orchestrator_par = Orchestrator::new(
             root_dir,
             "fake_api_key".to_string(),
+            None,
             SourceMode::YoutubeOnly,
             false,
             2,
@@ -1033,6 +1058,7 @@ mod tests {
             let mut orchestrator = Orchestrator::new(
                 root_dir,
                 "fake_api_key".to_string(),
+                None,
                 SourceMode::All,
                 false,
                 1,
@@ -1156,6 +1182,7 @@ mod tests {
         let orchestrator = Orchestrator::new(
             root_dir.clone(),
             "fake_api_key".to_string(),
+            None,
             SourceMode::YoutubeOnly,
             false,
             1,
@@ -1174,6 +1201,7 @@ mod tests {
         let orchestrator_force = Orchestrator::new(
             root_dir,
             "fake_api_key".to_string(),
+            None,
             SourceMode::YoutubeOnly,
             true,
             1,
@@ -1202,6 +1230,7 @@ mod tests {
             let orchestrator = Orchestrator::new(
                 root_dir.clone(),
                 "fake_api_key".to_string(),
+                None,
                 SourceMode::All,
                 false,
                 concurrency,
@@ -1294,6 +1323,7 @@ mod tests {
         let orchestrator_both = Orchestrator::new(
             root_dir.clone(),
             "fake_api_key".to_string(),
+            None,
             SourceMode::All,
             false,
             1,
@@ -1311,6 +1341,7 @@ mod tests {
         let orchestrator_movies = Orchestrator::new(
             root_dir.clone(),
             "fake_api_key".to_string(),
+            None,
             SourceMode::All,
             false,
             1,
@@ -1331,6 +1362,7 @@ mod tests {
         let orchestrator_series = Orchestrator::new(
             root_dir,
             "fake_api_key".to_string(),
+            None,
             SourceMode::All,
             false,
             1,
@@ -1373,6 +1405,7 @@ mod tests {
         let orchestrator = Orchestrator::new(
             root_dir.clone(),
             "fake_api_key".to_string(),
+            None,
             SourceMode::YoutubeOnly,
             false,
             1,
@@ -1392,6 +1425,7 @@ mod tests {
         let orchestrator_movies = Orchestrator::new(
             root_dir.clone(),
             "fake_api_key".to_string(),
+            None,
             SourceMode::YoutubeOnly,
             false,
             1,
@@ -1415,6 +1449,7 @@ mod tests {
         let orchestrator_series = Orchestrator::new(
             root_dir,
             "fake_api_key".to_string(),
+            None,
             SourceMode::YoutubeOnly,
             false,
             1,
