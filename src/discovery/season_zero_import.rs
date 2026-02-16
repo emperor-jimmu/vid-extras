@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 /// Handles scanning and importing of local Season 0 files
+#[allow(dead_code)]
 pub struct Season0Importer;
 
+#[allow(dead_code)]
 impl Season0Importer {
     /// Scan series folder for S00Exx files
     pub async fn scan_for_season_zero_files(series_path: &Path) -> Result<Vec<PathBuf>, String> {
@@ -25,24 +27,21 @@ impl Season0Importer {
             let path = entry.path();
 
             // Skip Season 00 folder itself
-            if let Some(name) = path.file_name() {
-                if let Some(name_str) = name.to_str() {
-                    if name_str == "Season 00" {
-                        continue;
-                    }
-                }
+            if let Some(name) = path.file_name()
+                && let Some(name_str) = name.to_str()
+                && name_str == "Season 00"
+            {
+                continue;
             }
 
             // Check if it's a video file matching S00Exx pattern
-            if Self::is_video_file(&path) {
-                if let Some(filename) = path.file_name() {
-                    if let Some(filename_str) = filename.to_str() {
-                        if season_zero_regex.is_match(filename_str) {
-                            debug!("Found Season 0 file: {}", filename_str);
-                            season_zero_files.push(path);
-                        }
-                    }
-                }
+            if Self::is_video_file(&path)
+                && let Some(filename) = path.file_name()
+                && let Some(filename_str) = filename.to_str()
+                && season_zero_regex.is_match(filename_str)
+            {
+                debug!("Found Season 0 file: {}", filename_str);
+                season_zero_files.push(path);
             }
         }
 
@@ -144,26 +143,25 @@ impl Season0Importer {
         let mut seen_episodes = HashSet::new();
 
         for file_path in files {
-            if let Some(filename) = file_path.file_name().and_then(|n| n.to_str()) {
-                if let Some(episode_num) = Self::extract_episode_number(filename) {
-                    if seen_episodes.contains(&episode_num) {
-                        warn!(
-                            "Duplicate Season 0 episode number: {}. Skipping.",
-                            episode_num
-                        );
+            if let Some(filename) = file_path.file_name().and_then(|n| n.to_str())
+                && let Some(episode_num) = Self::extract_episode_number(filename)
+            {
+                if seen_episodes.contains(&episode_num) {
+                    warn!(
+                        "Duplicate Season 0 episode number: {}. Skipping.",
+                        episode_num
+                    );
+                    skipped += 1;
+                    continue;
+                }
+
+                seen_episodes.insert(episode_num);
+
+                match Self::import_season_zero_file(&file_path, series_path, series_name).await {
+                    Ok(()) => imported += 1,
+                    Err(e) => {
+                        warn!("Failed to import Season 0 file: {}", e);
                         skipped += 1;
-                        continue;
-                    }
-
-                    seen_episodes.insert(episode_num);
-
-                    match Self::import_season_zero_file(&file_path, series_path, series_name).await
-                    {
-                        Ok(()) => imported += 1,
-                        Err(e) => {
-                            warn!("Failed to import Season 0 file: {}", e);
-                            skipped += 1;
-                        }
                     }
                 }
             }

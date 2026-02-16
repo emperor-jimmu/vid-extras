@@ -14,9 +14,12 @@ mod tmdb;
 mod youtube;
 
 // Re-export public API
+#[allow(dead_code, unused_imports)]
 pub use fuzzy_matching::FuzzyMatcher;
 pub use orchestrator::DiscoveryOrchestrator;
+#[allow(dead_code, unused_imports)]
 pub use season_pack::SeasonPackProcessor;
+#[allow(dead_code, unused_imports)]
 pub use season_zero_import::Season0Importer;
 #[allow(unused_imports)]
 pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};

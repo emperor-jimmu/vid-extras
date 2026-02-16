@@ -4,8 +4,10 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 /// Handles extraction and processing of season pack archives
+#[allow(dead_code)]
 pub struct SeasonPackProcessor;
 
+#[allow(dead_code)]
 impl SeasonPackProcessor {
     /// Check if a file is an archive (zip, rar, 7z, tar.gz)
     pub fn is_archive(path: &Path) -> bool {
@@ -33,16 +35,16 @@ impl SeasonPackProcessor {
             .map_err(|e| format!("Failed to create extraction directory: {}", e))?;
 
         // Determine archive type and extract
-        if let Some(ext) = archive_path.extension() {
-            if let Some(ext_str) = ext.to_str() {
-                let ext_lower = ext_str.to_lowercase();
-                match ext_lower.as_str() {
-                    "zip" => Self::extract_zip(archive_path, &extract_dir).await?,
-                    "7z" => Self::extract_7z(archive_path, &extract_dir).await?,
-                    "rar" => Self::extract_rar(archive_path, &extract_dir).await?,
-                    "tar" | "gz" | "tgz" => Self::extract_tar(archive_path, &extract_dir).await?,
-                    _ => return Err(format!("Unsupported archive format: {}", ext_str)),
-                }
+        if let Some(ext) = archive_path.extension()
+            && let Some(ext_str) = ext.to_str()
+        {
+            let ext_lower = ext_str.to_lowercase();
+            match ext_lower.as_str() {
+                "zip" => Self::extract_zip(archive_path, &extract_dir).await?,
+                "7z" => Self::extract_7z(archive_path, &extract_dir).await?,
+                "rar" => Self::extract_rar(archive_path, &extract_dir).await?,
+                "tar" | "gz" | "tgz" => Self::extract_tar(archive_path, &extract_dir).await?,
+                _ => return Err(format!("Unsupported archive format: {}", ext_str)),
             }
         }
 
@@ -181,15 +183,13 @@ impl SeasonPackProcessor {
 
                 if path.is_dir() {
                     dirs_to_scan.push(path);
-                } else if Self::is_video_file(&path) {
-                    if let Some(filename) = path.file_name() {
-                        if let Some(filename_str) = filename.to_str() {
-                            if let Some(category) = Self::identify_bonus_content(filename_str) {
-                                debug!("Found bonus content: {} -> {:?}", filename_str, category);
-                                bonus_files.push((path, category));
-                            }
-                        }
-                    }
+                } else if Self::is_video_file(&path)
+                    && let Some(filename) = path.file_name()
+                    && let Some(filename_str) = filename.to_str()
+                    && let Some(category) = Self::identify_bonus_content(filename_str)
+                {
+                    debug!("Found bonus content: {} -> {:?}", filename_str, category);
+                    bonus_files.push((path, category));
                 }
             }
         }

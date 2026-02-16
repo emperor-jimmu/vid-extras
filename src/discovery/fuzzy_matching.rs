@@ -1,8 +1,10 @@
 use log::debug;
 
 /// Handles fuzzy title matching for series and extras
+#[allow(dead_code)]
 pub struct FuzzyMatcher;
 
+#[allow(dead_code)]
 impl FuzzyMatcher {
     /// Normalize a string for comparison (lowercase, remove special characters)
     pub fn normalize(text: &str) -> String {
@@ -29,16 +31,19 @@ impl FuzzyMatcher {
 
         let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
 
-        for i in 0..=len1 {
-            matrix[i][0] = i;
+        for (i, row) in matrix.iter_mut().enumerate() {
+            row[0] = i;
         }
-        for j in 0..=len2 {
-            matrix[0][j] = j;
+        for (j, cell) in matrix[0].iter_mut().enumerate() {
+            *cell = j;
         }
+
+        let s1_chars: Vec<char> = s1.chars().collect();
+        let s2_chars: Vec<char> = s2.chars().collect();
 
         for i in 1..=len1 {
             for j in 1..=len2 {
-                let cost = if s1.chars().nth(i - 1) == s2.chars().nth(j - 1) {
+                let cost = if s1_chars[i - 1] == s2_chars[j - 1] {
                     0
                 } else {
                     1
