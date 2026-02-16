@@ -105,7 +105,9 @@ pub fn extract_season_numbers(title: &str) -> Vec<u8> {
 
     static SEASON_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         vec![
-            // "Season 3", "season 03", "Season 12"
+            // "Season (1)", "Season(1)" - parentheses format
+            Regex::new(r"(?i)\bseason\s*\(\s*(\d{1,2})\s*\)").expect("valid regex"),
+            // "Season 3", "season 03", "Season 12" - standard format
             Regex::new(r"(?i)\bseason\s+(\d{1,2})\b").expect("valid regex"),
             // "S03E01", "S3E1", "S05" (with or without episode)
             Regex::new(r"(?i)\bS(\d{1,2})(?:E\d+)?\b").expect("valid regex"),
@@ -397,6 +399,16 @@ mod tests {
             vec![1]
         );
         assert_eq!(extract_season_numbers("season 03 extras"), vec![3]);
+
+        // "Season (N)" format with parentheses
+        assert_eq!(
+            extract_season_numbers("Breaking Bad (2008) - Season (1) Extras - The Writer s Lab"),
+            vec![1]
+        );
+        assert_eq!(
+            extract_season_numbers("Season (2) Behind the Scenes"),
+            vec![2]
+        );
 
         // "SxxExx" format
         assert_eq!(extract_season_numbers("Breaking Bad S03E01"), vec![3]);
