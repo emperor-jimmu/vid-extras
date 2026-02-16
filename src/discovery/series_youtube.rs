@@ -36,7 +36,6 @@ impl YoutubeSeriesDiscoverer {
                 format!("{} behind the scenes", base),
                 ContentCategory::BehindTheScenes,
             ),
-            (format!("{} bloopers", base), ContentCategory::Featurette),
             (format!("{} featurette", base), ContentCategory::Featurette),
         ]
     }
@@ -63,7 +62,6 @@ impl YoutubeSeriesDiscoverer {
                 format!("{} behind the scenes", base),
                 ContentCategory::BehindTheScenes,
             ),
-            (format!("{} bloopers", base), ContentCategory::Featurette),
             (format!("{} featurette", base), ContentCategory::Featurette),
         ]
     }
@@ -327,8 +325,8 @@ mod tests {
 
             let queries = YoutubeSeriesDiscoverer::build_series_search_queries(title_trimmed, year);
 
-            // Should have 4 content types
-            prop_assert_eq!(queries.len(), 4);
+            // Should have 3 content types
+            prop_assert_eq!(queries.len(), 3);
 
             // Extract query strings and categories
             let query_strings: Vec<_> = queries.iter().map(|(q, _)| q.clone()).collect();
@@ -351,13 +349,11 @@ mod tests {
             prop_assert_eq!(categories[0], ContentCategory::Interview);
             prop_assert_eq!(categories[1], ContentCategory::BehindTheScenes);
             prop_assert_eq!(categories[2], ContentCategory::Featurette);
-            prop_assert_eq!(categories[3], ContentCategory::Featurette);
 
             // Verify query patterns contain expected keywords
             prop_assert!(query_strings[0].contains("interview"));
             prop_assert!(query_strings[1].contains("behind the scenes"));
-            prop_assert!(query_strings[2].contains("bloopers"));
-            prop_assert!(query_strings[3].contains("featurette"));
+            prop_assert!(query_strings[2].contains("featurette"));
         }
     }
 
@@ -377,8 +373,8 @@ mod tests {
 
             let queries = YoutubeSeriesDiscoverer::build_season_search_queries(title_trimmed, year, season);
 
-            // Should have 4 content types
-            prop_assert_eq!(queries.len(), 4);
+            // Should have 3 content types
+            prop_assert_eq!(queries.len(), 3);
 
             // Extract query strings
             let query_strings: Vec<_> = queries.iter().map(|(q, _)| q.clone()).collect();
@@ -408,7 +404,7 @@ mod tests {
     fn test_series_query_construction_with_year() {
         let queries =
             YoutubeSeriesDiscoverer::build_series_search_queries("Breaking Bad", Some(2008));
-        assert_eq!(queries.len(), 4);
+        assert_eq!(queries.len(), 3);
         assert!(queries[0].0.contains("Breaking Bad"));
         assert!(queries[0].0.contains("2008"));
         assert!(queries[0].0.contains("interview"));
@@ -417,7 +413,7 @@ mod tests {
     #[test]
     fn test_series_query_construction_without_year() {
         let queries = YoutubeSeriesDiscoverer::build_series_search_queries("Breaking Bad", None);
-        assert_eq!(queries.len(), 4);
+        assert_eq!(queries.len(), 3);
         assert!(queries[0].0.contains("Breaking Bad"));
         assert!(!queries[0].0.contains("cast interview cast interview")); // No double year
     }
@@ -426,7 +422,7 @@ mod tests {
     fn test_season_query_construction_with_year() {
         let queries =
             YoutubeSeriesDiscoverer::build_season_search_queries("Breaking Bad", Some(2008), 1);
-        assert_eq!(queries.len(), 4);
+        assert_eq!(queries.len(), 3);
         assert!(queries[0].0.contains("Breaking Bad"));
         assert!(queries[0].0.contains("2008"));
         assert!(queries[0].0.contains("season 1"));
@@ -435,7 +431,7 @@ mod tests {
     #[test]
     fn test_season_query_construction_without_year() {
         let queries = YoutubeSeriesDiscoverer::build_season_search_queries("Breaking Bad", None, 5);
-        assert_eq!(queries.len(), 4);
+        assert_eq!(queries.len(), 3);
         assert!(queries[0].0.contains("Breaking Bad"));
         assert!(queries[0].0.contains("season 5"));
     }
@@ -444,7 +440,7 @@ mod tests {
     fn test_season_query_construction_high_season_number() {
         let queries =
             YoutubeSeriesDiscoverer::build_season_search_queries("Game of Thrones", Some(2011), 8);
-        assert_eq!(queries.len(), 4);
+        assert_eq!(queries.len(), 3);
         assert!(queries[0].0.contains("season 8"));
     }
 
