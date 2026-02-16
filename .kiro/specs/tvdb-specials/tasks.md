@@ -73,15 +73,15 @@ Incremental implementation of TheTVDB API v4 integration for Season 0 specials d
     - **Property 10: Fuzzy Match ID Resolution Selects Highest Score Above Threshold**
     - **Validates: Requirements 2.3**
 
-- [ ] 6. Implement MonitorPolicy
-  - [ ] 6.1 Create `src/discovery/monitor_policy.rs` with `MonitorPolicy::should_monitor` and `MonitorPolicy::filter_monitored`
+- [x] 6. Implement MonitorPolicy
+  - [x] 6.1 Create `src/discovery/monitor_policy.rs` with `MonitorPolicy::should_monitor` and `MonitorPolicy::filter_monitored`
     - Default all episodes to unmonitored
     - Auto-monitor if airs_after_season == latest season on disk
     - Auto-monitor if is_movie == true
     - Monitor if episode number is in manual monitor list
     - Read manual list from `{series_folder}/specials_monitor.json`
     - _Requirements: 5.1, 5.2, 5.3, 5.4_
-  - [ ] 6.2 Write property test for monitor policy correctness
+  - [x] 6.2 Write property test for monitor policy correctness
     - **Property 4: Monitor Policy Correctness**
     - **Validates: Requirements 5.1, 5.2, 5.3, 5.4**
 

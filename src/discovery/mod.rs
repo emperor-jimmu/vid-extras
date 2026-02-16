@@ -3,6 +3,7 @@
 mod archive;
 mod fuzzy_matching;
 mod id_bridge;
+mod monitor_policy;
 mod orchestrator;
 mod season_pack;
 mod season_zero_import;
@@ -20,6 +21,8 @@ mod youtube;
 pub use fuzzy_matching::FuzzyMatcher;
 #[allow(dead_code, unused_imports)]
 pub use id_bridge::IdBridge;
+#[allow(dead_code, unused_imports)]
+pub use monitor_policy::MonitorPolicy;
 pub use orchestrator::DiscoveryOrchestrator;
 #[allow(dead_code, unused_imports)]
 pub use season_pack::SeasonPackProcessor;
