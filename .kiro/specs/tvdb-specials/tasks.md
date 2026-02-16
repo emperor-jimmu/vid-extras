@@ -52,24 +52,24 @@ Incremental implementation of TheTVDB API v4 integration for Season 0 specials d
     - Retain base metadata on enrichment failure
     - _Requirements: 4.1, 4.2, 4.3_
 
-- [ ] 4. Checkpoint - Ensure all tests pass
+- [x] 4. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Implement IdBridge for TMDB-to-TVDB ID resolution
-  - [ ] 5.1 Implement `IdMappingCache` in `src/discovery/id_bridge.rs`
+- [x] 5. Implement IdBridge for TMDB-to-TVDB ID resolution
+  - [x] 5.1 Implement `IdMappingCache` in `src/discovery/id_bridge.rs`
     - File-based cache with no TTL expiration for ID mappings
     - Store as JSON files in `.cache/tvdb_ids/` under series path
     - _Requirements: 2.2, 2.5, 9.4_
-  - [ ] 5.2 Write property test for ID mapping cache no expiration
+  - [x] 5.2 Write property test for ID mapping cache no expiration
     - **Property 9: ID Mapping Cache Has No Expiration**
     - **Validates: Requirements 9.4**
-  - [ ] 5.3 Implement `IdBridge` with `resolve`, `query_tmdb_external_ids`, and `search_tvdb_fallback` methods
+  - [x] 5.3 Implement `IdBridge` with `resolve`, `query_tmdb_external_ids`, and `search_tvdb_fallback` methods
     - First try TMDB `/tv/{tmdb_id}/external_ids` for tvdb_id
     - Fallback to TVDB `/search?q={title}` with fuzzy matching (80% threshold)
     - Log warning and return None if no match found
     - Cache resolved IDs
     - _Requirements: 2.1, 2.3, 2.4, 2.5_
-  - [ ] 5.4 Write property test for fuzzy match ID resolution
+  - [x] 5.4 Write property test for fuzzy match ID resolution
     - **Property 10: Fuzzy Match ID Resolution Selects Highest Score Above Threshold**
     - **Validates: Requirements 2.3**
 

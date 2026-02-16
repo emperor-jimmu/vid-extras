@@ -2,6 +2,7 @@
 
 mod archive;
 mod fuzzy_matching;
+mod id_bridge;
 mod orchestrator;
 mod season_pack;
 mod season_zero_import;
@@ -17,6 +18,8 @@ mod youtube;
 // Re-export public API
 #[allow(dead_code, unused_imports)]
 pub use fuzzy_matching::FuzzyMatcher;
+#[allow(dead_code, unused_imports)]
+pub use id_bridge::IdBridge;
 pub use orchestrator::DiscoveryOrchestrator;
 #[allow(dead_code, unused_imports)]
 pub use season_pack::SeasonPackProcessor;
@@ -28,8 +31,8 @@ pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};
 pub use series_orchestrator::SeriesDiscoveryOrchestrator;
 #[allow(dead_code, unused_imports)]
 pub use tvdb::{
-    TvdbApiResponse, TvdbEpisode, TvdbEpisodeExtended, TvdbEpisodesPage, TvdbLoginResponse,
-    TvdbSearchResponse, TvdbSearchResult,
+    TvdbApiResponse, TvdbClient, TvdbEpisode, TvdbEpisodeExtended, TvdbEpisodesPage,
+    TvdbLoginResponse, TvdbSearchResponse, TvdbSearchResult,
 };
 
 use crate::error::DiscoveryError;

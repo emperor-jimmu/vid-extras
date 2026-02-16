@@ -381,7 +381,7 @@ impl Downloader {
             if clean_filename != filename {
                 // Sanitize filename for Windows compatibility
                 let sanitized_filename = Self::sanitize_filename(&clean_filename);
-                
+
                 let clean_path = path
                     .parent()
                     .unwrap_or_else(|| Path::new("."))
@@ -394,7 +394,10 @@ impl Downloader {
                         return Ok(clean_path);
                     }
                     Err(e) => {
-                        warn!("Failed to rename {} to {}: {}", filename, sanitized_filename, e);
+                        warn!(
+                            "Failed to rename {} to {}: {}",
+                            filename, sanitized_filename, e
+                        );
                         // Return original path if rename fails
                         return Ok(path.to_path_buf());
                     }

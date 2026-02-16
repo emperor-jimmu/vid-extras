@@ -115,7 +115,6 @@ impl Config {
         Ok(api_key)
     }
 
-
     /// Load or create configuration
     ///
     /// Attempts to load config from file. If the file doesn't exist or is invalid,
@@ -267,7 +266,6 @@ mod tests {
         assert_eq!(config.tvdb_api_key, Some("my_tvdb_key".to_string()));
     }
 }
-
 
 #[cfg(test)]
 mod property_tests {

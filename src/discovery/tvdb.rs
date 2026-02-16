@@ -134,7 +134,9 @@ impl TvdbClient {
             .json(&body)
             .send()
             .await
-            .map_err(|e| DiscoveryError::TvdbApiError(format!("Authentication request failed: {}", e)))?;
+            .map_err(|e| {
+                DiscoveryError::TvdbApiError(format!("Authentication request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -148,10 +150,9 @@ impl TvdbClient {
             )));
         }
 
-        let login_response: TvdbLoginResponse = response
-            .json()
-            .await
-            .map_err(|e| DiscoveryError::TvdbApiError(format!("Failed to parse login response: {}", e)))?;
+        let login_response: TvdbLoginResponse = response.json().await.map_err(|e| {
+            DiscoveryError::TvdbApiError(format!("Failed to parse login response: {}", e))
+        })?;
 
         debug!("Successfully authenticated with TheTVDB API");
         Ok(login_response.token)
@@ -173,7 +174,7 @@ impl TvdbClient {
     }
 
     /// Execute an authenticated GET request with auto-retry on 401
-    async fn authenticated_get(&self, url: &str) -> Result<reqwest::Response, DiscoveryError> {
+    pub async fn authenticated_get(&self, url: &str) -> Result<reqwest::Response, DiscoveryError> {
         let token = self.ensure_token().await?;
 
         let response = self
@@ -204,7 +205,9 @@ impl TvdbClient {
                 .header("Authorization", format!("Bearer {}", new_token))
                 .send()
                 .await
-                .map_err(|e| DiscoveryError::TvdbApiError(format!("Retry request failed: {}", e)))?;
+                .map_err(|e| {
+                    DiscoveryError::TvdbApiError(format!("Retry request failed: {}", e))
+                })?;
 
             return Ok(retry_response);
         }
@@ -269,8 +272,14 @@ impl TvdbClient {
     }
 
     /// Fetch extended episode details for enrichment
-    pub async fn get_episode_extended(&self, episode_id: u64) -> Result<TvdbEpisodeExtended, DiscoveryError> {
-        let url = format!("https://api4.thetvdb.com/v4/episodes/{}/extended", episode_id);
+    pub async fn get_episode_extended(
+        &self,
+        episode_id: u64,
+    ) -> Result<TvdbEpisodeExtended, DiscoveryError> {
+        let url = format!(
+            "https://api4.thetvdb.com/v4/episodes/{}/extended",
+            episode_id
+        );
 
         debug!("Fetching extended episode data from: {}", url);
 
@@ -283,9 +292,13 @@ impl TvdbClient {
             )));
         }
 
-        let api_response: TvdbApiResponse<TvdbEpisodeExtended> = response.json().await.map_err(|e| {
-            DiscoveryError::TvdbApiError(format!("Failed to parse extended episode response: {}", e))
-        })?;
+        let api_response: TvdbApiResponse<TvdbEpisodeExtended> =
+            response.json().await.map_err(|e| {
+                DiscoveryError::TvdbApiError(format!(
+                    "Failed to parse extended episode response: {}",
+                    e
+                ))
+            })?;
 
         Ok(api_response.data)
     }
@@ -413,7 +426,6 @@ mod tests {
         assert!(token.is_none());
     }
 }
-
 
 #[cfg(test)]
 mod property_tests {
