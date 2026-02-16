@@ -178,13 +178,23 @@ impl YoutubeSeriesDiscoverer {
                         // Extract actual season number from title
                         let extracted_seasons = title_matching::extract_season_numbers(&title);
 
-                        // If title mentions specific seasons, use those; otherwise fall back
-                        // to the caller-provided season number so season-specific queries
-                        // tag their results correctly.
+                        // Determine final season number:
+                        // - If doing a season-specific search (season_number is Some), only include
+                        //   videos that explicitly mention a season in their title
+                        // - If doing a series-level search (season_number is None), include all videos
                         let final_season = if !extracted_seasons.is_empty() {
                             Some(extracted_seasons[0])
+                        } else if season_number.is_some() {
+                            // Season-specific search but title doesn't mention season
+                            // Skip this video as it's likely general series content
+                            debug!(
+                                "Skipping '{}' - season-specific search but no season in title",
+                                title
+                            );
+                            continue;
                         } else {
-                            season_number
+                            // Series-level search, no season in title - that's fine
+                            None
                         };
 
                         sources.push(SeriesExtra {
