@@ -2,6 +2,7 @@
 
 mod archive;
 mod orchestrator;
+mod series_cache;
 mod series_orchestrator;
 mod series_tmdb;
 mod series_youtube;
@@ -11,6 +12,8 @@ mod youtube;
 
 // Re-export public API
 pub use orchestrator::DiscoveryOrchestrator;
+#[allow(unused_imports)]
+pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};
 #[allow(unused_imports)]
 pub use series_orchestrator::SeriesDiscoveryOrchestrator;
 

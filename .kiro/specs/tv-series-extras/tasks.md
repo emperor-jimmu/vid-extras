@@ -131,17 +131,17 @@ The plan is organized into discrete, incremental tasks that build upon each othe
     - Test temp folder cleanup
     - _Requirements: 7.9, 8.5_
 
-- [ ] 9. Add metadata caching support
-  - [ ] 9.1 Create cache module for series metadata
+- [x] 9. Add metadata caching support
+  - [x] 9.1 Create cache module for series metadata
     - Store TMDB series metadata in .cache directory under series folder
     - Include 7-day TTL in cache files
     - Implement cache validation (check age)
     - Support force flag to bypass cache
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5_
-  - [ ] 9.2 Write property test for metadata cache freshness
+  - [x] 9.2 Write property test for metadata cache freshness
     - **Property 14: Metadata Cache Freshness**
     - **Validates: Requirements 14.1, 14.2, 14.3, 14.4**
-  - [ ] 9.3 Write unit tests for cache module
+  - [x] 9.3 Write unit tests for cache module
     - Test cache creation and reading
     - Test TTL expiration
     - Test force flag behavior
