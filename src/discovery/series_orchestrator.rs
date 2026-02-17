@@ -60,6 +60,19 @@ impl SeriesDiscoveryOrchestrator {
         }
     }
 
+    /// Check if a string contains non-Latin characters (e.g., CJK, Arabic, Cyrillic)
+    /// Used to detect episode names that likely need English translation
+    fn contains_non_latin(text: &str) -> bool {
+        text.chars().any(|c| {
+            let c = c as u32;
+            // CJK Unified Ideographs, Hiragana, Katakana, Hangul, Arabic, Cyrillic
+            (0x3000..=0x9FFF).contains(&c)
+                || (0xAC00..=0xD7AF).contains(&c)
+                || (0x0600..=0x06FF).contains(&c)
+                || (0x0400..=0x04FF).contains(&c)
+        })
+    }
+
     /// Discovers video sources from all configured sources based on mode
     ///
     /// In All mode: queries TMDB and YouTube
@@ -325,7 +338,20 @@ impl SeriesDiscoveryOrchestrator {
         let mut enriched_episodes = Vec::new();
         for episode in episodes {
             match tvdb_client.get_episode_extended(episode.id).await {
-                Ok(extended) => enriched_episodes.push(extended),
+                Ok(mut extended) => {
+                    // Fetch English translation for non-Latin episode names
+                    if Self::contains_non_latin(&extended.name)
+                        && let Some(eng_name) =
+                            tvdb_client.get_episode_english_name(extended.id).await
+                    {
+                        debug!(
+                            "Fetched English name '{}' for episode '{}' ({})",
+                            eng_name, extended.name, extended.id
+                        );
+                        extended.name_eng = Some(eng_name);
+                    }
+                    enriched_episodes.push(extended);
+                }
                 Err(e) => {
                     debug!(
                         "Failed to enrich episode {} ({}): {}. Using base metadata.",
@@ -336,6 +362,7 @@ impl SeriesDiscoveryOrchestrator {
                         id: episode.id,
                         number: episode.number,
                         name: episode.name,
+                        name_eng: None,
                         aired: episode.aired,
                         overview: episode.overview,
                         absolute_number: None,
@@ -470,7 +497,20 @@ impl SeriesDiscoveryOrchestrator {
         let mut enriched_episodes = Vec::new();
         for episode in episodes {
             match tvdb_client.get_episode_extended(episode.id).await {
-                Ok(extended) => enriched_episodes.push(extended),
+                Ok(mut extended) => {
+                    // Fetch English translation for non-Latin episode names
+                    if Self::contains_non_latin(&extended.name)
+                        && let Some(eng_name) =
+                            tvdb_client.get_episode_english_name(extended.id).await
+                    {
+                        debug!(
+                            "Fetched English name '{}' for episode '{}' ({})",
+                            eng_name, extended.name, extended.id
+                        );
+                        extended.name_eng = Some(eng_name);
+                    }
+                    enriched_episodes.push(extended);
+                }
                 Err(e) => {
                     debug!(
                         "Failed to enrich episode {} ({}): {}. Using base metadata.",
@@ -481,6 +521,7 @@ impl SeriesDiscoveryOrchestrator {
                         id: episode.id,
                         number: episode.number,
                         name: episode.name,
+                        name_eng: None,
                         aired: episode.aired,
                         overview: episode.overview,
                         absolute_number: None,

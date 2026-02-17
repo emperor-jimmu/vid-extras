@@ -19,8 +19,10 @@ impl FuzzyMatcher {
 
     /// Calculate Levenshtein distance between two strings
     pub fn levenshtein_distance(s1: &str, s2: &str) -> usize {
-        let len1 = s1.len();
-        let len2 = s2.len();
+        let s1_chars: Vec<char> = s1.chars().collect();
+        let s2_chars: Vec<char> = s2.chars().collect();
+        let len1 = s1_chars.len();
+        let len2 = s2_chars.len();
 
         if len1 == 0 {
             return len2;
@@ -37,9 +39,6 @@ impl FuzzyMatcher {
         for (j, cell) in matrix[0].iter_mut().enumerate() {
             *cell = j;
         }
-
-        let s1_chars: Vec<char> = s1.chars().collect();
-        let s2_chars: Vec<char> = s2.chars().collect();
 
         for i in 1..=len1 {
             for j in 1..=len2 {
@@ -64,7 +63,7 @@ impl FuzzyMatcher {
 
     /// Calculate similarity score as a percentage (0-100)
     pub fn similarity_score(s1: &str, s2: &str) -> u8 {
-        let max_len = std::cmp::max(s1.len(), s2.len());
+        let max_len = std::cmp::max(s1.chars().count(), s2.chars().count());
         if max_len == 0 {
             return 100;
         }

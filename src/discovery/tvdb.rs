@@ -33,6 +33,9 @@ pub struct TvdbEpisodeExtended {
     pub number: u8,
     /// Episode title
     pub name: String,
+    /// Optional English translation of the episode title
+    #[serde(skip)]
+    pub name_eng: Option<String>,
     /// Optional air date (ISO 8601 format)
     #[serde(default)]
     pub aired: Option<String>,
@@ -54,6 +57,20 @@ pub struct TvdbEpisodeExtended {
     /// Whether this episode is a movie-type special
     #[serde(default)]
     pub is_movie: Option<bool>,
+}
+
+impl TvdbEpisodeExtended {
+    /// Returns all name variants to try for search queries.
+    /// Includes the primary name and English translation if different.
+    pub fn name_variants(&self) -> Vec<&str> {
+        let mut variants = vec![self.name.as_str()];
+        if let Some(eng) = &self.name_eng
+            && eng != &self.name
+        {
+            variants.push(eng.as_str());
+        }
+        variants
+    }
 }
 
 /// Search result from the TVDB `/search` endpoint
@@ -122,6 +139,24 @@ pub struct TvdbLoginResponse {
 pub struct TvdbSearchResponse {
     /// List of search results
     pub data: Vec<TvdbSearchResult>,
+}
+
+/// Translation record from the TVDB translations endpoint
+#[derive(Debug, Deserialize)]
+pub struct TvdbTranslation {
+    /// Translated name
+    #[serde(default)]
+    pub name: String,
+}
+
+/// Translation response wrapper
+#[derive(Debug, Deserialize)]
+pub struct TvdbTranslationResponse {
+    /// Translation data
+    pub data: TvdbTranslation,
+    /// Status of the response
+    #[allow(dead_code)]
+    pub status: String,
 }
 
 /// TheTVDB API client for authentication and data fetching
@@ -325,6 +360,34 @@ impl TvdbClient {
 
         Ok(api_response.data)
     }
+
+    /// Fetch the English translation of an episode name.
+    /// Returns None if no English translation exists.
+    pub async fn get_episode_english_name(&self, episode_id: u64) -> Option<String> {
+        let url = format!(
+            "https://api4.thetvdb.com/v4/episodes/{}/translations/eng",
+            episode_id
+        );
+
+        debug!("Fetching English translation for episode {}", episode_id);
+
+        let response = match self.authenticated_get(&url).await {
+            Ok(resp) if resp.status().is_success() => resp,
+            Ok(_) => return None,
+            Err(e) => {
+                debug!(
+                    "Failed to fetch English translation for episode {}: {}",
+                    episode_id, e
+                );
+                return None;
+            }
+        };
+
+        match response.json::<TvdbTranslationResponse>().await {
+            Ok(tr) if !tr.data.name.is_empty() => Some(tr.data.name),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -508,6 +571,7 @@ mod property_tests {
                 id,
                 number,
                 name: name.clone(),
+                name_eng: None,
                 aired: aired.clone(),
                 overview: overview.clone(),
                 absolute_number,
@@ -585,6 +649,7 @@ mod property_tests {
                 id,
                 number,
                 name: name.clone(),
+                name_eng: None,
                 aired: aired.clone(),
                 overview: overview.clone(),
                 absolute_number,

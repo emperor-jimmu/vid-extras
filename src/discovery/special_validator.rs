@@ -14,7 +14,7 @@ use tokio::process::Command;
 const MOVIE_MIN_DURATION_SECS: u32 = 600;
 
 /// Minimum title similarity score (0-100) to consider a candidate
-const MIN_TITLE_SIMILARITY: u8 = 40;
+const MIN_TITLE_SIMILARITY: u8 = 60;
 
 /// Metadata for a single YouTube search candidate
 #[derive(Debug, Clone, Deserialize)]
@@ -83,13 +83,19 @@ impl SpecialValidator {
                     continue;
                 }
 
-                if let Some(selected) = Self::pick_best(&candidates, episode) {
+                if let Some(selected) = Self::pick_best(&candidates, episode, series_title) {
+                    let best_variant = episode
+                        .name_variants()
+                        .iter()
+                        .map(|v| FuzzyMatcher::get_similarity_score(v, &selected.video_title))
+                        .max()
+                        .unwrap_or(0);
                     info!(
                         "S00E{:02} '{}': selected '{}' (similarity={}%, duration={}s)",
                         episode.number,
                         episode.name,
                         selected.video_title,
-                        FuzzyMatcher::get_similarity_score(&episode.name, &selected.video_title),
+                        best_variant,
                         selected.duration,
                     );
                     best = Some(selected);
@@ -166,12 +172,19 @@ impl SpecialValidator {
         candidates
     }
 
-    /// Score and pick the best candidate for a given episode
+    /// Score and pick the best candidate for a given episode.
+    ///
+    /// Strips the series title from candidate video titles before comparing
+    /// to the episode name, and tries all name variants (including English
+    /// translations) to find the best match.
     fn pick_best(
         candidates: &[VideoCandidate],
         episode: &TvdbEpisodeExtended,
+        series_title: &str,
     ) -> Option<SelectedSpecial> {
         let mut best: Option<(u32, SelectedSpecial)> = None;
+        let name_variants = episode.name_variants();
+        let normalized_series = FuzzyMatcher::normalize(series_title);
 
         for candidate in candidates {
             let duration_secs = candidate.duration as u32;
@@ -185,13 +198,32 @@ impl SpecialValidator {
                 continue;
             }
 
-            let similarity = FuzzyMatcher::get_similarity_score(&episode.name, &candidate.title);
+            // Strip series title from candidate title before comparing
+            let normalized_candidate = FuzzyMatcher::normalize(&candidate.title);
+            let stripped_candidate = normalized_candidate
+                .replacen(&normalized_series, "", 1)
+                .trim()
+                .to_string();
+
+            // Use the stripped title if it's non-empty, otherwise fall back to original
+            let compare_title = if stripped_candidate.is_empty() {
+                &candidate.title
+            } else {
+                &stripped_candidate
+            };
+
+            // Try all name variants and take the best similarity
+            let similarity = name_variants
+                .iter()
+                .map(|variant| FuzzyMatcher::get_similarity_score(variant, compare_title))
+                .max()
+                .unwrap_or(0);
 
             // Hard reject: title must meet minimum similarity
             if similarity < MIN_TITLE_SIMILARITY {
                 debug!(
-                    "Rejecting '{}': similarity {}% < {}%",
-                    candidate.title, similarity, MIN_TITLE_SIMILARITY
+                    "Rejecting '{}': best similarity {}% < {}% (stripped: '{}')",
+                    candidate.title, similarity, MIN_TITLE_SIMILARITY, compare_title
                 );
                 continue;
             }
@@ -234,6 +266,7 @@ mod tests {
             id: number as u64,
             number,
             name: name.to_string(),
+            name_eng: None,
             aired: None,
             overview: None,
             absolute_number: None,
@@ -259,14 +292,14 @@ mod tests {
         let candidates = vec![
             candidate("Random Anime Clip", 300.0, "https://yt/a"),
             candidate(
-                "THE LEVELING OF SOLO LEVELING Part 1 A Hunter Rises",
+                "Solo Leveling THE LEVELING OF SOLO LEVELING Part 1 A Hunter Rises",
                 1200.0,
                 "https://yt/b",
             ),
             candidate("Solo Leveling Trailer", 90.0, "https://yt/c"),
         ];
 
-        let result = SpecialValidator::pick_best(&candidates, &ep);
+        let result = SpecialValidator::pick_best(&candidates, &ep, "Solo Leveling");
         assert!(result.is_some());
         assert_eq!(result.as_ref().expect("should match").url, "https://yt/b");
     }
@@ -280,7 +313,7 @@ mod tests {
         ];
 
         // Both are under 10 minutes, should reject all for a movie
-        let result = SpecialValidator::pick_best(&candidates, &ep);
+        let result = SpecialValidator::pick_best(&candidates, &ep, "Solo Leveling");
         assert!(result.is_none());
     }
 
@@ -289,12 +322,10 @@ mod tests {
         let ep = episode(2, "ReAwakening", Some(true));
         let candidates = vec![
             candidate("ReAwakening Trailer", 120.0, "https://yt/a"),
-            candidate("ReAwakening Full Movie", 7500.0, "https://yt/b"),
+            candidate("Solo Leveling ReAwakening", 7500.0, "https://yt/b"),
         ];
 
-        // "ReAwakening Trailer" is under 600s so rejected as a movie
-        // "ReAwakening Full Movie" passes duration and similarity
-        let result = SpecialValidator::pick_best(&candidates, &ep);
+        let result = SpecialValidator::pick_best(&candidates, &ep, "Solo Leveling");
         assert!(result.is_some());
         assert_eq!(result.as_ref().expect("should match").url, "https://yt/b");
     }
@@ -308,7 +339,7 @@ mod tests {
             "https://yt/a",
         )];
 
-        let result = SpecialValidator::pick_best(&candidates, &ep);
+        let result = SpecialValidator::pick_best(&candidates, &ep, "Solo Leveling");
         assert!(result.is_none());
     }
 
@@ -316,12 +347,12 @@ mod tests {
     fn test_pick_best_non_movie_allows_short_duration() {
         let ep = episode(1, "How to Get Stronger", None);
         let candidates = vec![candidate(
-            "Solo Leveling How to Get Stronger Recap",
+            "How to Get Stronger Recap",
             300.0,
             "https://yt/a",
         )];
 
-        let result = SpecialValidator::pick_best(&candidates, &ep);
+        let result = SpecialValidator::pick_best(&candidates, &ep, "Some Series");
         assert!(result.is_some());
     }
 
@@ -331,17 +362,17 @@ mod tests {
 
         // Exactly 600s should pass
         let pass = vec![candidate("ReAwakening", 600.0, "https://yt/a")];
-        assert!(SpecialValidator::pick_best(&pass, &ep).is_some());
+        assert!(SpecialValidator::pick_best(&pass, &ep, "Test").is_some());
 
         // 599s should fail
         let fail = vec![candidate("ReAwakening", 599.0, "https://yt/b")];
-        assert!(SpecialValidator::pick_best(&fail, &ep).is_none());
+        assert!(SpecialValidator::pick_best(&fail, &ep, "Test").is_none());
     }
 
     #[test]
     fn test_pick_best_empty_candidates() {
         let ep = episode(1, "Test", None);
-        let result = SpecialValidator::pick_best(&[], &ep);
+        let result = SpecialValidator::pick_best(&[], &ep, "Test");
         assert!(result.is_none());
     }
 
@@ -353,13 +384,48 @@ mod tests {
             candidate("ReAwakening", 7500.0, "https://yt/full"),
         ];
 
-        let result = SpecialValidator::pick_best(&candidates, &ep);
+        let result = SpecialValidator::pick_best(&candidates, &ep, "Test");
         assert!(result.is_some());
         // Should prefer the longer one due to duration bonus
         assert_eq!(
             result.as_ref().expect("should match").url,
             "https://yt/full"
         );
+    }
+
+    #[test]
+    fn test_pick_best_strips_series_title() {
+        // Episode name is Japanese, but English translation is available
+        let mut ep = episode(1, "強くなる方法", None);
+        ep.name_eng = Some("How to Get Stronger".to_string());
+
+        // Candidate title contains the series name + episode name in English
+        let candidates = vec![candidate(
+            "Solo Leveling How to Get Stronger Special",
+            600.0,
+            "https://yt/a",
+        )];
+
+        // After stripping "Solo Leveling", the candidate becomes "How to Get Stronger Special"
+        // which should match the English variant "How to Get Stronger"
+        let result = SpecialValidator::pick_best(&candidates, &ep, "Solo Leveling");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_pick_best_uses_english_variant() {
+        // Episode with Japanese name and English translation
+        let mut ep = episode(2, "再覚醒", Some(true));
+        ep.name_eng = Some("ReAwakening".to_string());
+
+        let candidates = vec![candidate(
+            "Solo Leveling ReAwakening",
+            7500.0,
+            "https://yt/a",
+        )];
+
+        let result = SpecialValidator::pick_best(&candidates, &ep, "Solo Leveling");
+        assert!(result.is_some());
     }
 
     #[test]

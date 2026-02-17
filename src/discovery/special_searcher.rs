@@ -23,24 +23,25 @@ impl SpecialSearcher {
     pub fn build_queries(series_title: &str, episode: &TvdbEpisodeExtended) -> Vec<String> {
         let mut queries = Vec::new();
 
-        // Standard query: {title} S00E{number:02} {episode_title}
-        let standard_query = format!(
-            "{} S00E{:02} {}",
-            series_title, episode.number, episode.name
-        );
-        queries.push(standard_query);
+        // Generate queries for each name variant (primary name + English translation if different)
+        for name in episode.name_variants() {
+            // Standard query: {title} S00E{number:02} {episode_title}
+            let standard_query = format!("{} S00E{:02} {}", series_title, episode.number, name);
+            queries.push(standard_query);
 
-        // Fallback query: {title} {episode_title}
-        let fallback_query = format!("{} {}", series_title, episode.name);
-        queries.push(fallback_query);
+            // Fallback query: {title} {episode_title}
+            let fallback_query = format!("{} {}", series_title, name);
+            queries.push(fallback_query);
 
-        // Movie query: {title} {episode_title} movie (when is_movie=true)
-        if episode.is_movie == Some(true) {
-            let movie_query = format!("{} {} movie", series_title, episode.name);
-            queries.push(movie_query);
+            // Movie query: {title} {episode_title} movie (when is_movie=true)
+            if episode.is_movie == Some(true) {
+                let movie_query = format!("{} {} movie", series_title, name);
+                queries.push(movie_query);
+            }
         }
 
         // Anime query: {title} OVA {absolute_number} (when absolute_number present)
+        // Only needs to be generated once since it doesn't use the episode name
         if let Some(abs_num) = episode.absolute_number {
             let anime_query = format!("{} OVA {}", series_title, abs_num);
             queries.push(anime_query);
@@ -103,6 +104,7 @@ mod tests {
             id: 1,
             number,
             name: name.to_string(),
+            name_eng: None,
             aired: None,
             overview: None,
             absolute_number,
@@ -155,6 +157,20 @@ mod tests {
         assert_eq!(queries[1], "Breaking Bad Holiday Special");
         assert_eq!(queries[2], "Breaking Bad Holiday Special movie");
         assert_eq!(queries[3], "Breaking Bad OVA 42");
+    }
+
+    #[test]
+    fn test_build_queries_with_english_variant() {
+        let mut episode = create_test_episode(1, "強くなる方法", None, None);
+        episode.name_eng = Some("How to Get Stronger".to_string());
+        let queries = SpecialSearcher::build_queries("Solo Leveling", &episode);
+
+        // Should have queries for both Japanese and English names
+        assert_eq!(queries.len(), 4);
+        assert_eq!(queries[0], "Solo Leveling S00E01 強くなる方法");
+        assert_eq!(queries[1], "Solo Leveling 強くなる方法");
+        assert_eq!(queries[2], "Solo Leveling S00E01 How to Get Stronger");
+        assert_eq!(queries[3], "Solo Leveling How to Get Stronger");
     }
 
     #[test]
@@ -245,6 +261,7 @@ mod property_tests {
                 id: 1,
                 number: episode_number,
                 name: episode_name.clone(),
+                name_eng: None,
                 aired: None,
                 overview: None,
                 absolute_number,
@@ -323,6 +340,7 @@ mod property_tests {
                 id: 1,
                 number: episode_number,
                 name: episode_name.clone(),
+                name_eng: None,
                 aired: None,
                 overview: None,
                 absolute_number: None,
@@ -425,6 +443,7 @@ mod property_tests {
                         id: idx as u64,
                         number: *number,
                         name: format!("Episode {}", idx),
+                        name_eng: None,
                         aired: None,
                         overview: None,
                         absolute_number: None,
