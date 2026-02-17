@@ -29,8 +29,6 @@ pub use orchestrator::DiscoveryOrchestrator;
 #[allow(dead_code, unused_imports)]
 pub use season_pack::SeasonPackProcessor;
 #[allow(dead_code, unused_imports)]
-pub use special_validator::SpecialValidator;
-#[allow(dead_code, unused_imports)]
 pub use season_zero_import::Season0Importer;
 #[allow(unused_imports)]
 pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};
@@ -38,6 +36,8 @@ pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};
 pub use series_orchestrator::SeriesDiscoveryOrchestrator;
 #[allow(dead_code, unused_imports)]
 pub use special_searcher::SpecialSearcher;
+#[allow(dead_code, unused_imports)]
+pub use special_validator::SpecialValidator;
 #[allow(dead_code, unused_imports)]
 pub use tvdb::{
     TvdbApiResponse, TvdbClient, TvdbEpisode, TvdbEpisodeExtended, TvdbEpisodesPage,

@@ -604,15 +604,56 @@ impl Orchestrator {
         // Discover Season 0 specials if enabled (keep metadata separate)
         let (season_zero_extras, tvdb_episodes_metadata) = if specials {
             info!("Discovering Season 0 specials for {}", series);
-            let (specials_extras, episodes) = series_discovery
+            let (_raw_extras, episodes) = series_discovery
                 .discover_season_zero_with_metadata(&series)
                 .await;
-            info!(
-                "Found {} Season 0 specials for {}",
-                specials_extras.len(),
-                series
-            );
-            (specials_extras, episodes)
+
+            if episodes.is_empty() {
+                info!("No monitored Season 0 episodes for {}", series);
+                (Vec::new(), Vec::new())
+            } else {
+                // Use candidate selection: search YouTube, score results, pick best match
+                info!(
+                    "Selecting best candidates for {} Season 0 episodes of {}",
+                    episodes.len(),
+                    series
+                );
+                let selections = crate::discovery::SpecialValidator::select_best_candidates(
+                    &series.title,
+                    &episodes,
+                )
+                .await;
+
+                // Convert selected candidates into SeriesExtra items for downloading
+                let mut extras = Vec::new();
+                let mut matched_episodes = Vec::new();
+
+                for (selection, episode) in selections.into_iter().zip(episodes.into_iter()) {
+                    if let Some(selected) = selection {
+                        extras.push(crate::models::SeriesExtra {
+                            series_id: format!(
+                                "{}_{}",
+                                series.title.replace(' ', "_"),
+                                series.year.unwrap_or(0)
+                            ),
+                            season_number: Some(0),
+                            category: crate::models::ContentCategory::Featurette,
+                            title: format!("S00E{:02} - {}", episode.number, episode.name),
+                            url: selected.url,
+                            source_type: crate::models::SourceType::TheTVDB,
+                            local_path: None,
+                        });
+                        matched_episodes.push(episode);
+                    }
+                }
+
+                info!(
+                    "Found {} valid Season 0 specials for {}",
+                    extras.len(),
+                    series
+                );
+                (extras, matched_episodes)
+            }
         } else {
             (Vec::new(), Vec::new())
         };
@@ -661,26 +702,20 @@ impl Orchestrator {
             successful_download_count, download_count, series
         );
 
-        // Download Season 0 specials separately
+        // Download Season 0 specials separately (already validated via candidate selection)
         let specials_downloads = if !season_zero_extras.is_empty() {
             info!(
                 "Downloading {} Season 0 specials for {}",
                 season_zero_extras.len(),
                 series
             );
-            let specials_video_sources: Vec<VideoSource> =
-                season_zero_extras.iter().map(|e| e.clone().into()).collect();
-            let raw_downloads = downloader
+            let specials_video_sources: Vec<VideoSource> = season_zero_extras
+                .iter()
+                .map(|e| e.clone().into())
+                .collect();
+            downloader
                 .download_all(&series_id, specials_video_sources)
-                .await;
-
-            // Validate downloads against TVDB metadata
-            info!("Validating {} downloaded specials for {}", raw_downloads.len(), series);
-            crate::discovery::SpecialValidator::filter_valid_specials(
-                raw_downloads,
-                &tvdb_episodes_metadata,
-            )
-            .await
+                .await
         } else {
             Vec::new()
         };

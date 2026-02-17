@@ -56,6 +56,8 @@ The tool scans a Jellyfin library, discovers extras from multiple sources (TMDB,
 - **ID bridging** from TMDB to TVDB with fuzzy matching fallback (80% threshold)
 - **Episode filtering** with auto-monitor policies
 - **Search query construction** for standard, fallback, movie, and anime episodes
+- **Pre-download candidate selection** — fetches YouTube metadata for 5 candidates per episode, scores by title similarity (40% minimum) and duration, selects the single best match before downloading
+- **Movie duration enforcement** — specials flagged as movies must be >= 10 minutes
 - **Metadata caching** with 7-day TTL and no expiration for ID mappings
 - **Network resilience** with timeout retry and 401 re-authentication
 

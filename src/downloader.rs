@@ -420,7 +420,7 @@ impl Downloader {
             // Unicode full-width variants (common in Asian text)
             .replace(['｜', '＜', '＞', '：', '／', '＼', '＊'], "-")
             .replace(['"', '"'], "'") // Left and right double quotation marks
-            .replace('？', "")  // Full-width question mark (U+FF1F)
+            .replace('？', "") // Full-width question mark (U+FF1F)
     }
 
     /// Clean up partial files after a failed download

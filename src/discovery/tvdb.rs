@@ -387,7 +387,8 @@ mod tests {
 
     #[test]
     fn test_tvdb_login_response_deserialization() {
-        let json = r#"{"data": {"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"}, "status": "success"}"#;
+        let json =
+            r#"{"data": {"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"}, "status": "success"}"#;
 
         let response: TvdbLoginResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.data.token, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9");

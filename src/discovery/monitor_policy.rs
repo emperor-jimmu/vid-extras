@@ -163,10 +163,10 @@ mod tests {
     fn test_filter_monitored_with_exclusions() {
         let episodes = vec![
             create_test_episode(1, Some(5), None),    // monitored
-            create_test_episode(2, None, None),        // excluded
-            create_test_episode(3, None, Some(true)),  // monitored
-            create_test_episode(4, None, None),        // excluded
-            create_test_episode(5, None, None),        // monitored
+            create_test_episode(2, None, None),       // excluded
+            create_test_episode(3, None, Some(true)), // monitored
+            create_test_episode(4, None, None),       // excluded
+            create_test_episode(5, None, None),       // monitored
         ];
 
         let filtered = MonitorPolicy::filter_monitored(&episodes, 5, &[2, 4]);

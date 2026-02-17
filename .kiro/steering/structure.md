@@ -34,6 +34,18 @@ The codebase follows a pipeline architecture with clear separation of concerns:
   - `youtube.rs` - YouTube search integration via yt-dlp
   - `orchestrator.rs` - Coordinates discovery across all sources with content limiting
   - `title_matching.rs` - Title normalization, filtering, and matching logic
+  - `series_tmdb.rs` - TMDB series discovery with Season 0 support
+  - `series_youtube.rs` - YouTube series discovery with season-specific queries
+  - `series_orchestrator.rs` - Coordinates series discovery from all sources
+  - `season_pack.rs` - Season pack archive extraction and bonus content identification
+  - `season_zero_import.rs` - Local Season 0 file scanning and import
+  - `series_cache.rs` - Metadata caching with 7-day TTL
+  - `fuzzy_matching.rs` - Fuzzy title matching with Levenshtein distance
+  - `tvdb.rs` - TheTVDB API v4 client with authentication and token management
+  - `id_bridge.rs` - TMDB-to-TVDB ID resolution with fuzzy matching fallback
+  - `monitor_policy.rs` - Episode filtering logic (auto-monitor, exclusion lists)
+  - `special_searcher.rs` - Search query construction for special episodes
+  - `special_validator.rs` - Pre-download candidate selection and scoring for Season 0 specials
 - `downloader.rs` - **[IMPLEMENTED]** Video downloading via yt-dlp
 - `converter.rs` - **[IMPLEMENTED]** Video format conversion with ffmpeg, hardware acceleration detection
 - `organizer.rs` - **[IMPLEMENTED]** File organization into Jellyfin structure, done marker management
@@ -1053,6 +1065,7 @@ Created comprehensive integration test suite in `tests/main_integration_tests.rs
 - `src/discovery/season_pack.rs` - Season pack archive extraction and bonus content identification
 - `src/discovery/season_zero_import.rs` - Local Season 0 file scanning and import
 - `src/discovery/fuzzy_matching.rs` - Fuzzy title matching with Levenshtein distance
+- `src/discovery/special_validator.rs` - Pre-download candidate selection and scoring for Season 0 specials
 - `src/organizer.rs` - SeriesOrganizer for Jellyfin-compatible directory structure
 
 **Key Features:**
@@ -1149,7 +1162,7 @@ Or with custom name:
 Specials folder: Season 00
 ```
 
-#### TVDB Specials Integration (src/discovery/tvdb.rs, id_bridge.rs, monitor_policy.rs, special_searcher.rs)
+#### TVDB Specials Integration (src/discovery/tvdb.rs, id_bridge.rs, monitor_policy.rs, special_searcher.rs, special_validator.rs)
 
 **Status:** ✅ Fully implemented and tested (Tasks 1-12)
 
@@ -1179,10 +1192,10 @@ Specials folder: Season 00
    - File-based ID mapping cache with no expiration
 
 3. **MonitorPolicy** - Episode filtering logic
-   - Default unmonitored status
+   - Default monitored status (all episodes monitored unless excluded)
    - Auto-monitor if airs_after_season matches latest season
    - Auto-monitor if is_movie flag is true
-   - Manual monitor list support via specials_monitor.json
+   - Manual exclusion list support via specials_exclude.json
 
 4. **SpecialSearcher** - Search query construction
    - Standard query: `{title} S00E{number:02} {episode_title}`
@@ -1190,6 +1203,14 @@ Specials folder: Season 00
    - Movie query: `{title} {episode_title} movie`
    - Anime query: `{title} OVA {absolute_number}`
    - Title similarity filtering (60% threshold)
+
+5. **SpecialValidator** - Pre-download candidate selection and scoring
+   - Runs `yt-dlp --dump-json --flat-playlist ytsearch5:{query}` to fetch metadata without downloading
+   - Scores candidates by title similarity (FuzzyMatcher, 40% minimum threshold) and duration
+   - Movies (`is_movie=true`) must have duration >= 600 seconds (10 minutes)
+   - Movies get a duration bonus in scoring (prefer longer videos)
+   - Tries each query variant (standard, fallback, movie, anime) until a match is found
+   - Returns the single best URL per episode for downloading
 
 **Test Coverage:**
 
@@ -1229,6 +1250,90 @@ Specials folder: Season 00
 - All TVDB operations are properly error-isolated between series
 - Comprehensive logging at info, warning, and error levels
 
+#### Special Candidate Selection (src/discovery/special_validator.rs)
+
+**Status:** ✅ Fully implemented and tested
+
+**Functionality:**
+
+- Pre-download candidate selection for Season 0 specials
+- Fetches YouTube metadata via `yt-dlp --dump-json --flat-playlist ytsearch5:{query}` without downloading
+- Scores candidates by title similarity and duration requirements
+- Selects the single best URL per TVDB episode
+- Tries each query variant (standard, fallback, movie, anime) until a match is found
+
+**Public API:**
+
+```rust
+pub struct SpecialValidator;
+
+impl SpecialValidator {
+    /// Search YouTube for candidates and select the best match for each episode
+    pub async fn select_best_candidates(
+        series_title: &str,
+        episodes: &[TvdbEpisodeExtended],
+    ) -> Vec<Option<SelectedSpecial>>;
+
+    /// Run yt-dlp --dump-json to fetch metadata for up to 5 search results
+    async fn fetch_candidates(query: &str) -> Vec<VideoCandidate>;
+
+    /// Score and pick the best candidate for a given episode
+    fn pick_best(
+        candidates: &[VideoCandidate],
+        episode: &TvdbEpisodeExtended,
+    ) -> Option<SelectedSpecial>;
+}
+```
+
+**Scoring Logic:**
+
+- Title similarity via `FuzzyMatcher::get_similarity_score()` (Levenshtein-based, 0-100)
+- Minimum similarity threshold: 40%
+- Movie episodes (`is_movie=true`) must have duration >= 600 seconds (10 minutes)
+- Composite score: `similarity * 10 + duration_bonus` (movies get bonus for longer duration)
+- First query variant that yields a valid match wins (no further queries tried)
+
+**Data Structures:**
+
+```rust
+pub struct VideoCandidate {
+    pub url: String,       // YouTube video URL
+    pub title: String,     // Video title
+    pub duration: f64,     // Duration in seconds
+}
+
+pub struct SelectedSpecial {
+    pub url: String,           // Chosen video URL to download
+    pub video_title: String,   // Video title from YouTube
+    pub duration: u32,         // Duration in seconds
+}
+```
+
+**Orchestrator Integration:**
+
+The orchestrator calls `SpecialValidator::select_best_candidates()` after fetching TVDB episode metadata, then builds `SeriesExtra` items only for episodes with valid matches. This replaces the previous approach of downloading all search results and validating after the fact.
+
+**Test Coverage:**
+
+- 8 unit tests covering:
+  - Highest similarity selection
+  - Short movie rejection (< 600s)
+  - Long movie acceptance with duration bonus
+  - Low similarity rejection (< 40%)
+  - Non-movie short duration acceptance
+  - Movie boundary at exactly 600s
+  - Empty candidates handling
+  - Longer movie preference via duration bonus
+- All tests passing ✅
+
+**Dependencies:**
+
+- Uses `tokio::process::Command` for yt-dlp execution
+- Uses `serde` and `serde_json` for JSON parsing
+- Uses `FuzzyMatcher` for title similarity scoring
+- Uses `SpecialSearcher` for query construction
+- Uses `log` for structured logging
+
 ### Pending Modules
 
 None - all modules are fully implemented and tested!
@@ -1241,10 +1346,10 @@ All 12 TVDB specials tasks + 21 existing implementation tasks have been complete
 
 - ✅ All core modules implemented (scanner, validation, discovery, downloader, converter, organizer, orchestrator, CLI, main)
 - ✅ All series support modules implemented (series_tmdb, series_youtube, season_pack, season_zero_import, fuzzy_matching)
-- ✅ TVDB specials integration fully implemented (tvdb, id_bridge, monitor_policy, special_searcher)
+- ✅ TVDB specials integration fully implemented (tvdb, id_bridge, monitor_policy, special_searcher, special_validator)
 - ✅ Error handling module with series-specific error types (Task 16)
 - ✅ 48 correctness properties implemented and tested (38 existing + 10 TVDB)
-- ✅ 425+ tests passing (415 unit/property in lib, 16 main integration, 34 series integration)
+- ✅ 437+ tests passing (427 unit/property in lib, 16 main integration, 34 series integration)
 - ✅ Zero clippy warnings
 - ✅ Code properly formatted with rustfmt
 - ✅ Comprehensive README.md with usage instructions
@@ -1252,10 +1357,10 @@ All 12 TVDB specials tasks + 21 existing implementation tasks have been complete
 
 **Test Summary:**
 
-- Unit tests: 415+ tests covering all modules
+- Unit tests: 427+ tests covering all modules
 - Property-based tests: 48 properties with 100+ iterations each
 - Integration tests: 50 end-to-end tests (16 main + 34 series)
-- Total: 425+ tests passing ✅
+- Total: 437+ tests passing ✅
 
 **Code Quality:**
 

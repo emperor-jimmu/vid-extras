@@ -532,7 +532,7 @@ impl SeriesDiscoveryOrchestrator {
                     season_number: Some(0),
                     category: ContentCategory::Featurette,
                     title: format!("S00E{:02} - {}", episode.number, episode.name),
-                    url: format!("ytsearch5:{}", query), // Use ytsearch5 for multiple candidates
+                    url: format!("ytsearch1:{}", query), // Use ytsearch1 for single best result
                     source_type: SourceType::TheTVDB,
                     local_path: None,
                 });
