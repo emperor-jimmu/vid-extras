@@ -19,15 +19,29 @@ const MIN_TITLE_SIMILARITY: u8 = 40;
 /// Metadata for a single YouTube search candidate
 #[derive(Debug, Clone, Deserialize)]
 pub struct VideoCandidate {
-    /// YouTube video URL
-    #[serde(default, alias = "webpage_url")]
+    /// YouTube video URL (primary field from yt-dlp)
+    #[serde(default)]
     pub url: String,
+    /// Fallback URL field from yt-dlp
+    #[serde(default)]
+    pub webpage_url: String,
     /// Video title
-    #[serde(default, alias = "title")]
+    #[serde(default)]
     pub title: String,
     /// Duration in seconds
-    #[serde(default, alias = "duration")]
+    #[serde(default)]
     pub duration: f64,
+}
+
+impl VideoCandidate {
+    /// Get the effective URL, preferring `url` over `webpage_url`
+    pub fn get_url(&self) -> String {
+        if !self.url.is_empty() {
+            self.url.clone()
+        } else {
+            self.webpage_url.clone()
+        }
+    }
 }
 
 /// Result of selecting the best candidate for a special episode
@@ -138,7 +152,7 @@ impl SpecialValidator {
                 continue;
             }
             match serde_json::from_str::<VideoCandidate>(trimmed) {
-                Ok(c) if !c.url.is_empty() => candidates.push(c),
+                Ok(c) if !c.get_url().is_empty() => candidates.push(c),
                 Ok(_) => debug!("Skipping candidate with empty URL"),
                 Err(e) => debug!("Failed to parse candidate JSON: {}", e),
             }
@@ -193,7 +207,7 @@ impl SpecialValidator {
             }
 
             let selected = SelectedSpecial {
-                url: candidate.url.clone(),
+                url: candidate.get_url(),
                 video_title: candidate.title.clone(),
                 duration: duration_secs,
             };
@@ -233,6 +247,7 @@ mod tests {
     fn candidate(title: &str, duration: f64, url: &str) -> VideoCandidate {
         VideoCandidate {
             url: url.to_string(),
+            webpage_url: String::new(),
             title: title.to_string(),
             duration,
         }
@@ -345,5 +360,50 @@ mod tests {
             result.as_ref().expect("should match").url,
             "https://yt/full"
         );
+    }
+
+    #[test]
+    fn test_deserialize_with_both_url_and_webpage_url() {
+        // Test that deserialization handles both url and webpage_url fields
+        let json = r#"{"url": "https://www.youtube.com/watch?v=abc123", "webpage_url": "https://www.youtube.com/watch?v=abc123", "title": "Test Video", "duration": 300.0}"#;
+        let candidate: VideoCandidate = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(
+            candidate.get_url(),
+            "https://www.youtube.com/watch?v=abc123"
+        );
+        assert_eq!(candidate.title, "Test Video");
+        assert_eq!(candidate.duration, 300.0);
+    }
+
+    #[test]
+    fn test_deserialize_prefers_url_over_webpage_url() {
+        // Test that url field is preferred when both are present
+        let json = r#"{"url": "https://www.youtube.com/watch?v=preferred", "webpage_url": "https://www.youtube.com/watch?v=fallback", "title": "Test", "duration": 100.0}"#;
+        let candidate: VideoCandidate = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(
+            candidate.get_url(),
+            "https://www.youtube.com/watch?v=preferred"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_fallback_to_webpage_url() {
+        // Test that webpage_url is used when url is empty
+        let json = r#"{"url": "", "webpage_url": "https://www.youtube.com/watch?v=fallback", "title": "Test", "duration": 100.0}"#;
+        let candidate: VideoCandidate = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(
+            candidate.get_url(),
+            "https://www.youtube.com/watch?v=fallback"
+        );
+    }
+
+    #[test]
+    fn test_deserialize_missing_optional_fields() {
+        // Test that missing optional fields default to empty/zero
+        let json = r#"{"url": "https://www.youtube.com/watch?v=test"}"#;
+        let candidate: VideoCandidate = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(candidate.get_url(), "https://www.youtube.com/watch?v=test");
+        assert_eq!(candidate.title, "");
+        assert_eq!(candidate.duration, 0.0);
     }
 }
