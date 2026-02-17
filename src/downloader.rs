@@ -379,10 +379,11 @@ impl Downloader {
             // Remove hash suffix from filename
             let clean_filename = filename.replace(hash_suffix, "");
 
-            if clean_filename != filename {
-                // Sanitize filename for Windows compatibility
-                let sanitized_filename = Self::sanitize_filename(&clean_filename);
+            // Always sanitize filename for Windows compatibility, even if no hash to remove
+            let sanitized_filename = Self::sanitize_filename(&clean_filename);
 
+            // Only rename if the filename actually changed
+            if sanitized_filename != filename {
                 let clean_path = path
                     .parent()
                     .unwrap_or_else(|| Path::new("."))
