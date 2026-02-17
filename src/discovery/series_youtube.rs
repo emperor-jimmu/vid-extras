@@ -138,6 +138,8 @@ impl YoutubeSeriesDiscoverer {
             .arg("--dump-json")
             .arg("--no-playlist")
             .arg("--skip-download")
+            .arg("--js-runtimes")
+            .arg("node")
             .arg(&search_query)
             .output()
             .await

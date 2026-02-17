@@ -128,6 +128,8 @@ impl SpecialValidator {
             .arg("--no-download")
             .arg("--no-warnings")
             .arg("--quiet")
+            .arg("--js-runtimes")
+            .arg("node")
             .arg(&search_url)
             .output()
             .await;

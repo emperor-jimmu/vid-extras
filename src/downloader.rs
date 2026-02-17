@@ -153,7 +153,9 @@ impl Downloader {
             .arg(&source.url)
             .arg("--no-playlist") // Don't download playlists
             .arg("--quiet") // Reduce output noise
-            .arg("--no-warnings"); // Suppress warnings
+            .arg("--no-warnings") // Suppress warnings
+            .arg("--js-runtimes")
+            .arg("node"); // Use Node.js for JavaScript execution
 
         // On Windows, restrict filenames to Windows-compatible characters
         // This prevents issues with special characters like full-width quotes
