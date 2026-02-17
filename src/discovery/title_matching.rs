@@ -1,5 +1,6 @@
 // Title matching and filtering logic for YouTube video discovery
 
+use crate::models::ContentCategory;
 use log::debug;
 
 /// Normalize a title for comparison by removing special characters, brackets, and extra spaces
@@ -94,6 +95,63 @@ pub fn contains_excluded_keywords(title: &str) -> bool {
     excluded_keywords
         .iter()
         .any(|keyword| title_lower.contains(&keyword.to_lowercase()))
+}
+/// Infer the content category from a video title based on keyword analysis.
+/// Returns `None` if no strong signal is found, in which case the caller
+/// should fall back to the search-query category.
+pub fn infer_category_from_title(title: &str) -> Option<ContentCategory> {
+    let lower = title.to_lowercase();
+
+    // Order matters: check more specific patterns first.
+
+    // Deleted scenes
+    if lower.contains("deleted scene") || lower.contains("deleted clip") {
+        return Some(ContentCategory::DeletedScene);
+    }
+
+    // Behind the scenes / making of
+    if lower.contains("behind the scene")
+        || lower.contains("making of")
+        || lower.contains("on set")
+        || lower.contains("on the set")
+        || lower.contains("b-roll")
+        || lower.contains("broll")
+        || lower.contains("bts")
+    {
+        return Some(ContentCategory::BehindTheScenes);
+    }
+
+    // Interviews
+    if lower.contains("interview")
+        || lower.contains("q&a")
+        || lower.contains("q & a")
+        || lower.contains("press conference")
+        || lower.contains("talks about")
+        || lower.contains("podcast")
+    {
+        return Some(ContentCategory::Interview);
+    }
+
+    // Trailers — check after BTS/interview since "behind the scenes trailer" should be BTS
+    if lower.contains("trailer") || lower.contains("teaser") || lower.contains("promo") {
+        return Some(ContentCategory::Trailer);
+    }
+
+    // Featurettes
+    if lower.contains("featurette")
+        || lower.contains("documentary")
+        || lower.contains("bonus clip")
+        || lower.contains("why we love")
+    {
+        return Some(ContentCategory::Featurette);
+    }
+
+    // Clips (movie scene clips) → Featurette as the closest match
+    if lower.contains("movie clip") || lower.contains("clip -") || lower.contains("| clip") {
+        return Some(ContentCategory::Featurette);
+    }
+
+    None
 }
 /// Extract season numbers mentioned in a video title.
 ///
@@ -460,5 +518,90 @@ mod tests {
             "Season 1 and Season 3 comparison",
             &available
         ));
+    }
+
+    #[test]
+    fn test_infer_category_from_title_trailer() {
+        assert_eq!(
+            infer_category_from_title("A TOUCH OF ZEN Trailer [1971]"),
+            Some(ContentCategory::Trailer)
+        );
+        assert_eq!(
+            infer_category_from_title("Official Teaser - Movie Name"),
+            Some(ContentCategory::Trailer)
+        );
+    }
+
+    #[test]
+    fn test_infer_category_from_title_deleted_scene() {
+        assert_eq!(
+            infer_category_from_title("COBRA \"Deleted Scenes\" (1986) Stallone"),
+            Some(ContentCategory::DeletedScene)
+        );
+    }
+
+    #[test]
+    fn test_infer_category_from_title_behind_the_scenes() {
+        assert_eq!(
+            infer_category_from_title("Coach Carter Movie - Behind the Scenes (2)"),
+            Some(ContentCategory::BehindTheScenes)
+        );
+        assert_eq!(
+            infer_category_from_title("Go Behind the Scenes of Money Monster (2016)"),
+            Some(ContentCategory::BehindTheScenes)
+        );
+        assert_eq!(
+            infer_category_from_title("Making of The Matrix"),
+            Some(ContentCategory::BehindTheScenes)
+        );
+    }
+
+    #[test]
+    fn test_infer_category_from_title_interview() {
+        assert_eq!(
+            infer_category_from_title("George Clooney Interview - Money Monster"),
+            Some(ContentCategory::Interview)
+        );
+        assert_eq!(
+            infer_category_from_title("The Real Coach Carter Talks About The Movie"),
+            Some(ContentCategory::Interview)
+        );
+        assert_eq!(
+            infer_category_from_title("MONEY MONSTER - Press Conference - Cannes 2016"),
+            Some(ContentCategory::Interview)
+        );
+    }
+
+    #[test]
+    fn test_infer_category_from_title_featurette() {
+        assert_eq!(
+            infer_category_from_title("Coach Carter Documentary - the real coach carter"),
+            Some(ContentCategory::Featurette)
+        );
+        assert_eq!(
+            infer_category_from_title("Cobra (1986) - Bonus Clip: Actor Brian Thompson"),
+            Some(ContentCategory::Featurette)
+        );
+    }
+
+    #[test]
+    fn test_infer_category_from_title_none_when_ambiguous() {
+        assert_eq!(
+            infer_category_from_title("Coach Carter - Go to College"),
+            None
+        );
+        assert_eq!(
+            infer_category_from_title("a touch of zen (俠女)"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_infer_category_bts_trailer_priority() {
+        // "Behind the Scenes" in title should win over "Trailer" substring
+        assert_eq!(
+            infer_category_from_title("Behind the Scenes Trailer for Movie X"),
+            Some(ContentCategory::BehindTheScenes)
+        );
     }
 }

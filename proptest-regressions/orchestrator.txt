@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 384e67c30896b3cbd67c187853140de7287ac8fca06951ebbd2fdf6dce7bdd70 # shrinks to num_movies = 1, num_series = 1, mode = Both
+cc 9cc72bc2307243d42a32513dcbaf7dd24ee1ebbdade2c902913a864f52e44bd6 # shrinks to title = "     ", year = 2000, num_sources = 1
