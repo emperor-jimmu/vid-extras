@@ -373,9 +373,10 @@ impl SeriesDiscoveryOrchestrator {
         for episode in monitored {
             let queries = SpecialSearcher::build_queries(&series.title, episode);
 
+            // Use ytsearch5: to get multiple candidates for better matching
             for query in queries {
                 // Create a SeriesExtra for each query
-                // The YouTube discoverer will handle the actual search
+                // The downloader will handle the actual search and we'll filter results
                 specials.push(SeriesExtra {
                     series_id: format!(
                         "{}_{}",
@@ -385,7 +386,7 @@ impl SeriesDiscoveryOrchestrator {
                     season_number: Some(0), // Season 0 for specials
                     category: ContentCategory::Featurette, // Default category for specials
                     title: format!("S00E{:02} - {}", episode.number, episode.name),
-                    url: format!("ytsearch1:{}", query), // Use yt-dlp search syntax
+                    url: format!("ytsearch5:{}", query), // Use ytsearch5 for multiple candidates
                     source_type: SourceType::TheTVDB,
                     local_path: None,
                 });
@@ -399,6 +400,153 @@ impl SeriesDiscoveryOrchestrator {
         );
 
         specials
+    }
+
+    /// Discover Season 0 specials with enhanced filtering
+    ///
+    /// This method fetches Season 0 episodes from TVDB, generates search queries,
+    /// and returns both the search queries and the episode metadata for validation.
+    ///
+    /// # Returns
+    /// A tuple of (SeriesExtra items for searching, Episode metadata for validation)
+    pub async fn discover_season_zero_with_metadata(
+        &self,
+        series: &SeriesEntry,
+    ) -> (Vec<SeriesExtra>, Vec<super::tvdb::TvdbEpisodeExtended>) {
+        // Check if TVDB support is enabled
+        let (tvdb_client, id_bridge) = match (&self.tvdb_client, &self.id_bridge) {
+            (Some(client), Some(bridge)) => (client, bridge),
+            _ => {
+                warn!("TVDB support not enabled, skipping Season 0 discovery");
+                return (Vec::new(), Vec::new());
+            }
+        };
+
+        // Get TMDB ID for the series
+        let tmdb_id = match self.tmdb.search_series(&series.title, series.year).await {
+            Ok(Some(id)) => id,
+            Ok(None) => {
+                info!("Series not found on TMDB: {}", series);
+                return (Vec::new(), Vec::new());
+            }
+            Err(e) => {
+                warn!("TMDB series search failed for {}: {}", series, e);
+                return (Vec::new(), Vec::new());
+            }
+        };
+
+        // Resolve TVDB ID via IdBridge
+        let tvdb_id = match id_bridge.resolve(tmdb_id, &series.title).await {
+            Ok(Some(id)) => id,
+            Ok(None) => {
+                info!("No TVDB ID found for {}", series);
+                return (Vec::new(), Vec::new());
+            }
+            Err(e) => {
+                warn!("TVDB ID resolution failed for {}: {}", series, e);
+                return (Vec::new(), Vec::new());
+            }
+        };
+
+        info!("Resolved TVDB ID {} for {}", tvdb_id, series);
+
+        // Fetch Season 0 episodes
+        let episodes = match tvdb_client.get_season_zero(tvdb_id).await {
+            Ok(eps) => eps,
+            Err(e) => {
+                warn!("Failed to fetch Season 0 episodes for {}: {}", series, e);
+                return (Vec::new(), Vec::new());
+            }
+        };
+
+        if episodes.is_empty() {
+            info!("No Season 0 episodes found for {}", series);
+            return (Vec::new(), Vec::new());
+        }
+
+        info!("Found {} Season 0 episodes for {}", episodes.len(), series);
+
+        // Enrich episodes with extended metadata
+        let mut enriched_episodes = Vec::new();
+        for episode in episodes {
+            match tvdb_client.get_episode_extended(episode.id).await {
+                Ok(extended) => enriched_episodes.push(extended),
+                Err(e) => {
+                    debug!(
+                        "Failed to enrich episode {} ({}): {}. Using base metadata.",
+                        episode.number, episode.name, e
+                    );
+                    // Convert base episode to extended with None for extended fields
+                    enriched_episodes.push(super::tvdb::TvdbEpisodeExtended {
+                        id: episode.id,
+                        number: episode.number,
+                        name: episode.name,
+                        aired: episode.aired,
+                        overview: episode.overview,
+                        absolute_number: None,
+                        airs_before_season: None,
+                        airs_after_season: None,
+                        airs_before_episode: None,
+                        is_movie: None,
+                    });
+                }
+            }
+        }
+
+        // Load manual exclusion list
+        let exclude_list = MonitorPolicy::load_manual_exclude_list(&series.path).await;
+
+        // Determine latest season on disk
+        let latest_season = *series.seasons.iter().max().unwrap_or(&0);
+
+        // Filter via MonitorPolicy
+        let monitored =
+            MonitorPolicy::filter_monitored(&enriched_episodes, latest_season, &exclude_list);
+
+        info!(
+            "Filtered to {} monitored Season 0 episodes for {}",
+            monitored.len(),
+            series
+        );
+
+        if monitored.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+
+        // Build search queries and create SeriesExtra items
+        let mut specials = Vec::new();
+        let mut episode_metadata = Vec::new();
+
+        for episode in &monitored {
+            let queries = SpecialSearcher::build_queries(&series.title, episode);
+
+            // Only use the first query (standard query) for each episode
+            // to avoid duplicate downloads
+            if let Some(query) = queries.first() {
+                specials.push(SeriesExtra {
+                    series_id: format!(
+                        "{}_{}",
+                        series.title.replace(' ', "_"),
+                        series.year.unwrap_or(0)
+                    ),
+                    season_number: Some(0),
+                    category: ContentCategory::Featurette,
+                    title: format!("S00E{:02} - {}", episode.number, episode.name),
+                    url: format!("ytsearch5:{}", query), // Use ytsearch5 for multiple candidates
+                    source_type: SourceType::TheTVDB,
+                    local_path: None,
+                });
+                episode_metadata.push((*episode).clone());
+            }
+        }
+
+        info!(
+            "Generated {} search queries for Season 0 specials of {}",
+            specials.len(),
+            series
+        );
+
+        (specials, episode_metadata)
     }
 }
 

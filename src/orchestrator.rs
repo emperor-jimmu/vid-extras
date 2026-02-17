@@ -601,18 +601,20 @@ impl Orchestrator {
             }
         }
 
-        // Discover Season 0 specials if enabled (keep separate from regular extras)
-        let season_zero_extras = if specials {
+        // Discover Season 0 specials if enabled (keep metadata separate)
+        let (season_zero_extras, tvdb_episodes_metadata) = if specials {
             info!("Discovering Season 0 specials for {}", series);
-            let specials_extras = series_discovery.discover_season_zero(&series).await;
+            let (specials_extras, episodes) = series_discovery
+                .discover_season_zero_with_metadata(&series)
+                .await;
             info!(
                 "Found {} Season 0 specials for {}",
                 specials_extras.len(),
                 series
             );
-            specials_extras
+            (specials_extras, episodes)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
 
         if all_extras.is_empty() && season_zero_extras.is_empty() {
@@ -668,9 +670,17 @@ impl Orchestrator {
             );
             let specials_video_sources: Vec<VideoSource> =
                 season_zero_extras.iter().map(|e| e.clone().into()).collect();
-            downloader
+            let raw_downloads = downloader
                 .download_all(&series_id, specials_video_sources)
-                .await
+                .await;
+
+            // Validate downloads against TVDB metadata
+            info!("Validating {} downloaded specials for {}", raw_downloads.len(), series);
+            crate::discovery::SpecialValidator::filter_valid_specials(
+                raw_downloads,
+                &tvdb_episodes_metadata,
+            )
+            .await
         } else {
             Vec::new()
         };
@@ -774,38 +784,19 @@ impl Orchestrator {
                 successful_specials_conversions, series
             );
 
-            // Convert successful conversions back to SpecialEpisode format
-            let episode_regex = regex::Regex::new(r"S00E(\d+)").expect("Valid regex pattern");
+            // Convert successful conversions back to SpecialEpisode format using TVDB metadata
             let mut special_episodes = Vec::new();
             for (idx, conversion) in specials_conversions.iter().enumerate() {
                 if conversion.success {
-                    // Extract episode number from the original SeriesExtra title format: "S00E{:02} - {title}"
-                    if let Some(original_extra) = season_zero_extras.get(idx) {
-                        // Parse episode number from title like "S00E04 - Episode Title"
-                        let episode_number = episode_regex
-                            .captures(&original_extra.title)
-                            .and_then(|captures| {
-                                captures
-                                    .get(1)
-                                    .and_then(|m| m.as_str().parse::<u8>().ok())
-                            })
-                            .unwrap_or(idx as u8 + 1);
-
-                        // Extract episode title (everything after " - ")
-                        let episode_title = original_extra
-                            .title
-                            .split(" - ")
-                            .nth(1)
-                            .unwrap_or(&original_extra.title)
-                            .to_string();
-
+                    // Use the TVDB episode metadata
+                    if let Some(episode) = tvdb_episodes_metadata.get(idx) {
                         special_episodes.push(crate::models::SpecialEpisode {
-                            episode_number,
-                            title: episode_title,
-                            air_date: None,
-                            url: Some(original_extra.url.clone()),
+                            episode_number: episode.number,
+                            title: episode.name.clone(),
+                            air_date: episode.aired.clone(),
+                            url: season_zero_extras.get(idx).map(|e| e.url.clone()),
                             local_path: Some(conversion.output_path.clone()),
-                            tvdb_id: None,
+                            tvdb_id: Some(episode.id),
                         });
                     }
                 }

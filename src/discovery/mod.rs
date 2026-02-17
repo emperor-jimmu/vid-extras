@@ -12,6 +12,7 @@ mod series_orchestrator;
 mod series_tmdb;
 mod series_youtube;
 mod special_searcher;
+mod special_validator;
 mod title_matching;
 mod tmdb;
 mod tvdb;
@@ -27,6 +28,8 @@ pub use monitor_policy::MonitorPolicy;
 pub use orchestrator::DiscoveryOrchestrator;
 #[allow(dead_code, unused_imports)]
 pub use season_pack::SeasonPackProcessor;
+#[allow(dead_code, unused_imports)]
+pub use special_validator::SpecialValidator;
 #[allow(dead_code, unused_imports)]
 pub use season_zero_import::Season0Importer;
 #[allow(unused_imports)]
