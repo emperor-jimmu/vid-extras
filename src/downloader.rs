@@ -116,10 +116,11 @@ impl Downloader {
 
         debug!("Creating temp directory: {:?}", temp_dir);
 
-        // Clean up any pre-existing temp directory
+        // If directory already exists, reuse it (don't clean up during same processing session)
+        // This allows multiple download batches (regular extras + specials) to coexist
         if temp_dir.exists() {
-            warn!("Temp directory already exists, cleaning up: {:?}", temp_dir);
-            fs::remove_dir_all(&temp_dir).await?;
+            debug!("Temp directory already exists, reusing: {:?}", temp_dir);
+            return Ok(temp_dir);
         }
 
         // Create the directory
@@ -475,7 +476,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_temp_dir_cleans_existing() {
+    async fn test_create_temp_dir_reuses_existing() {
         let temp_base = TempDir::new().unwrap();
         let downloader = Downloader::new(temp_base.path().to_path_buf());
 
@@ -486,10 +487,11 @@ mod tests {
         fs::write(&test_file, "test").await.unwrap();
         assert!(test_file.exists());
 
-        // Create directory second time - should clean up
+        // Create directory second time - should reuse existing directory
         let temp_dir2 = downloader.create_temp_dir("test_movie_456").await.unwrap();
         assert!(temp_dir2.exists());
-        assert!(!test_file.exists()); // Old file should be gone
+        assert!(test_file.exists()); // Old file should still exist (not cleaned up)
+        assert_eq!(temp_dir1, temp_dir2); // Should be the same directory
     }
 
     #[tokio::test]
