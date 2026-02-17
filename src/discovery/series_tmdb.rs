@@ -254,9 +254,10 @@ impl TmdbSeriesDiscoverer {
     pub fn map_tmdb_type(tmdb_type: &str) -> Option<ContentCategory> {
         match tmdb_type {
             "Trailer" => Some(ContentCategory::Trailer),
+            "Teaser" => Some(ContentCategory::Trailer), // Teasers are short trailers
             "Behind the Scenes" => Some(ContentCategory::BehindTheScenes),
             "Featurette" => Some(ContentCategory::Featurette),
-            "Bloopers" => Some(ContentCategory::Featurette),
+            "Clip" => Some(ContentCategory::Featurette), // Clips are treated as featurettes
             _ => {
                 debug!("Unknown TMDB video type: {}", tmdb_type);
                 None

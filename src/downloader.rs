@@ -175,12 +175,29 @@ impl Downloader {
                         .await
                     {
                         Ok(local_path) => {
-                            info!("Successfully downloaded: {:?}", local_path);
-                            DownloadResult {
-                                source: source.clone(),
-                                local_path,
-                                success: true,
-                                error: None,
+                            // Verify the file actually exists before marking as success
+                            if local_path.exists() {
+                                info!("Successfully downloaded: {:?}", local_path);
+                                DownloadResult {
+                                    source: source.clone(),
+                                    local_path,
+                                    success: true,
+                                    error: None,
+                                }
+                            } else {
+                                error!(
+                                    "File not found after download (path mismatch): {:?}",
+                                    local_path
+                                );
+                                DownloadResult {
+                                    source: source.clone(),
+                                    local_path: PathBuf::new(),
+                                    success: false,
+                                    error: Some(format!(
+                                        "File not found after download: {:?}",
+                                        local_path
+                                    )),
+                                }
                             }
                         }
                         Err(e) => {
@@ -203,8 +220,8 @@ impl Downloader {
                     );
                     error!("{} for URL: {}", error_msg, source.url);
 
-                    // Clean up any partial files
-                    self.cleanup_partial_files(dest_dir, &source.title).await;
+                    // Clean up any partial files for this specific download
+                    self.cleanup_partial_files(dest_dir, url_hash).await;
 
                     DownloadResult {
                         source: source.clone(),
@@ -219,8 +236,8 @@ impl Downloader {
                 let error_msg = format!("Failed to execute yt-dlp: {}", e);
                 error!("{}", error_msg);
 
-                // Clean up any partial files
-                self.cleanup_partial_files(dest_dir, &source.title).await;
+                // Clean up any partial files for this specific download
+                self.cleanup_partial_files(dest_dir, url_hash).await;
 
                 DownloadResult {
                     source: source.clone(),
@@ -237,8 +254,8 @@ impl Downloader {
                 );
                 error!("{} for: {}", error_msg, source.title);
 
-                // Clean up any partial files
-                self.cleanup_partial_files(dest_dir, &source.title).await;
+                // Clean up any partial files for this specific download
+                self.cleanup_partial_files(dest_dir, url_hash).await;
 
                 DownloadResult {
                     source: source.clone(),
@@ -426,19 +443,27 @@ impl Downloader {
     }
 
     /// Clean up partial files after a failed download
-    async fn cleanup_partial_files(&self, dest_dir: &Path, title: &str) {
-        debug!("Cleaning up partial files for: {}", title);
+    /// Only removes files with the specific URL hash suffix or temporary extensions (.part, .tmp)
+    /// This prevents accidentally deleting successfully downloaded files
+    async fn cleanup_partial_files(&self, dest_dir: &Path, url_hash: u64) {
+        let hash_suffix = format!("_{:08x}", url_hash);
+        debug!(
+            "Cleaning up partial files with hash suffix: {}",
+            hash_suffix
+        );
 
         match fs::read_dir(dest_dir).await {
             Ok(mut entries) => {
                 while let Ok(Some(entry)) = entries.next_entry().await {
                     let path = entry.path();
                     if path.is_file() {
-                        // Check if this might be a partial file
+                        // Check if this is a partial file for this specific download
                         if let Some(filename) = path.file_name() {
                             let filename_str = filename.to_string_lossy();
-                            // Remove files that match the title or have common partial extensions
-                            if filename_str.to_lowercase().contains(&title.to_lowercase())
+                            // Only remove files with:
+                            // 1. The specific URL hash suffix (failed download for this URL)
+                            // 2. Common partial extensions (.part, .tmp)
+                            if filename_str.contains(&hash_suffix)
                                 || filename_str.ends_with(".part")
                                 || filename_str.ends_with(".tmp")
                             {
@@ -544,23 +569,37 @@ mod tests {
 
         let temp_dir = downloader.create_temp_dir("cleanup_test").await.unwrap();
 
-        // Create some partial files
-        let partial1 = temp_dir.join("video.part");
-        let partial2 = temp_dir.join("video.tmp");
-        let normal = temp_dir.join("complete.mp4");
+        // Create a URL hash for testing
+        let test_hash = 0xABCDEF12u64;
+        let hash_suffix = format!("_{:08x}", test_hash);
 
-        fs::write(&partial1, "partial").await.unwrap();
-        fs::write(&partial2, "partial").await.unwrap();
-        fs::write(&normal, "complete").await.unwrap();
+        // Create some partial files with the hash suffix
+        let partial_with_hash = temp_dir.join(format!("video{}.mkv", hash_suffix));
+        let partial_part = temp_dir.join("video.part");
+        let partial_tmp = temp_dir.join("video.tmp");
+        // Create a successfully downloaded file (no hash suffix)
+        let complete = temp_dir.join("complete_video.mp4");
+        // Create another file with a different hash (should not be deleted)
+        let other_hash_file = temp_dir.join("other_video_99999999.mkv");
 
-        // Cleanup partial files for "video"
-        downloader.cleanup_partial_files(&temp_dir, "video").await;
+        fs::write(&partial_with_hash, "partial").await.unwrap();
+        fs::write(&partial_part, "partial").await.unwrap();
+        fs::write(&partial_tmp, "partial").await.unwrap();
+        fs::write(&complete, "complete").await.unwrap();
+        fs::write(&other_hash_file, "other").await.unwrap();
 
-        // Partial files should be removed
-        assert!(!partial1.exists());
-        assert!(!partial2.exists());
-        // Normal file should remain (doesn't match title)
-        assert!(normal.exists());
+        // Cleanup partial files for the specific hash
+        downloader.cleanup_partial_files(&temp_dir, test_hash).await;
+
+        // Files with the specific hash suffix should be removed
+        assert!(!partial_with_hash.exists());
+        // .part and .tmp files should be removed
+        assert!(!partial_part.exists());
+        assert!(!partial_tmp.exists());
+        // Complete file should remain (no hash suffix)
+        assert!(complete.exists());
+        // File with different hash should remain
+        assert!(other_hash_file.exists());
     }
 
     #[tokio::test]
@@ -690,8 +729,8 @@ mod property_tests {
         #![proptest_config(ProptestConfig::with_cases(20))]
         #[test]
         fn prop_download_failure_cleanup(
-            title in "[a-zA-Z0-9 ]{5,30}",
-            num_partial_files in 1usize..5usize
+            num_partial_files in 1usize..5usize,
+            test_hash in 0x10000000u64..0xFFFFFFFFu64
         ) {
             let runtime = tokio::runtime::Runtime::new().unwrap();
             runtime.block_on(async {
@@ -700,34 +739,50 @@ mod property_tests {
 
                 let temp_dir = downloader.create_temp_dir("cleanup_test").await.unwrap();
 
-                // Create partial files that should be cleaned up
+                let hash_suffix = format!("_{:08x}", test_hash);
+
+                // Create partial files with the hash suffix that should be cleaned up
                 for i in 0..num_partial_files {
-                    let partial_file = temp_dir.join(format!("{}_part{}.part", title, i));
+                    let partial_file = temp_dir.join(format!("video{}_part{}.mkv", hash_suffix, i));
                     tokio::fs::write(&partial_file, "partial").await.unwrap();
                 }
 
-                // Create a file that shouldn't be cleaned (different title)
-                let unrelated_file = temp_dir.join("unrelated.mp4");
-                tokio::fs::write(&unrelated_file, "complete").await.unwrap();
+                // Create .part and .tmp files that should also be cleaned up
+                let part_file = temp_dir.join("video.part");
+                let tmp_file = temp_dir.join("video.tmp");
+                tokio::fs::write(&part_file, "partial").await.unwrap();
+                tokio::fs::write(&tmp_file, "partial").await.unwrap();
 
-                // Cleanup partial files
-                downloader.cleanup_partial_files(&temp_dir, &title).await;
+                // Create files that shouldn't be cleaned (different hash, no hash, complete files)
+                let unrelated_file = temp_dir.join("unrelated.mp4");
+                let other_hash_file = temp_dir.join("other_video_99999999.mkv");
+                tokio::fs::write(&unrelated_file, "complete").await.unwrap();
+                tokio::fs::write(&other_hash_file, "complete").await.unwrap();
+
+                // Cleanup partial files for the specific hash
+                downloader.cleanup_partial_files(&temp_dir, test_hash).await;
 
                 // Count remaining files
                 let mut entries = tokio::fs::read_dir(&temp_dir).await.unwrap();
                 let mut file_count = 0;
                 let mut has_unrelated = false;
+                let mut has_other_hash = false;
 
                 while let Some(entry) = entries.next_entry().await.unwrap() {
                     file_count += 1;
-                    if entry.file_name() == "unrelated.mp4" {
+                    let filename = entry.file_name();
+                    if filename == "unrelated.mp4" {
                         has_unrelated = true;
+                    }
+                    if filename == "other_video_99999999.mkv" {
+                        has_other_hash = true;
                     }
                 }
 
-                // Only the unrelated file should remain
-                prop_assert_eq!(file_count, 1);
+                // Only the unrelated files should remain (2 files)
+                prop_assert_eq!(file_count, 2);
                 prop_assert!(has_unrelated);
+                prop_assert!(has_other_hash);
 
                 Ok(()) as Result<(), proptest::test_runner::TestCaseError>
             }).unwrap();
