@@ -582,11 +582,25 @@ impl Orchestrator {
         );
 
         // Phase 2: Discovery — series-level + per-season extras + specials
+        //
+        // Discovery happens in three independent stages:
+        // 1. Series-level extras (ALWAYS): Trailers, interviews, behind-the-scenes for the entire series
+        // 2. Season-specific extras (if --season-extras): Content specific to individual seasons
+        // 3. Season 0 specials (if --specials): Official special episodes from TheTVDB
+        //
+        // All three types are discovered and downloaded independently.
         info!("Phase 2: Discovering content for {}", series);
+        info!("Discovery flags: season_extras={}, specials={}", season_extras, specials);
+        
+        
         let mut all_extras = series_discovery.discover_all(&series).await;
+        let series_level_count = all_extras.len();
+        info!("Series-level discovery complete: found {} extras", series_level_count);
 
         // Discover season-specific extras if enabled
+        let mut season_specific_count = 0;
         if season_extras {
+            info!("Season-specific extras discovery enabled");
             for &season in &series.seasons {
                 let season_extras = series_discovery
                     .discover_season_extras(&series, season)
@@ -597,12 +611,16 @@ impl Orchestrator {
                     season,
                     series
                 );
+                season_specific_count += season_extras.len();
                 all_extras.extend(season_extras);
             }
+        } else {
+            info!("Season-specific extras discovery disabled (use --season-extras to enable)");
         }
 
         // Discover Season 0 specials if enabled (keep metadata separate)
         let (season_zero_extras, tvdb_episodes_metadata) = if specials {
+            info!("Season 0 specials discovery enabled");
             info!("Discovering Season 0 specials for {}", series);
             let (_raw_extras, episodes) = series_discovery
                 .discover_season_zero_with_metadata(&series)
@@ -655,6 +673,7 @@ impl Orchestrator {
                 (extras, matched_episodes)
             }
         } else {
+            info!("Season 0 specials discovery disabled (use --specials to enable)");
             (Vec::new(), Vec::new())
         };
 
@@ -683,6 +702,16 @@ impl Orchestrator {
             all_extras.len(),
             season_zero_extras.len(),
             series
+        );
+        
+        info!(
+            "Discovery summary for {}: {} series-level, {} season-specific, {} Season 0 specials (total: {} regular + {} specials)",
+            series,
+            series_level_count,
+            season_specific_count,
+            season_zero_extras.len(),
+            all_extras.len(),
+            season_zero_extras.len()
         );
 
         // Phase 3: Download regular extras
