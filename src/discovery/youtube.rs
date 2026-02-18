@@ -198,8 +198,7 @@ impl YoutubeDiscoverer {
                         // Infer category from the video's actual title rather than
                         // blindly trusting the search query category.
                         let resolved_category =
-                            title_matching::infer_category_from_title(&title)
-                                .unwrap_or(category);
+                            title_matching::infer_category_from_title(&title).unwrap_or(category);
 
                         sources.push(VideoSource {
                             url,

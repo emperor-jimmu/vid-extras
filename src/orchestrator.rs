@@ -385,6 +385,18 @@ impl Orchestrator {
     ) -> MovieResult {
         info!("Processing movie: {}", movie);
 
+        // Remove stale done marker when reprocessing via --force
+        if movie.has_done_marker {
+            let marker_path = movie.path.join("done.ext");
+            info!(
+                "Removing stale done marker before reprocessing: {:?}",
+                marker_path
+            );
+            if let Err(e) = tokio::fs::remove_file(&marker_path).await {
+                warn!("Failed to remove done marker {:?}: {}", marker_path, e);
+            }
+        }
+
         // Generate movie ID for temp directory
         let movie_id = format!("{}_{}", movie.title.replace(' ', "_"), movie.year);
 
@@ -575,6 +587,18 @@ impl Orchestrator {
     ) -> SeriesResult {
         info!("Processing series: {}", series);
 
+        // Remove stale done marker when reprocessing via --force
+        if series.has_done_marker {
+            let marker_path = series.path.join("done.ext");
+            info!(
+                "Removing stale done marker before reprocessing: {:?}",
+                marker_path
+            );
+            if let Err(e) = tokio::fs::remove_file(&marker_path).await {
+                warn!("Failed to remove done marker {:?}: {}", marker_path, e);
+            }
+        }
+
         let series_id = format!(
             "{}_{}",
             series.title.replace(' ', "_"),
@@ -590,12 +614,17 @@ impl Orchestrator {
         //
         // All three types are discovered and downloaded independently.
         info!("Phase 2: Discovering content for {}", series);
-        info!("Discovery flags: season_extras={}, specials={}", season_extras, specials);
-        
-        
+        info!(
+            "Discovery flags: season_extras={}, specials={}",
+            season_extras, specials
+        );
+
         let mut all_extras = series_discovery.discover_all(&series).await;
         let series_level_count = all_extras.len();
-        info!("Series-level discovery complete: found {} extras", series_level_count);
+        info!(
+            "Series-level discovery complete: found {} extras",
+            series_level_count
+        );
 
         // Discover season-specific extras if enabled
         let mut season_specific_count = 0;
@@ -703,7 +732,7 @@ impl Orchestrator {
             season_zero_extras.len(),
             series
         );
-        
+
         info!(
             "Discovery summary for {}: {} series-level, {} season-specific, {} Season 0 specials (total: {} regular + {} specials)",
             series,

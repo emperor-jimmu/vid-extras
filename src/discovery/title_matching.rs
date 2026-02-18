@@ -590,10 +590,7 @@ mod tests {
             infer_category_from_title("Coach Carter - Go to College"),
             None
         );
-        assert_eq!(
-            infer_category_from_title("a touch of zen (俠女)"),
-            None
-        );
+        assert_eq!(infer_category_from_title("a touch of zen (俠女)"), None);
     }
 
     #[test]
