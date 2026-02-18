@@ -269,8 +269,12 @@ impl Downloader {
         }
     }
 
-    /// Find the downloaded file in the destination directory
-    /// Looks for files with the URL hash suffix pattern and removes the hash from the filename
+    /// Find the downloaded file in the destination directory.
+    ///
+    /// Reads the directory once, then tries three strategies in order:
+    /// 1. Hash-based lookup (exact match on URL hash suffix)
+    /// 2. Fuzzy title matching (word overlap scoring)
+    /// 3. Most recently modified file (last resort)
     async fn find_downloaded_file(
         &self,
         dest_dir: &Path,
@@ -282,103 +286,34 @@ impl Downloader {
             expected_title, url_hash
         );
 
-        let hash_suffix = format!("_{:08x}", url_hash);
-        let mut entries = fs::read_dir(dest_dir).await?;
+        // Read directory once and collect all file paths
+        let files = Self::collect_files(dest_dir).await?;
 
-        // Look for files with the hash suffix
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            if path.is_file()
-                && let Some(filename) = path.file_name()
-            {
-                let filename_str = filename.to_string_lossy();
-                // Check if filename contains our hash suffix
-                if filename_str.contains(&hash_suffix) {
-                    debug!("Found file with hash suffix: {:?}", path);
-                    // Remove hash suffix from filename
-                    return self.remove_hash_from_filename(&path, &hash_suffix).await;
-                }
-            }
+        let hash_suffix = format!("_{:08x}", url_hash);
+
+        // Strategy 1: exact hash match
+        if let Some(path) = Self::find_by_hash(&files, &hash_suffix) {
+            return self.remove_hash_from_filename(&path, &hash_suffix).await;
         }
 
-        // Fallback: if no file with hash found, use the old fuzzy matching logic
         warn!(
             "No file found with hash suffix {}, falling back to fuzzy matching",
             hash_suffix
         );
 
-        let mut entries = fs::read_dir(dest_dir).await?;
-        let mut candidates = Vec::new();
-
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            if path.is_file() {
-                candidates.push(path);
-            }
+        // Single-file shortcut (common case after a single download)
+        if files.len() == 1 {
+            debug!("Only one file found, using: {:?}", files[0]);
+            return Ok(files[0].clone());
         }
 
-        debug!("Found {} files in temp directory", candidates.len());
-
-        // If there's only one file, return it (common case)
-        if candidates.len() == 1 {
-            debug!("Only one file found, using: {:?}", candidates[0]);
-            return Ok(candidates[0].clone());
-        }
-
-        // If multiple files, try to find the best match
-        let title_lower = expected_title.to_lowercase();
-        let mut best_match: Option<(PathBuf, usize)> = None;
-
-        for path in &candidates {
-            if let Some(filename) = path.file_name() {
-                let filename_str = filename.to_string_lossy().to_lowercase();
-
-                // Calculate match score based on common words
-                let title_words: Vec<&str> = title_lower.split_whitespace().collect();
-                let mut match_count = 0;
-
-                for word in &title_words {
-                    if word.len() > 3 && filename_str.contains(word) {
-                        match_count += 1;
-                    }
-                }
-
-                debug!("File {:?} has match score: {}", filename, match_count);
-
-                if match_count > 0 {
-                    if let Some((_, current_best)) = &best_match {
-                        if match_count > *current_best {
-                            best_match = Some((path.clone(), match_count));
-                        }
-                    } else {
-                        best_match = Some((path.clone(), match_count));
-                    }
-                }
-            }
-        }
-
-        if let Some((path, score)) = best_match {
-            debug!("Best match found with score {}: {:?}", score, path);
+        // Strategy 2: fuzzy title matching
+        if let Some(path) = Self::find_by_title_similarity(&files, expected_title) {
             return Ok(path);
         }
 
-        // If no good match, return the most recently modified file
-        let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
-        for path in &candidates {
-            if let Ok(metadata) = path.metadata()
-                && let Ok(modified) = metadata.modified()
-            {
-                if let Some((_, current_time)) = &newest {
-                    if modified > *current_time {
-                        newest = Some((path.clone(), modified));
-                    }
-                } else {
-                    newest = Some((path.clone(), modified));
-                }
-            }
-        }
-
-        if let Some((path, _)) = newest {
+        // Strategy 3: most recently modified
+        if let Some(path) = Self::find_most_recent(&files) {
             warn!("No good filename match, using most recent file: {:?}", path);
             return Ok(path);
         }
@@ -386,6 +321,79 @@ impl Downloader {
         Err(DownloadError::YtDlpFailed(
             "No downloaded file found".to_string(),
         ))
+    }
+
+    /// Read a directory once and return all file paths.
+    async fn collect_files(dir: &Path) -> Result<Vec<PathBuf>, DownloadError> {
+        let mut entries = fs::read_dir(dir).await?;
+        let mut files = Vec::new();
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.is_file() {
+                files.push(path);
+            }
+        }
+        debug!("Found {} files in temp directory", files.len());
+        Ok(files)
+    }
+
+    /// Strategy 1: find a file whose name contains the expected hash suffix.
+    fn find_by_hash(files: &[PathBuf], hash_suffix: &str) -> Option<PathBuf> {
+        for path in files {
+            if let Some(filename) = path.file_name()
+                && filename.to_string_lossy().contains(hash_suffix)
+            {
+                debug!("Found file with hash suffix: {:?}", path);
+                return Some(path.clone());
+            }
+        }
+        None
+    }
+
+    /// Strategy 2: score each file by how many title words (len > 3) appear in
+    /// its filename, and return the highest-scoring match.
+    fn find_by_title_similarity(files: &[PathBuf], expected_title: &str) -> Option<PathBuf> {
+        let title_lower = expected_title.to_lowercase();
+        let title_words: Vec<&str> = title_lower.split_whitespace().collect();
+
+        let mut best: Option<(PathBuf, usize)> = None;
+
+        for path in files {
+            let filename_str = path
+                .file_name()
+                .map(|f| f.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+
+            let score = title_words
+                .iter()
+                .filter(|w| w.len() > 3 && filename_str.contains(**w))
+                .count();
+
+            debug!("File {:?} has match score: {}", path.file_name(), score);
+
+            if score > 0 && best.as_ref().is_none_or(|(_, s)| score > *s) {
+                best = Some((path.clone(), score));
+            }
+        }
+
+        if let Some((ref path, score)) = best {
+            debug!("Best match found with score {}: {:?}", score, path);
+        }
+        best.map(|(p, _)| p)
+    }
+
+    /// Strategy 3: return the most recently modified file.
+    fn find_most_recent(files: &[PathBuf]) -> Option<PathBuf> {
+        files
+            .iter()
+            .filter_map(|p| {
+                p.metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(|t| (p.clone(), t))
+            })
+            .max_by_key(|(_, t)| *t)
+            .map(|(p, _)| p)
     }
 
     /// Remove hash suffix from filename and rename the file
