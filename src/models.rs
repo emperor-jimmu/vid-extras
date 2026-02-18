@@ -1,7 +1,5 @@
 // Models module - shared data structures and types
 
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
@@ -152,7 +150,6 @@ impl fmt::Display for SourceMode {
 }
 
 /// Type of content source
-#[allow(dead_code)]
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SourceType {

@@ -196,7 +196,6 @@ impl Organizer {
 }
 
 /// SeriesOrganizer handles file organization for TV series into Jellyfin-compatible structure
-#[allow(dead_code)]
 pub struct SeriesOrganizer {
     /// Path to the series folder
     series_path: PathBuf,
@@ -204,7 +203,6 @@ pub struct SeriesOrganizer {
     available_seasons: Vec<u8>,
 }
 
-#[allow(dead_code)]
 impl SeriesOrganizer {
     /// Create a new SeriesOrganizer for a specific series folder
     pub fn new(series_path: PathBuf, available_seasons: Vec<u8>) -> Self {

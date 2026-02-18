@@ -52,7 +52,7 @@ impl Validator {
     /// - TVDB API key is configured (if specials_enabled is true)
     ///
     /// Returns Ok((tmdb_key, tvdb_key)) if all checks pass, or ValidationError describing the issue
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn validate_dependencies_with_tvdb(
         &self,
         specials_enabled: bool,
@@ -92,7 +92,7 @@ impl Validator {
     /// 2. Verifies connectivity with test authentication
     ///
     /// Returns the TVDB API key if successful, or ValidationError if missing/invalid
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn check_tvdb_api_key(&self) -> Result<String, ValidationError> {
         self.check_tvdb_api_key_internal(true)
     }
@@ -101,7 +101,7 @@ impl Validator {
     ///
     /// When allow_prompt is true, prompts user for key if missing from config
     /// When allow_prompt is false, only checks existing config file
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     fn check_tvdb_api_key_internal(&self, allow_prompt: bool) -> Result<String, ValidationError> {
         // Try to load from existing config file first (without prompting)
         let config_path = Config::default_path();
@@ -132,7 +132,6 @@ impl Validator {
     }
 
     /// Check if a binary exists in the system PATH
-    #[cfg_attr(not(test), allow(dead_code))]
     fn check_binary_exists(&self, name: &str) -> bool {
         // Try to execute the binary with --version flag
         // This works for both yt-dlp and ffmpeg
@@ -168,7 +167,6 @@ impl Validator {
     ///
     /// When allow_prompt is false, only checks existing config file and environment variable
     /// without prompting the user. This is useful for testing.
-    #[cfg_attr(not(test), allow(dead_code))]
     fn check_tmdb_api_key_internal(&self, allow_prompt: bool) -> Result<String, ValidationError> {
         // Try to load from existing config file first (without prompting)
         let config_path = Config::default_path();

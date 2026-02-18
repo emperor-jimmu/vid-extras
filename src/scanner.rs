@@ -5,9 +5,21 @@ use crate::models::{DoneMarker, MediaType, MovieEntry, SeriesEntry};
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
-#[allow(dead_code)]
 const DONE_MARKER_FILENAME: &str = "done.ext";
+
+/// Pre-compiled regex for parsing "Title (Year)" folder names
+static FOLDER_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(.+?)\s*\((\d{4})\)$").expect("folder name regex is valid"));
+
+/// Pre-compiled regex for detecting "Season N" folders
+static SEASON_FOLDER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^Season \d+$").expect("season folder regex is valid"));
+
+/// Pre-compiled regex for extracting season numbers from "Season N" folders
+static SEASON_NUMBER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^Season (\d+)$").expect("season number regex is valid"));
 
 /// Scanner for traversing movie library directories
 pub struct Scanner {
@@ -16,7 +28,6 @@ pub struct Scanner {
     single: bool,
 }
 
-#[allow(dead_code)]
 impl Scanner {
     /// Create a new Scanner instance
     pub fn new(root_dir: PathBuf, force: bool, single: bool) -> Self {
@@ -318,7 +329,6 @@ impl Scanner {
     }
 
     /// Recursively scan a directory for movie folders
-    #[cfg_attr(not(test), allow(dead_code))]
     fn scan_directory(&self, dir: &Path, movies: &mut Vec<MovieEntry>) -> Result<(), ScanError> {
         // Check if directory exists and is readable
         if !dir.exists() {
@@ -380,11 +390,7 @@ impl Scanner {
     /// Expected format: "Movie Title (Year)"
     /// Returns Some((title, year)) if valid, None otherwise
     pub fn parse_folder_name(name: &str) -> Option<(String, u16)> {
-        // Regex pattern: ^(.+?)\s*\((\d{4})\)$
-        // Captures: title (non-greedy) and 4-digit year
-        let re = Regex::new(r"^(.+?)\s*\((\d{4})\)$").ok()?;
-
-        let caps = re.captures(name)?;
+        let caps = FOLDER_NAME_RE.captures(name)?;
 
         let title = caps.get(1)?.as_str().trim().to_string();
         let year_str = caps.get(2)?.as_str();
@@ -406,9 +412,7 @@ impl Scanner {
     /// Returns Some((title, year)) where year is None if not present
     pub fn parse_series_folder_name(name: &str) -> Option<(String, Option<u16>)> {
         // Try with year first: "Series Name (YYYY)"
-        let re_with_year = Regex::new(r"^(.+?)\s*\((\d{4})\)$").ok()?;
-
-        if let Some(caps) = re_with_year.captures(name) {
+        if let Some(caps) = FOLDER_NAME_RE.captures(name) {
             let title = caps.get(1)?.as_str().trim().to_string();
             let year = caps.get(2)?.as_str().parse::<u16>().ok()?;
 
@@ -466,16 +470,11 @@ impl Scanner {
     /// Check if directory contains season folders (Season 1, Season 01, Season 001, etc.)
     /// Uses regex pattern to match "Season X+" format (one or more digits)
     fn has_season_folders(path: &Path) -> bool {
-        let season_regex = match Regex::new(r"^Season \d+$") {
-            Ok(re) => re,
-            Err(_) => return false,
-        };
-
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
                 if entry.path().is_dir()
                     && let Some(name) = entry.file_name().to_str()
-                    && season_regex.is_match(name)
+                    && SEASON_FOLDER_RE.is_match(name)
                 {
                     return true;
                 }
@@ -509,18 +508,13 @@ impl Scanner {
     /// Returns a sorted vector of season numbers found
     /// Matches "Season 1", "Season 01", "Season 001", etc.
     fn detect_season_folders(path: &Path) -> Vec<u8> {
-        let season_regex = match Regex::new(r"^Season (\d+)$") {
-            Ok(re) => re,
-            Err(_) => return Vec::new(),
-        };
-
         let mut seasons = Vec::new();
 
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
                 if entry.path().is_dir()
                     && let Some(name) = entry.file_name().to_str()
-                    && let Some(caps) = season_regex.captures(name)
+                    && let Some(caps) = SEASON_NUMBER_RE.captures(name)
                     && let Some(season_str) = caps.get(1)
                     && let Ok(season_num) = season_str.as_str().parse::<u8>()
                 {

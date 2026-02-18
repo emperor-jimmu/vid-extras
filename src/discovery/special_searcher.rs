@@ -60,7 +60,7 @@ impl SpecialSearcher {
     ///
     /// # Returns
     /// True if the result should be included, false if it should be skipped
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn should_include_result(result_title: &str, expected_title: &str) -> bool {
         let similarity = Self::calculate_similarity(result_title, expected_title);
         similarity >= 0.6
@@ -70,7 +70,7 @@ impl SpecialSearcher {
     ///
     /// This is a simplified similarity metric based on common characters.
     /// For production use, consider using a proper fuzzy matching library.
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn calculate_similarity(s1: &str, s2: &str) -> f64 {
         let s1_lower = s1.to_lowercase();
         let s2_lower = s2.to_lowercase();

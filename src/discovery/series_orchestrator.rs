@@ -14,7 +14,6 @@ use super::title_matching;
 use super::tvdb::TvdbClient;
 
 /// Orchestrates series discovery from all sources
-#[allow(dead_code)]
 pub struct SeriesDiscoveryOrchestrator {
     tmdb: TmdbSeriesDiscoverer,
     youtube: YoutubeSeriesDiscoverer,
@@ -25,7 +24,6 @@ pub struct SeriesDiscoveryOrchestrator {
 
 impl SeriesDiscoveryOrchestrator {
     /// Creates a new SeriesDiscoveryOrchestrator with the specified mode
-    #[allow(dead_code)]
     pub fn new(tmdb_api_key: String, mode: SourceMode) -> Self {
         Self {
             tmdb: TmdbSeriesDiscoverer::new(tmdb_api_key),
@@ -37,7 +35,6 @@ impl SeriesDiscoveryOrchestrator {
     }
 
     /// Creates a new SeriesDiscoveryOrchestrator with TVDB support enabled
-    #[allow(dead_code)]
     pub fn new_with_tvdb(
         tmdb_api_key: String,
         tvdb_api_key: String,
@@ -80,7 +77,6 @@ impl SeriesDiscoveryOrchestrator {
     ///
     /// Errors from individual sources are logged but don't stop the overall discovery process.
     /// This ensures graceful degradation if one source fails.
-    #[allow(dead_code)]
     pub async fn discover_all(&self, series: &SeriesEntry) -> Vec<SeriesExtra> {
         let mut all_sources = Vec::new();
 
@@ -177,7 +173,6 @@ impl SeriesDiscoveryOrchestrator {
     /// In YoutubeOnly mode: queries only YouTube
     ///
     /// Errors from individual sources are logged but don't stop the overall discovery process.
-    #[allow(dead_code)]
     pub async fn discover_season_extras(
         &self,
         series: &SeriesEntry,
@@ -279,7 +274,7 @@ impl SeriesDiscoveryOrchestrator {
     /// 6. Returns SeriesExtra items for the YouTube pipeline
     ///
     /// Requirements: 5.5, 6.5
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn discover_season_zero(&self, series: &SeriesEntry) -> Vec<SeriesExtra> {
         // Check if TVDB support is enabled
         let (tvdb_client, id_bridge) = match (&self.tvdb_client, &self.id_bridge) {

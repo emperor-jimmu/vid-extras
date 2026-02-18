@@ -1,7 +1,9 @@
 // TMDB series content discoverer
 
 use crate::error::DiscoveryError;
-use crate::models::{ContentCategory, SeriesExtra, SourceType, SpecialEpisode};
+#[cfg(test)]
+use crate::models::SpecialEpisode;
+use crate::models::{ContentCategory, SeriesExtra, SourceType};
 use log::{debug, error, info};
 use serde::Deserialize;
 
@@ -66,7 +68,6 @@ struct TmdbEpisode {
 }
 
 /// TMDB series content discoverer
-#[allow(dead_code)]
 pub struct TmdbSeriesDiscoverer {
     api_key: String,
     client: reqwest::Client,
@@ -74,7 +75,6 @@ pub struct TmdbSeriesDiscoverer {
 
 impl TmdbSeriesDiscoverer {
     /// Create a new TMDB series discoverer with the given API key
-    #[allow(dead_code)]
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
@@ -83,7 +83,6 @@ impl TmdbSeriesDiscoverer {
     }
 
     /// Search for a TV series by title and optional year, returns series ID
-    #[allow(dead_code)]
     pub async fn search_series(
         &self,
         title: &str,
@@ -131,7 +130,6 @@ impl TmdbSeriesDiscoverer {
     }
 
     /// Discover series-level extras from TMDB videos endpoint
-    #[allow(dead_code)]
     pub async fn discover_series_extras(
         &self,
         series_id: u64,
@@ -190,7 +188,7 @@ impl TmdbSeriesDiscoverer {
     }
 
     /// Discover Season 0 specials from TMDB
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn discover_season_zero(
         &self,
         series_id: u64,
@@ -250,14 +248,14 @@ impl TmdbSeriesDiscoverer {
     }
 
     /// Map TMDB video type to content category
-    #[allow(dead_code)]
     pub fn map_tmdb_type(tmdb_type: &str) -> Option<ContentCategory> {
         match tmdb_type {
             "Trailer" => Some(ContentCategory::Trailer),
             "Teaser" => Some(ContentCategory::Trailer), // Teasers are short trailers
             "Behind the Scenes" => Some(ContentCategory::BehindTheScenes),
             "Featurette" => Some(ContentCategory::Featurette),
-            "Clip" => Some(ContentCategory::Featurette), // Clips are treated as featurettes
+            "Bloopers" => Some(ContentCategory::Featurette), // Bloopers are treated as featurettes
+            "Clip" => Some(ContentCategory::Featurette),     // Clips are treated as featurettes
             _ => {
                 debug!("Unknown TMDB video type: {}", tmdb_type);
                 None

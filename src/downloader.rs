@@ -28,7 +28,7 @@ impl Downloader {
 
     /// Create a new Downloader with custom timeout
     /// Used for testing scenarios where timeout behavior needs to be controlled
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn with_timeout(temp_base: PathBuf, timeout_secs: u64) -> Self {
         Self {
             temp_base,
