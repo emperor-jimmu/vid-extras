@@ -34,9 +34,8 @@ async fn main() {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     }
 
-    // Display banner and configuration
+    // Display banner early (before config loading)
     display_banner();
-    display_config(&config);
 
     // Validate dependencies before processing
     // Requirements: 11.1, 11.2, 11.3, 11.4, 11.5
@@ -95,7 +94,16 @@ async fn main() {
     };
 
     // CLI flag takes priority over config file for cookie auth
-    let cookies_from_browser = config.cookies_from_browser.or(config_cookies);
+    let cookies_from_browser = config.cookies_from_browser.clone().or(config_cookies);
+
+    if let Some(ref browser) = cookies_from_browser {
+        log::info!("Cookie authentication: {} browser", browser);
+    }
+
+    // Display configuration now that cookies are fully resolved
+    let mut display = config.clone();
+    display.cookies_from_browser = cookies_from_browser.clone();
+    display_config(&display);
 
     // Create orchestrator with validated configuration
     let orchestrator = match Orchestrator::new(

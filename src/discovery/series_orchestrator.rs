@@ -20,6 +20,7 @@ pub struct SeriesDiscoveryOrchestrator {
     mode: SourceMode,
     tvdb_client: Option<Arc<TvdbClient>>,
     id_bridge: Option<Arc<IdBridge>>,
+    pub(crate) cookies_from_browser: Option<String>,
 }
 
 impl SeriesDiscoveryOrchestrator {
@@ -31,6 +32,7 @@ impl SeriesDiscoveryOrchestrator {
             mode,
             tvdb_client: None,
             id_bridge: None,
+            cookies_from_browser: None,
         }
     }
 
@@ -54,7 +56,15 @@ impl SeriesDiscoveryOrchestrator {
             mode,
             tvdb_client: Some(tvdb_client),
             id_bridge: Some(id_bridge),
+            cookies_from_browser: None,
         }
+    }
+
+    /// Set browser cookie authentication for YouTube searches
+    pub fn with_cookies(mut self, browser: String) -> Self {
+        self.youtube = YoutubeSeriesDiscoverer::with_cookies(browser.clone());
+        self.cookies_from_browser = Some(browser);
+        self
     }
 
     /// Check if a string contains non-Latin characters (e.g., CJK, Arabic, Cyrillic)

@@ -219,14 +219,22 @@ impl Orchestrator {
         let series_discovery = if let (true, Some(tvdb_key)) = (specials, tvdb_api_key) {
             let cache_dir = root_dir.join(".cache").join("tvdb_ids");
             info!("  TVDB support enabled for Season 0 specials");
-            Arc::new(SeriesDiscoveryOrchestrator::new_with_tvdb(
+            let mut orch = SeriesDiscoveryOrchestrator::new_with_tvdb(
                 tmdb_api_key.clone(),
                 tvdb_key,
                 mode,
                 cache_dir,
-            ))
+            );
+            if let Some(ref browser) = cookies_from_browser {
+                orch = orch.with_cookies(browser.clone());
+            }
+            Arc::new(orch)
         } else {
-            Arc::new(SeriesDiscoveryOrchestrator::new(tmdb_api_key.clone(), mode))
+            let mut orch = SeriesDiscoveryOrchestrator::new(tmdb_api_key.clone(), mode);
+            if let Some(ref browser) = cookies_from_browser {
+                orch = orch.with_cookies(browser.clone());
+            }
+            Arc::new(orch)
         };
 
         let discovery = match &cookies_from_browser {
@@ -779,8 +787,12 @@ async fn discover_season_zero_specials(
         episodes.len(),
         series
     );
-    let selections =
-        crate::discovery::SpecialValidator::select_best_candidates(&series.title, &episodes).await;
+    let selections = crate::discovery::SpecialValidator::select_best_candidates(
+        &series.title,
+        &episodes,
+        series_discovery.cookies_from_browser.as_deref(),
+    )
+    .await;
 
     let mut extras = Vec::new();
     let mut matched_episodes = Vec::new();
@@ -1536,12 +1548,7 @@ mod tests {
             "Specials".to_string(),
             None,
         )
-        .unwrap();
-
-        let orchestrator_both = Orchestrator::builder(root_dir.clone(), "fake_api_key".to_string())
-            .processing_mode(ProcessingMode::Both)
-            .build()
-            .expect("orchestrator build should succeed");
+        .expect("orchestrator build should succeed");
         assert_eq!(orchestrator_both.processing_mode, ProcessingMode::Both);
 
         // Test with MoviesOnly mode

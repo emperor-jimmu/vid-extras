@@ -7,12 +7,24 @@ use log::{debug, error, info};
 use super::title_matching;
 
 /// YouTube content discoverer for TV series
-pub struct YoutubeSeriesDiscoverer;
+pub struct YoutubeSeriesDiscoverer {
+    /// Browser to source cookies from for bot-detection bypass (e.g. "chrome", "firefox")
+    cookies_from_browser: Option<String>,
+}
 
 impl YoutubeSeriesDiscoverer {
-    /// Create a new YouTube series discoverer
+    /// Create a new YouTube series discoverer without cookie authentication
     pub fn new() -> Self {
-        Self
+        Self {
+            cookies_from_browser: None,
+        }
+    }
+
+    /// Create a new YouTube series discoverer with browser cookie authentication
+    pub fn with_cookies(browser: String) -> Self {
+        Self {
+            cookies_from_browser: Some(browser),
+        }
     }
 
     /// Build search queries for series-level extras
@@ -134,19 +146,23 @@ impl YoutubeSeriesDiscoverer {
         debug!("Searching YouTube with query: {}", query);
 
         // Execute yt-dlp to search and get video metadata
-        let output = tokio::process::Command::new("yt-dlp")
-            .arg("--dump-json")
+        let mut cmd = tokio::process::Command::new("yt-dlp");
+        cmd.arg("--dump-json")
             .arg("--no-playlist")
             .arg("--skip-download")
             .arg("--js-runtimes")
             .arg("node")
-            .arg(&search_query)
-            .output()
-            .await
-            .map_err(|e| {
-                error!("Failed to execute yt-dlp: {}", e);
-                DiscoveryError::YtDlpError(format!("Failed to execute yt-dlp: {}", e))
-            })?;
+            .arg(&search_query);
+
+        // Pass browser cookies when configured to bypass bot-detection
+        if let Some(browser) = &self.cookies_from_browser {
+            cmd.arg("--cookies-from-browser").arg(browser);
+        }
+
+        let output = cmd.output().await.map_err(|e| {
+            error!("Failed to execute yt-dlp: {}", e);
+            DiscoveryError::YtDlpError(format!("Failed to execute yt-dlp: {}", e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

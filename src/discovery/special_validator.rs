@@ -69,6 +69,7 @@ impl SpecialValidator {
     pub async fn select_best_candidates(
         series_title: &str,
         episodes: &[TvdbEpisodeExtended],
+        cookies_from_browser: Option<&str>,
     ) -> Vec<Option<SelectedSpecial>> {
         let mut results = Vec::with_capacity(episodes.len());
 
@@ -77,7 +78,7 @@ impl SpecialValidator {
             let mut best: Option<SelectedSpecial> = None;
 
             for query in &queries {
-                let candidates = Self::fetch_candidates(query).await;
+                let candidates = Self::fetch_candidates(query, cookies_from_browser).await;
                 if candidates.is_empty() {
                     debug!("No candidates for query: {}", query);
                     continue;
@@ -119,20 +120,25 @@ impl SpecialValidator {
     }
 
     /// Run `yt-dlp --dump-json` to fetch metadata for up to 5 search results
-    async fn fetch_candidates(query: &str) -> Vec<VideoCandidate> {
+    async fn fetch_candidates(query: &str, cookies_from_browser: Option<&str>) -> Vec<VideoCandidate> {
         let search_url = format!("ytsearch5:{}", query);
 
-        let output = Command::new("yt-dlp")
-            .arg("--dump-json")
+        let mut cmd = Command::new("yt-dlp");
+        cmd.arg("--dump-json")
             .arg("--flat-playlist")
             .arg("--no-download")
             .arg("--no-warnings")
             .arg("--quiet")
             .arg("--js-runtimes")
             .arg("node")
-            .arg(&search_url)
-            .output()
-            .await;
+            .arg(&search_url);
+
+        // Pass browser cookies when configured to bypass bot-detection
+        if let Some(browser) = cookies_from_browser {
+            cmd.arg("--cookies-from-browser").arg(browser);
+        }
+
+        let output = cmd.output().await;
 
         let output = match output {
             Ok(o) if o.status.success() => o,

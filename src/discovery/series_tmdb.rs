@@ -189,6 +189,7 @@ impl TmdbSeriesDiscoverer {
 
     /// Discover Season 0 specials from TMDB
     #[cfg(test)]
+    #[allow(dead_code)]
     pub async fn discover_season_zero(
         &self,
         series_id: u64,
