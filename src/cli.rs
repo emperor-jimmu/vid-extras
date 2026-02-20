@@ -307,6 +307,13 @@ pub fn display_config(config: &CliConfig) {
             media_type.bright_yellow()
         );
     }
+    if let Some(ref browser) = config.cookies_from_browser {
+        println!(
+            "  {} {}",
+            "Cookies From:".bright_white(),
+            browser.bright_cyan()
+        );
+    }
     println!();
 }
 
