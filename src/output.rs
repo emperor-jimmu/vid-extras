@@ -232,12 +232,14 @@ pub fn display_phase(phase_number: usize, phase_name: &str) {
     );
 }
 
-/// Display movie processing start
-pub fn display_movie_start(movie: &MovieEntry) {
+/// Display movie processing start with progress indicator
+pub fn display_movie_start(movie: &MovieEntry, current: usize, total: usize) {
     println!("\n{}", "━".repeat(60).bright_cyan());
     println!(
-        "{} Processing: {}",
+        "{} [{}/{}] Processing: {}",
         "🎬".bright_cyan(),
+        current.to_string().bright_yellow(),
+        total.to_string().bright_white(),
         movie.to_string().bright_white().bold()
     );
     println!("{}", "━".repeat(60).bright_cyan());
@@ -267,13 +269,15 @@ pub fn display_movie_complete(
     }
 }
 
-/// Display series processing start
+/// Display series processing start with progress indicator
 /// Requirements: 18.1
-pub fn display_series_start(series: &SeriesEntry) {
+pub fn display_series_start(series: &SeriesEntry, current: usize, total: usize) {
     println!("\n{}", "━".repeat(60).bright_cyan());
     println!(
-        "{} Processing: {}",
+        "{} [{}/{}] Processing: {}",
         "📺".bright_cyan(),
+        current.to_string().bright_yellow(),
+        total.to_string().bright_white(),
         series.to_string().bright_white().bold()
     );
     println!("{}", "━".repeat(60).bright_cyan());
@@ -494,7 +498,7 @@ mod tests {
     #[test]
     fn test_display_movie_start() {
         let movie = create_test_movie();
-        display_movie_start(&movie);
+        display_movie_start(&movie, 1, 5);
     }
 
     #[test]
@@ -512,7 +516,7 @@ mod tests {
     #[test]
     fn test_display_series_start() {
         let series = create_test_series();
-        display_series_start(&series);
+        display_series_start(&series, 2, 10);
     }
 
     #[test]

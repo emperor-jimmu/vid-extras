@@ -8,9 +8,11 @@ use crate::models::{
     ConversionResult, MovieEntry, ProcessingMode, SeriesEntry, SeriesExtra, SourceMode, VideoSource,
 };
 use crate::organizer::{Organizer, SeriesOrganizer};
+use crate::output;
 use crate::scanner::Scanner;
 use log::{debug, error, info, warn};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
@@ -342,8 +344,10 @@ impl Orchestrator {
     }
 
     async fn process_movies_sequential(&self, movies: Vec<MovieEntry>) -> Vec<MovieResult> {
+        let total = movies.len();
         let mut results = Vec::new();
-        for movie in movies {
+        for (idx, movie) in movies.into_iter().enumerate() {
+            output::display_movie_start(&movie, idx + 1, total);
             let result = self.process_movie(movie).await;
             results.push(result);
         }
@@ -352,6 +356,8 @@ impl Orchestrator {
 
     async fn process_movies_parallel(&self, movies: Vec<MovieEntry>) -> Vec<MovieResult> {
         let semaphore = Arc::new(Semaphore::new(self.concurrency));
+        let total = movies.len();
+        let counter = Arc::new(AtomicUsize::new(0));
         let mut tasks = Vec::new();
 
         for movie in movies {
@@ -360,9 +366,12 @@ impl Orchestrator {
             let downloader = self.downloader.clone();
             let converter = self.converter.clone();
             let temp_base = self.temp_base.clone();
+            let counter = counter.clone();
 
             let task = tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore should not be closed");
+                let current = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                output::display_movie_start(&movie, current, total);
                 Self::process_movie_static(movie, discovery, downloader, converter, temp_base).await
             });
             tasks.push(task);
@@ -474,8 +483,10 @@ impl Orchestrator {
     }
 
     async fn process_series_sequential(&self, series_list: Vec<SeriesEntry>) -> Vec<SeriesResult> {
+        let total = series_list.len();
         let mut results = Vec::new();
-        for series in series_list {
+        for (idx, series) in series_list.into_iter().enumerate() {
+            output::display_series_start(&series, idx + 1, total);
             let result = self.process_series(series).await;
             results.push(result);
         }
@@ -484,6 +495,8 @@ impl Orchestrator {
 
     async fn process_series_parallel(&self, series_list: Vec<SeriesEntry>) -> Vec<SeriesResult> {
         let semaphore = Arc::new(Semaphore::new(self.concurrency));
+        let total = series_list.len();
+        let counter = Arc::new(AtomicUsize::new(0));
         let mut tasks = Vec::new();
 
         for series in series_list {
@@ -495,6 +508,7 @@ impl Orchestrator {
             let specials_folder = self.specials_folder.clone();
             let season_extras = self.season_extras;
             let specials = self.specials;
+            let counter = counter.clone();
 
             let ctx = SeriesProcessingContext {
                 series_discovery,
@@ -508,6 +522,8 @@ impl Orchestrator {
 
             let task = tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore should not be closed");
+                let current = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                output::display_series_start(&series, current, total);
                 Self::process_series_static(series, ctx).await
             });
             tasks.push(task);
