@@ -4,10 +4,8 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 /// Handles extraction and processing of season pack archives
-#[allow(dead_code)]
 pub struct SeasonPackProcessor;
 
-#[allow(dead_code)]
 impl SeasonPackProcessor {
     /// Check if a file is an archive (zip, rar, 7z, tar.gz)
     pub fn is_archive(path: &Path) -> bool {

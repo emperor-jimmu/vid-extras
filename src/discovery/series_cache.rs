@@ -9,7 +9,6 @@ use tokio::fs;
 
 /// Cached series metadata with timestamp
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
 pub struct CachedSeriesMetadata {
     /// Series ID from TMDB
     pub series_id: u64,
@@ -31,32 +30,22 @@ pub struct CachedTvdbSeasonZero {
 }
 
 /// Series metadata cache manager
-#[allow(dead_code)]
 pub struct SeriesMetadataCache {
     /// Base cache directory (typically .cache under series folder)
     cache_dir: PathBuf,
-    /// TTL in days (default 7)
-    ttl_days: i64,
 }
 
-#[allow(dead_code)]
 impl SeriesMetadataCache {
     /// Create a new cache manager for a series
     pub fn new(series_path: &Path) -> Self {
         let cache_dir = series_path.join(".cache");
-        Self {
-            cache_dir,
-            ttl_days: 7,
-        }
+        Self { cache_dir }
     }
 
     /// Create a new cache manager with custom TTL
-    pub fn with_ttl(series_path: &Path, ttl_days: i64) -> Self {
+    pub fn with_ttl(series_path: &Path, _ttl_days: i64) -> Self {
         let cache_dir = series_path.join(".cache");
-        Self {
-            cache_dir,
-            ttl_days,
-        }
+        Self { cache_dir }
     }
 
     /// Get cache file path for a series

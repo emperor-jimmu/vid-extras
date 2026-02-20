@@ -30,7 +30,7 @@ impl Converter {
     }
 
     /// Create a new Converter with specified hardware acceleration and CRF
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn with_config(hw_accel: HardwareAccel, crf: u8) -> Self {
         // Validate CRF is in acceptable range (24-26)
         let crf = if (24..=26).contains(&crf) {
@@ -262,13 +262,13 @@ impl Converter {
     }
 
     /// Get the hardware acceleration type being used
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn hw_accel(&self) -> HardwareAccel {
         self.hw_accel
     }
 
     /// Get the CRF value being used
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn crf(&self) -> u8 {
         self.crf
     }

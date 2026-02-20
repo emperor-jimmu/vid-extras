@@ -7,19 +7,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Persistent cache for TMDB-to-TVDB ID mappings with no TTL expiration
-#[allow(dead_code)]
 struct IdMappingCache {
     cache_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
 struct CachedIdMapping {
     tmdb_id: u64,
     tvdb_id: u64,
 }
 
-#[allow(dead_code)]
 impl IdMappingCache {
     /// Create a new ID mapping cache with the given cache directory
     fn new(cache_dir: PathBuf) -> Self {

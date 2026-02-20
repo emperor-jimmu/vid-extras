@@ -1,21 +1,7 @@
-// Module declarations
-mod cli;
-mod config;
-mod converter;
-mod discovery;
-mod downloader;
-mod error;
-mod models;
-mod orchestrator;
-mod organizer;
-mod output;
-mod scanner;
-mod validation;
-
-use cli::{display_banner, display_config, parse_args};
-use orchestrator::Orchestrator;
-use output::display_summary;
-use validation::Validator;
+use extras_fetcher::cli::{display_banner, display_config, parse_args};
+use extras_fetcher::orchestrator::Orchestrator;
+use extras_fetcher::output::display_summary;
+use extras_fetcher::validation::Validator;
 
 /// Main entry point for extras_fetcher
 ///
@@ -81,7 +67,7 @@ async fn main() {
     // Requirements: 1.1, 8.1
     let (tvdb_api_key, config_cookies) = if config.specials {
         log::info!("Season 0 specials enabled, loading TVDB configuration");
-        match config::Config::load_or_create_with_tvdb(true) {
+        match extras_fetcher::config::Config::load_or_create_with_tvdb(true) {
             Ok(cfg) => {
                 log::info!("TVDB API key loaded successfully");
                 (cfg.tvdb_api_key, cfg.cookies_from_browser)
@@ -111,6 +97,7 @@ async fn main() {
     let cookies_from_browser = config.cookies_from_browser.or(config_cookies);
 
     // Create orchestrator with validated configuration
+<<<<<<< HEAD
     let orchestrator = match Orchestrator::new(
         config.root_directory.clone(),
         tmdb_api_key,
@@ -125,6 +112,20 @@ async fn main() {
         config.specials_folder,
         cookies_from_browser,
     ) {
+=======
+    let orchestrator = match Orchestrator::builder(config.root_directory.clone(), tmdb_api_key)
+        .tvdb_api_key(tvdb_api_key)
+        .mode(config.mode.to_models_source_mode())
+        .force(config.force)
+        .concurrency(config.concurrency)
+        .single(config.single)
+        .processing_mode(config.processing_mode)
+        .season_extras(config.season_extras)
+        .specials(config.specials)
+        .specials_folder(config.specials_folder)
+        .build()
+    {
+>>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
         Ok(orch) => orch,
         Err(e) => {
             // Fatal error: orchestrator initialization failed

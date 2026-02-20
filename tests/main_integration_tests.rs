@@ -383,6 +383,7 @@ async fn test_complete_execution_flow() {
         use extras_fetcher::models::{ProcessingMode, SourceMode};
         use extras_fetcher::orchestrator::Orchestrator;
 
+<<<<<<< HEAD
         let orchestrator = Orchestrator::new(
             root,
             api_key,
@@ -397,6 +398,11 @@ async fn test_complete_execution_flow() {
             "Specials".to_string(),
             None,
         );
+=======
+        let orchestrator = Orchestrator::builder(root, api_key)
+            .mode(SourceMode::YoutubeOnly)
+            .build();
+>>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         // Orchestrator creation should succeed
         assert!(orchestrator.is_ok());

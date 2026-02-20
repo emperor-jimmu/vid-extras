@@ -1,3 +1,7 @@
+---
+inclusion: always
+---
+
 # Product Overview
 
 extras_fetcher is a Jellyfin media extras automation tool that discovers, downloads, and organizes supplemental video content for both movie and TV series libraries.

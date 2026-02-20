@@ -5,10 +5,8 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 /// Handles scanning and importing of local Season 0 files
-#[allow(dead_code)]
 pub struct Season0Importer;
 
-#[allow(dead_code)]
 impl Season0Importer {
     /// Scan series folder for S00Exx files
     pub async fn scan_for_season_zero_files(series_path: &Path) -> Result<Vec<PathBuf>, String> {

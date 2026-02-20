@@ -5,7 +5,6 @@ use crate::orchestrator::ProcessingSummary;
 use colored::Colorize;
 
 /// Display scanning progress for a movie
-#[allow(dead_code)]
 pub fn display_scanning_progress(movie: &MovieEntry, skipped: bool) {
     if skipped {
         println!(
@@ -25,7 +24,6 @@ pub fn display_scanning_progress(movie: &MovieEntry, skipped: bool) {
 }
 
 /// Display discovery phase start
-#[allow(dead_code)]
 pub fn display_discovery_start(movie: &MovieEntry, source_count: usize) {
     println!(
         "\n{} {} - Discovered {} sources",
@@ -36,7 +34,6 @@ pub fn display_discovery_start(movie: &MovieEntry, source_count: usize) {
 }
 
 /// Display download progress for a single video
-#[allow(dead_code)]
 pub fn display_download_progress(
     title: &str,
     source_type: SourceType,
@@ -54,7 +51,6 @@ pub fn display_download_progress(
 }
 
 /// Display download result
-#[allow(dead_code)]
 pub fn display_download_result(title: &str, success: bool, error: Option<&str>) {
     if success {
         println!(
@@ -85,7 +81,6 @@ pub fn display_conversion_progress(filename: &str, current: usize, total: usize)
 }
 
 /// Display conversion result
-#[allow(dead_code)]
 pub fn display_conversion_result(filename: &str, success: bool, error: Option<&str>) {
     if success {
         println!(
@@ -105,7 +100,6 @@ pub fn display_conversion_result(filename: &str, success: bool, error: Option<&s
 }
 
 /// Display organization progress
-#[allow(dead_code)]
 pub fn display_organization_start(movie: &MovieEntry, file_count: usize) {
     println!(
         "\n{} {} - Organizing {} files",
@@ -116,7 +110,6 @@ pub fn display_organization_start(movie: &MovieEntry, file_count: usize) {
 }
 
 /// Display file organization result
-#[allow(dead_code)]
 pub fn display_file_organized(filename: &str, category: ContentCategory) {
     println!(
         "  {} Moved to /{}: {}",
@@ -130,7 +123,6 @@ pub fn display_file_organized(filename: &str, category: ContentCategory) {
 ///
 /// Formats error messages with movie title and operation type for clarity.
 /// Requirements: 10.1, 13.7
-#[allow(dead_code)]
 pub fn display_error(movie_title: &str, operation: &str, error: &str) {
     println!(
         "{} {} - {} failed: {}",
@@ -231,7 +223,6 @@ pub fn display_summary(summary: &ProcessingSummary) {
 }
 
 /// Display phase header
-#[allow(dead_code)]
 pub fn display_phase(phase_number: usize, phase_name: &str) {
     println!(
         "\n{} {} {}",
@@ -242,7 +233,6 @@ pub fn display_phase(phase_number: usize, phase_name: &str) {
 }
 
 /// Display movie processing start
-#[allow(dead_code)]
 pub fn display_movie_start(movie: &MovieEntry) {
     println!("\n{}", "━".repeat(60).bright_cyan());
     println!(
@@ -254,7 +244,6 @@ pub fn display_movie_start(movie: &MovieEntry) {
 }
 
 /// Display movie processing completion
-#[allow(dead_code)]
 pub fn display_movie_complete(
     movie: &MovieEntry,
     downloads: usize,
@@ -280,7 +269,6 @@ pub fn display_movie_complete(
 
 /// Display series processing start
 /// Requirements: 18.1
-#[allow(dead_code)]
 pub fn display_series_start(series: &SeriesEntry) {
     println!("\n{}", "━".repeat(60).bright_cyan());
     println!(
@@ -293,7 +281,6 @@ pub fn display_series_start(series: &SeriesEntry) {
 
 /// Display series discovery progress
 /// Requirements: 18.2, 18.3
-#[allow(dead_code)]
 pub fn display_series_discovery_progress(
     series: &SeriesEntry,
     tmdb_count: usize,
@@ -310,7 +297,6 @@ pub fn display_series_discovery_progress(
 
 /// Display series download statistics
 /// Requirements: 18.4
-#[allow(dead_code)]
 pub fn display_series_download_stats(_series: &SeriesEntry, successful: usize, failed: usize) {
     let total = successful + failed;
     println!(
@@ -326,7 +312,6 @@ pub fn display_series_download_stats(_series: &SeriesEntry, successful: usize, f
 
 /// Display series conversion statistics
 /// Requirements: 18.5
-#[allow(dead_code)]
 pub fn display_series_conversion_stats(_series: &SeriesEntry, successful: usize, failed: usize) {
     let total = successful + failed;
     println!(
@@ -342,7 +327,6 @@ pub fn display_series_conversion_stats(_series: &SeriesEntry, successful: usize,
 
 /// Display series processing completion
 /// Requirements: 18.6
-#[allow(dead_code)]
 pub fn display_series_complete(
     series: &SeriesEntry,
     downloads: usize,

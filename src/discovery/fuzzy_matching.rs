@@ -1,10 +1,8 @@
 use log::debug;
 
 /// Handles fuzzy title matching for series and extras
-#[allow(dead_code)]
 pub struct FuzzyMatcher;
 
-#[allow(dead_code)]
 impl FuzzyMatcher {
     /// Normalize a string for comparison (lowercase, remove special characters)
     pub fn normalize(text: &str) -> String {

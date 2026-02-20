@@ -19,26 +19,16 @@ mod tvdb;
 mod youtube;
 
 // Re-export public API
-#[allow(dead_code, unused_imports)]
 pub use fuzzy_matching::FuzzyMatcher;
-#[allow(dead_code, unused_imports)]
 pub use id_bridge::IdBridge;
-#[allow(dead_code, unused_imports)]
 pub use monitor_policy::MonitorPolicy;
 pub use orchestrator::DiscoveryOrchestrator;
-#[allow(dead_code, unused_imports)]
 pub use season_pack::SeasonPackProcessor;
-#[allow(dead_code, unused_imports)]
 pub use season_zero_import::Season0Importer;
-#[allow(unused_imports)]
 pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};
-#[allow(unused_imports)]
 pub use series_orchestrator::SeriesDiscoveryOrchestrator;
-#[allow(dead_code, unused_imports)]
 pub use special_searcher::SpecialSearcher;
-#[allow(dead_code, unused_imports)]
 pub use special_validator::SpecialValidator;
-#[allow(dead_code, unused_imports)]
 pub use tvdb::{
     TvdbApiResponse, TvdbClient, TvdbEpisode, TvdbEpisodeExtended, TvdbEpisodesPage,
     TvdbLoginResponse, TvdbSearchResponse, TvdbSearchResult,

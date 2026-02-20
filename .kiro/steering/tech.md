@@ -1,10 +1,16 @@
+---
+inclusion: always
+---
+
 # Technology Stack
 
 ## Language & Edition
+
 - Rust 2024 edition
 - Async runtime: Tokio with full features
 
 ## Core Dependencies
+
 - `clap` (4.5) - CLI argument parsing with derive macros
 - `tokio` (1.41) - Async runtime with full feature set
 - `reqwest` (0.12) - HTTP client with JSON support
@@ -17,14 +23,17 @@
 - `chrono` (0.4) - Date/time handling for ISO 8601 timestamps
 
 ## Testing
+
 - `proptest` (1.5) - Property-based testing framework
 - `tempfile` (3.13) - Temporary file/directory creation for tests
 
 ## External Tools
+
 - `yt-dlp` - Video downloading (must be in PATH)
 - `ffmpeg` - Video conversion with HEVC/x265 support (must be in PATH)
 
 ## Build Commands
+
 ```bash
 # Build the project
 cargo build
@@ -49,5 +58,13 @@ cargo clippy
 ```
 
 ## Environment Variables
+
 - `TMDB_API_KEY` - Required for TMDB content discovery
+- `TVDB_API_KEY` - Optional, required only when using `--specials` flag for Season 0 discovery via TheTVDB API v4
 - `RUST_LOG` - Controls logging verbosity (debug, info, warn, error)
+
+## Configuration File
+
+- `~/.config/extras_fetcher/config.cfg` - Stores API keys (TMDB and TVDB)
+- Created automatically on first run with interactive prompts
+- TVDB key prompted only when `--specials` flag is used
