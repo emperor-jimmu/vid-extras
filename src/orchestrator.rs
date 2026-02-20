@@ -139,82 +139,6 @@ impl SeriesResult {
     }
 }
 
-/// Builder for constructing an Orchestrator with named parameters
-pub struct OrchestratorBuilder {
-    root_dir: PathBuf,
-    tmdb_api_key: String,
-    tvdb_api_key: Option<String>,
-    mode: SourceMode,
-    force: bool,
-    concurrency: usize,
-    single: bool,
-    processing_mode: ProcessingMode,
-    season_extras: bool,
-    specials: bool,
-    specials_folder: String,
-}
-
-impl OrchestratorBuilder {
-    /// Set the content source mode
-    pub fn mode(mut self, mode: SourceMode) -> Self {
-        self.mode = mode;
-        self
-    }
-
-    /// Set the TheTVDB API key for Season 0 specials
-    pub fn tvdb_api_key(mut self, key: Option<String>) -> Self {
-        self.tvdb_api_key = key;
-        self
-    }
-
-    /// Ignore done markers and reprocess all media
-    pub fn force(mut self, force: bool) -> Self {
-        self.force = force;
-        self
-    }
-
-    /// Set maximum concurrent media items to process
-    pub fn concurrency(mut self, concurrency: usize) -> Self {
-        self.concurrency = concurrency;
-        self
-    }
-
-    /// Process a single folder directly instead of scanning
-    pub fn single(mut self, single: bool) -> Self {
-        self.single = single;
-        self
-    }
-
-    /// Set which media types to process
-    pub fn processing_mode(mut self, mode: ProcessingMode) -> Self {
-        self.processing_mode = mode;
-        self
-    }
-
-    /// Enable season-specific extras discovery
-    pub fn season_extras(mut self, enabled: bool) -> Self {
-        self.season_extras = enabled;
-        self
-    }
-
-    /// Enable Season 0 specials discovery via TheTVDB
-    pub fn specials(mut self, enabled: bool) -> Self {
-        self.specials = enabled;
-        self
-    }
-
-    /// Set the folder name for Season 0 specials
-    pub fn specials_folder(mut self, name: String) -> Self {
-        self.specials_folder = name;
-        self
-    }
-
-    /// Build the Orchestrator, validating configuration
-    pub fn build(self) -> Result<Orchestrator, OrchestratorError> {
-        Orchestrator::from_builder(self)
-    }
-}
-
 /// Orchestrator coordinates all processing phases
 pub struct Orchestrator {
     scanner: Scanner,
@@ -231,7 +155,6 @@ pub struct Orchestrator {
 }
 
 impl Orchestrator {
-<<<<<<< HEAD
     /// Create a new Orchestrator with the given configuration
     ///
     /// # Arguments
@@ -261,85 +184,55 @@ impl Orchestrator {
         specials_folder: String,
         cookies_from_browser: Option<String>,
     ) -> Result<Self, OrchestratorError> {
-        // Validate root directory exists
         if !root_dir.exists() {
-=======
-    /// Create a builder with the required parameters
-    pub fn builder(root_dir: PathBuf, tmdb_api_key: String) -> OrchestratorBuilder {
-        OrchestratorBuilder {
-            root_dir,
-            tmdb_api_key,
-            tvdb_api_key: None,
-            mode: SourceMode::All,
-            force: false,
-            concurrency: 1,
-            single: false,
-            processing_mode: ProcessingMode::Both,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-        }
-    }
-
-    /// Construct from builder (called by OrchestratorBuilder::build)
-    fn from_builder(b: OrchestratorBuilder) -> Result<Self, OrchestratorError> {
-        if !b.root_dir.exists() {
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
             return Err(OrchestratorError::Init(format!(
                 "Root directory does not exist: {:?}",
-                b.root_dir
+                root_dir
             )));
         }
 
-        if !b.root_dir.is_dir() {
+        if !root_dir.is_dir() {
             return Err(OrchestratorError::Init(format!(
                 "Root path is not a directory: {:?}",
-                b.root_dir
+                root_dir
             )));
         }
 
         let temp_base = PathBuf::from("tmp_downloads");
 
         info!("Initializing Orchestrator");
-        info!("  Root directory: {:?}", b.root_dir);
-        info!("  Mode: {}", b.mode);
-        info!("  Force: {}", b.force);
-        info!("  Concurrency: {}", b.concurrency);
-        info!("  Single folder mode: {}", b.single);
-        info!("  Processing mode: {}", b.processing_mode);
-        info!("  Season extras: {}", b.season_extras);
-        info!("  Specials (Season 0): {}", b.specials);
-        if b.specials {
-            info!("  Specials folder: {}", b.specials_folder);
+        info!("  Root directory: {:?}", root_dir);
+        info!("  Mode: {}", mode);
+        info!("  Force: {}", force);
+        info!("  Concurrency: {}", concurrency);
+        info!("  Single folder mode: {}", single);
+        info!("  Processing mode: {}", processing_mode);
+        info!("  Season extras: {}", season_extras);
+        info!("  Specials (Season 0): {}", specials);
+        if specials {
+            info!("  Specials folder: {}", specials_folder);
         }
         if let Some(browser) = &cookies_from_browser {
             info!("  Cookie auth: {} browser", browser);
         }
 
-        // Create SeriesDiscoveryOrchestrator with or without TVDB support
-        let series_discovery = if let (true, Some(tvdb_key)) = (b.specials, b.tvdb_api_key) {
-            let cache_dir = b.root_dir.join(".cache").join("tvdb_ids");
+        let series_discovery = if let (true, Some(tvdb_key)) = (specials, tvdb_api_key) {
+            let cache_dir = root_dir.join(".cache").join("tvdb_ids");
             info!("  TVDB support enabled for Season 0 specials");
             Arc::new(SeriesDiscoveryOrchestrator::new_with_tvdb(
-                b.tmdb_api_key.clone(),
+                tmdb_api_key.clone(),
                 tvdb_key,
-                b.mode,
+                mode,
                 cache_dir,
             ))
         } else {
-            Arc::new(SeriesDiscoveryOrchestrator::new(
-                b.tmdb_api_key.clone(),
-                b.mode,
-            ))
+            Arc::new(SeriesDiscoveryOrchestrator::new(tmdb_api_key.clone(), mode))
         };
 
-        // Build discovery and downloader with optional cookie auth
         let discovery = match &cookies_from_browser {
-            Some(browser) => DiscoveryOrchestrator::with_cookies(
-                tmdb_api_key.clone(),
-                mode,
-                browser.clone(),
-            ),
+            Some(browser) => {
+                DiscoveryOrchestrator::with_cookies(tmdb_api_key.clone(), mode, browser.clone())
+            }
             None => DiscoveryOrchestrator::new(tmdb_api_key.clone(), mode),
         };
 
@@ -349,22 +242,17 @@ impl Orchestrator {
         };
 
         Ok(Self {
-<<<<<<< HEAD
             scanner: Scanner::new(root_dir, force, single),
             discovery: Arc::new(discovery),
-=======
-            scanner: Scanner::new(b.root_dir, b.force, b.single),
-            discovery: Arc::new(DiscoveryOrchestrator::new(b.tmdb_api_key.clone(), b.mode)),
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
             series_discovery,
             downloader: Arc::new(downloader),
             converter: Arc::new(Converter::new()),
             temp_base,
-            concurrency: b.concurrency,
-            processing_mode: b.processing_mode,
-            season_extras: b.season_extras,
-            specials: b.specials,
-            specials_folder: b.specials_folder,
+            concurrency,
+            processing_mode,
+            season_extras,
+            specials,
+            specials_folder,
         })
     }
 
@@ -1200,7 +1088,6 @@ mod tests {
     #[test]
     fn test_orchestrator_new_validates_root_dir() {
         let nonexistent = PathBuf::from("/nonexistent/path/that/does/not/exist");
-<<<<<<< HEAD
         let result = Orchestrator::new(
             nonexistent,
             "fake_api_key".to_string(),
@@ -1215,11 +1102,6 @@ mod tests {
             "Specials".to_string(),
             None,
         );
-=======
-        let result = Orchestrator::builder(nonexistent, "fake_api_key".to_string())
-            .concurrency(2)
-            .build();
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         assert!(result.is_err());
     }
@@ -1242,7 +1124,6 @@ mod tests {
             .await
             .expect("file write should succeed");
 
-<<<<<<< HEAD
         // Create orchestrator with custom temp_base
         let mut orchestrator = Orchestrator::new(
             root_dir,
@@ -1259,11 +1140,6 @@ mod tests {
             None,
         )
         .unwrap();
-=======
-        let mut orchestrator = Orchestrator::builder(root_dir, "fake_api_key".to_string())
-            .build()
-            .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         orchestrator.temp_base = temp_base.clone();
         orchestrator.cleanup_pre_existing_temp().await;
@@ -1281,7 +1157,6 @@ mod tests {
             .await
             .expect("dir creation should succeed");
 
-<<<<<<< HEAD
         let orchestrator = Orchestrator::new(
             root_dir,
             "fake_api_key".to_string(),
@@ -1297,11 +1172,6 @@ mod tests {
             None,
         )
         .unwrap();
-=======
-        let orchestrator = Orchestrator::builder(root_dir, "fake_api_key".to_string())
-            .build()
-            .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         let summary = orchestrator.run().await.expect("run should succeed");
 
@@ -1327,7 +1197,6 @@ mod tests {
                 .expect("dir creation should succeed");
         }
 
-<<<<<<< HEAD
         // Test sequential processing (concurrency = 1)
         let orchestrator_seq = Orchestrator::new(
             root_dir.clone(),
@@ -1361,19 +1230,6 @@ mod tests {
             None,
         )
         .unwrap();
-=======
-        let orchestrator_seq = Orchestrator::builder(root_dir.clone(), "fake_api_key".to_string())
-            .mode(SourceMode::YoutubeOnly)
-            .concurrency(1)
-            .build()
-            .expect("orchestrator build should succeed");
-
-        let orchestrator_par = Orchestrator::builder(root_dir, "fake_api_key".to_string())
-            .mode(SourceMode::YoutubeOnly)
-            .concurrency(2)
-            .build()
-            .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         assert_eq!(orchestrator_seq.concurrency, 1);
         assert_eq!(orchestrator_par.concurrency, 2);
@@ -1392,7 +1248,6 @@ mod tests {
         let temp_base = temp_root.path().join("tmp_downloads");
 
         {
-<<<<<<< HEAD
             let mut orchestrator = Orchestrator::new(
                 root_dir,
                 "fake_api_key".to_string(),
@@ -1408,11 +1263,6 @@ mod tests {
                 None,
             )
             .unwrap();
-=======
-            let mut orchestrator = Orchestrator::builder(root_dir, "fake_api_key".to_string())
-                .build()
-                .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
             orchestrator.temp_base = temp_base.clone();
 
@@ -1524,7 +1374,6 @@ mod tests {
             .await
             .expect("file write should succeed");
 
-<<<<<<< HEAD
         // Without force flag - should skip movie2
         let orchestrator = Orchestrator::new(
             root_dir.clone(),
@@ -1541,17 +1390,10 @@ mod tests {
             None,
         )
         .unwrap();
-=======
-        let orchestrator = Orchestrator::builder(root_dir.clone(), "fake_api_key".to_string())
-            .mode(SourceMode::YoutubeOnly)
-            .build()
-            .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         let movies = orchestrator.scanner.scan().expect("scan should succeed");
         assert_eq!(movies.len(), 1);
 
-<<<<<<< HEAD
         // With force flag - should process both
         let orchestrator_force = Orchestrator::new(
             root_dir,
@@ -1568,13 +1410,6 @@ mod tests {
             None,
         )
         .unwrap();
-=======
-        let orchestrator_force = Orchestrator::builder(root_dir, "fake_api_key".to_string())
-            .mode(SourceMode::YoutubeOnly)
-            .force(true)
-            .build()
-            .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         let movies_force = orchestrator_force
             .scanner
@@ -1592,7 +1427,6 @@ mod tests {
         std::fs::create_dir(&root_dir).expect("dir creation should succeed");
 
         for concurrency in 1..=10 {
-<<<<<<< HEAD
             let orchestrator = Orchestrator::new(
                 root_dir.clone(),
                 "fake_api_key".to_string(),
@@ -1608,12 +1442,6 @@ mod tests {
                 None,
             )
             .unwrap();
-=======
-            let orchestrator = Orchestrator::builder(root_dir.clone(), "fake_api_key".to_string())
-                .concurrency(concurrency)
-                .build()
-                .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
             assert_eq!(orchestrator.concurrency, concurrency);
         }
@@ -1691,7 +1519,6 @@ mod tests {
 
         let temp_root = TempDir::new().expect("tempdir creation should succeed");
         let root_dir = temp_root.path().join("library");
-<<<<<<< HEAD
         std::fs::create_dir(&root_dir).unwrap();
 
         // Test with Both mode
@@ -1710,9 +1537,6 @@ mod tests {
             None,
         )
         .unwrap();
-=======
-        std::fs::create_dir(&root_dir).expect("dir creation should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         let orchestrator_both = Orchestrator::builder(root_dir.clone(), "fake_api_key".to_string())
             .processing_mode(ProcessingMode::Both)
@@ -1720,7 +1544,6 @@ mod tests {
             .expect("orchestrator build should succeed");
         assert_eq!(orchestrator_both.processing_mode, ProcessingMode::Both);
 
-<<<<<<< HEAD
         // Test with MoviesOnly mode
         let orchestrator_movies = Orchestrator::new(
             root_dir.clone(),
@@ -1738,19 +1561,11 @@ mod tests {
         )
         .unwrap();
 
-=======
-        let orchestrator_movies =
-            Orchestrator::builder(root_dir.clone(), "fake_api_key".to_string())
-                .processing_mode(ProcessingMode::MoviesOnly)
-                .build()
-                .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
         assert_eq!(
             orchestrator_movies.processing_mode,
             ProcessingMode::MoviesOnly
         );
 
-<<<<<<< HEAD
         // Test with SeriesOnly mode
         let orchestrator_series = Orchestrator::new(
             root_dir,
@@ -1768,12 +1583,6 @@ mod tests {
         )
         .unwrap();
 
-=======
-        let orchestrator_series = Orchestrator::builder(root_dir, "fake_api_key".to_string())
-            .processing_mode(ProcessingMode::SeriesOnly)
-            .build()
-            .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
         assert_eq!(
             orchestrator_series.processing_mode,
             ProcessingMode::SeriesOnly
@@ -1807,7 +1616,6 @@ mod tests {
             .await
             .expect("dir creation should succeed");
 
-<<<<<<< HEAD
         // Test with Both mode - should find both
         let orchestrator = Orchestrator::new(
             root_dir.clone(),
@@ -1824,12 +1632,6 @@ mod tests {
             None,
         )
         .unwrap();
-=======
-        let orchestrator = Orchestrator::builder(root_dir.clone(), "fake_api_key".to_string())
-            .mode(SourceMode::YoutubeOnly)
-            .build()
-            .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         let (movies, series) = orchestrator
             .scanner
@@ -1838,7 +1640,6 @@ mod tests {
         assert_eq!(movies.len(), 1, "Both mode should find 1 movie");
         assert_eq!(series.len(), 1, "Both mode should find 1 series");
 
-<<<<<<< HEAD
         // Test with MoviesOnly mode - should only find movies
         let orchestrator_movies = Orchestrator::new(
             root_dir.clone(),
@@ -1855,14 +1656,6 @@ mod tests {
             None,
         )
         .unwrap();
-=======
-        let orchestrator_movies =
-            Orchestrator::builder(root_dir.clone(), "fake_api_key".to_string())
-                .mode(SourceMode::YoutubeOnly)
-                .processing_mode(ProcessingMode::MoviesOnly)
-                .build()
-                .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         let (movies_only, series_only) = orchestrator_movies
             .scanner
@@ -1875,7 +1668,6 @@ mod tests {
             "Scanner still finds series regardless of mode"
         );
 
-<<<<<<< HEAD
         // Test with SeriesOnly mode - should only find series
         let orchestrator_series = Orchestrator::new(
             root_dir,
@@ -1892,13 +1684,6 @@ mod tests {
             None,
         )
         .unwrap();
-=======
-        let orchestrator_series = Orchestrator::builder(root_dir, "fake_api_key".to_string())
-            .mode(SourceMode::YoutubeOnly)
-            .processing_mode(ProcessingMode::SeriesOnly)
-            .build()
-            .expect("orchestrator build should succeed");
->>>>>>> 935405e9d4c0d8a01ce4048f2425a43d3a8dbdbe
 
         let (movies_series, series_series) = orchestrator_series
             .scanner
