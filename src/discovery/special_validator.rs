@@ -129,8 +129,8 @@ impl SpecialValidator {
             .arg("--no-download")
             .arg("--no-warnings")
             .arg("--quiet")
-            .arg("--js-runtimes")
-            .arg("node")
+            .arg("--remote-components")
+            .arg("ejs:github")
             .arg(&search_url);
 
         // Pass browser cookies when configured to bypass bot-detection

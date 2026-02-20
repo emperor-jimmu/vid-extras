@@ -160,8 +160,8 @@ impl YoutubeDiscoverer {
         cmd.arg("--dump-json")
             .arg("--no-playlist")
             .arg("--skip-download")
-            .arg("--js-runtimes")
-            .arg("node")
+            .arg("--remote-components")
+            .arg("ejs:github")
             .arg(&search_query);
 
         // Pass browser cookies when configured to bypass bot-detection

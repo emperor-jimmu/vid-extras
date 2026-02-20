@@ -167,8 +167,8 @@ impl Downloader {
             .arg("--no-playlist") // Don't download playlists
             .arg("--quiet") // Reduce output noise
             .arg("--no-warnings") // Suppress warnings
-            .arg("--js-runtimes")
-            .arg("node"); // Use Node.js for JavaScript execution
+            .arg("--remote-components")
+            .arg("ejs:github"); // Download JS challenge solver from GitHub
 
         // Pass browser cookies when configured to bypass bot-detection
         if let Some(browser) = &self.cookies_from_browser {
