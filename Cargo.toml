@@ -1,6 +1,6 @@
 [package]
 name = "extras_fetcher"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 
 [[bin]]
@@ -14,10 +14,10 @@ path = "src/lib.rs"
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1.49", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-colored = "2.1"
+colored = "3.1"
 log = "0.4"
 env_logger = "0.11"
 regex = "1.12"  
@@ -26,11 +26,9 @@ urlencoding = "2.1"
 chrono = "0.4"
 
 [dev-dependencies]
-proptest = "1.5"
-tempfile = "3.23"
+proptest = "1.10"
+tempfile = "3.25"
 
 [profile.release]
-opt-level = "z"  # Optimize for size ("s" is also an option, "z" is stronger)
 lto = true       # Enable Link Time Optimization
-codegen-units = 1 # Disable parallel code generation for maximum size optimization
 strip = true     # Automatically strip symbols from the binary
