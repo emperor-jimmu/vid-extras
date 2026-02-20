@@ -9,7 +9,10 @@ use super::title_matching;
 use super::tmdb::DiscoveryMetadata;
 
 /// YouTube content discoverer
-pub struct YoutubeDiscoverer;
+pub struct YoutubeDiscoverer {
+    /// Browser to source cookies from for bot-detection bypass (e.g. "chrome", "firefox")
+    cookies_from_browser: Option<String>,
+}
 
 impl Default for YoutubeDiscoverer {
     fn default() -> Self {
@@ -18,9 +21,18 @@ impl Default for YoutubeDiscoverer {
 }
 
 impl YoutubeDiscoverer {
-    /// Create a new YouTube discoverer
+    /// Create a new YouTube discoverer without cookie authentication
     pub fn new() -> Self {
-        Self
+        Self {
+            cookies_from_browser: None,
+        }
+    }
+
+    /// Create a new YouTube discoverer with browser cookie authentication
+    pub fn with_cookies(browser: String) -> Self {
+        Self {
+            cookies_from_browser: Some(browser),
+        }
     }
 
     /// Build search queries for different content types
@@ -144,16 +156,20 @@ impl YoutubeDiscoverer {
         debug!("Searching YouTube with query: {}", query);
 
         // Execute yt-dlp to search and get video metadata
-        let output = tokio::process::Command::new("yt-dlp")
-            .arg("--dump-json")
+        let mut cmd = tokio::process::Command::new("yt-dlp");
+        cmd.arg("--dump-json")
             .arg("--no-playlist")
             .arg("--skip-download")
             .arg("--js-runtimes")
             .arg("node")
-            .arg(&search_query)
-            .output()
-            .await
-            .map_err(|e| {
+            .arg(&search_query);
+
+        // Pass browser cookies when configured to bypass bot-detection
+        if let Some(browser) = &self.cookies_from_browser {
+            cmd.arg("--cookies-from-browser").arg(browser);
+        }
+
+        let output = cmd.output().await.map_err(|e| {
                 error!("Failed to execute yt-dlp: {}", e);
                 DiscoveryError::YtDlpError(format!("Failed to execute yt-dlp: {}", e))
             })?;

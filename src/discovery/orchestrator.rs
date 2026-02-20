@@ -28,6 +28,16 @@ impl DiscoveryOrchestrator {
         }
     }
 
+    /// Creates a new DiscoveryOrchestrator with browser cookie authentication for YouTube
+    pub fn with_cookies(tmdb_api_key: String, mode: SourceMode, browser: String) -> Self {
+        Self {
+            tmdb: TmdbDiscoverer::new(tmdb_api_key),
+            archive: ArchiveOrgDiscoverer::new(),
+            youtube: YoutubeDiscoverer::with_cookies(browser),
+            mode,
+        }
+    }
+
     /// Discovers video sources from all configured sources based on mode
     ///
     /// In All mode: queries TMDB, Archive.org (for movies < 2010), and YouTube

@@ -395,6 +395,7 @@ async fn test_complete_execution_flow() {
             false,
             false,
             "Specials".to_string(),
+            None,
         );
 
         // Orchestrator creation should succeed

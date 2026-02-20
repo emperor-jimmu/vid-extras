@@ -15,6 +15,8 @@ pub struct Downloader {
     temp_base: PathBuf,
     /// Timeout duration for individual downloads (default: 5 minutes)
     download_timeout: Duration,
+    /// Browser to source cookies from for bot-detection bypass
+    cookies_from_browser: Option<String>,
 }
 
 impl Downloader {
@@ -23,6 +25,16 @@ impl Downloader {
         Self {
             temp_base,
             download_timeout: Duration::from_secs(300), // 5 minutes
+            cookies_from_browser: None,
+        }
+    }
+
+    /// Create a new Downloader with browser cookie authentication
+    pub fn with_cookies(temp_base: PathBuf, browser: String) -> Self {
+        Self {
+            temp_base,
+            download_timeout: Duration::from_secs(300),
+            cookies_from_browser: Some(browser),
         }
     }
 
@@ -33,6 +45,7 @@ impl Downloader {
         Self {
             temp_base,
             download_timeout: Duration::from_secs(timeout_secs),
+            cookies_from_browser: None,
         }
     }
 
@@ -156,6 +169,11 @@ impl Downloader {
             .arg("--no-warnings") // Suppress warnings
             .arg("--js-runtimes")
             .arg("node"); // Use Node.js for JavaScript execution
+
+        // Pass browser cookies when configured to bypass bot-detection
+        if let Some(browser) = &self.cookies_from_browser {
+            cmd.arg("--cookies-from-browser").arg(browser);
+        }
 
         // On Windows, restrict filenames to Windows-compatible characters
         // This prevents issues with special characters like full-width quotes

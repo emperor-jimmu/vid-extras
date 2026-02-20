@@ -169,6 +169,7 @@ impl Orchestrator {
         season_extras: bool,
         specials: bool,
         specials_folder: String,
+        cookies_from_browser: Option<String>,
     ) -> Result<Self, OrchestratorError> {
         // Validate root directory exists
         if !root_dir.exists() {
@@ -200,6 +201,9 @@ impl Orchestrator {
         if specials {
             info!("  Specials folder: {}", specials_folder);
         }
+        if let Some(browser) = &cookies_from_browser {
+            info!("  Cookie auth: {} browser", browser);
+        }
 
         // Create SeriesDiscoveryOrchestrator with or without TVDB support
         let series_discovery = if let (true, Some(tvdb_key)) = (specials, tvdb_api_key) {
@@ -215,11 +219,26 @@ impl Orchestrator {
             Arc::new(SeriesDiscoveryOrchestrator::new(tmdb_api_key.clone(), mode))
         };
 
+        // Build discovery and downloader with optional cookie auth
+        let discovery = match &cookies_from_browser {
+            Some(browser) => DiscoveryOrchestrator::with_cookies(
+                tmdb_api_key.clone(),
+                mode,
+                browser.clone(),
+            ),
+            None => DiscoveryOrchestrator::new(tmdb_api_key.clone(), mode),
+        };
+
+        let downloader = match cookies_from_browser {
+            Some(browser) => Downloader::with_cookies(temp_base.clone(), browser),
+            None => Downloader::new(temp_base.clone()),
+        };
+
         Ok(Self {
             scanner: Scanner::new(root_dir, force, single),
-            discovery: Arc::new(DiscoveryOrchestrator::new(tmdb_api_key.clone(), mode)),
+            discovery: Arc::new(discovery),
             series_discovery,
-            downloader: Arc::new(Downloader::new(temp_base.clone())),
+            downloader: Arc::new(downloader),
             converter: Arc::new(Converter::new()),
             temp_base,
             concurrency,
@@ -1069,6 +1088,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         );
 
         assert!(result.is_err());
@@ -1102,6 +1122,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1134,6 +1155,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1171,6 +1193,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1187,6 +1210,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1219,6 +1243,7 @@ mod tests {
                 false,
                 false,
                 "Specials".to_string(),
+                None,
             )
             .unwrap();
 
@@ -1343,6 +1368,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1362,6 +1388,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1391,6 +1418,7 @@ mod tests {
                 false,
                 false,
                 "Specials".to_string(),
+                None,
             )
             .unwrap();
 
@@ -1484,6 +1512,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1502,6 +1531,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1523,6 +1553,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1566,6 +1597,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1586,6 +1618,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 
@@ -1610,6 +1643,7 @@ mod tests {
             false,
             false,
             "Specials".to_string(),
+            None,
         )
         .unwrap();
 

@@ -79,12 +79,12 @@ async fn main() {
 
     // Load configuration with TVDB key if specials are enabled
     // Requirements: 1.1, 8.1
-    let tvdb_api_key = if config.specials {
+    let (tvdb_api_key, config_cookies) = if config.specials {
         log::info!("Season 0 specials enabled, loading TVDB configuration");
         match config::Config::load_or_create_with_tvdb(true) {
             Ok(cfg) => {
                 log::info!("TVDB API key loaded successfully");
-                cfg.tvdb_api_key
+                (cfg.tvdb_api_key, cfg.cookies_from_browser)
             }
             Err(e) => {
                 eprintln!("\n✗ Failed to load TVDB API key");
@@ -100,8 +100,15 @@ async fn main() {
             }
         }
     } else {
-        None
+        // Still load config to get cookies_from_browser fallback
+        let cfg_cookies = config::Config::load(&config::Config::default_path())
+            .ok()
+            .and_then(|c| c.cookies_from_browser);
+        (None, cfg_cookies)
     };
+
+    // CLI flag takes priority over config file for cookie auth
+    let cookies_from_browser = config.cookies_from_browser.or(config_cookies);
 
     // Create orchestrator with validated configuration
     let orchestrator = match Orchestrator::new(
@@ -116,6 +123,7 @@ async fn main() {
         config.season_extras,
         config.specials,
         config.specials_folder,
+        cookies_from_browser,
     ) {
         Ok(orch) => orch,
         Err(e) => {

@@ -14,6 +14,10 @@ pub struct Config {
     /// TheTVDB API key for Season 0 specials discovery
     #[serde(default)]
     pub tvdb_api_key: Option<String>,
+    /// Browser to source cookies from for yt-dlp (e.g. "chrome", "firefox", "edge")
+    /// Resolves YouTube bot-detection errors when set
+    #[serde(default)]
+    pub cookies_from_browser: Option<String>,
 }
 
 impl Config {
@@ -136,6 +140,7 @@ impl Config {
                 let config = Config {
                     tmdb_api_key: api_key,
                     tvdb_api_key: None,
+                    cookies_from_browser: None,
                 };
 
                 // Save the new config
@@ -189,6 +194,7 @@ mod tests {
         let config = Config {
             tmdb_api_key: "test_key_12345".to_string(),
             tvdb_api_key: None,
+            cookies_from_browser: None,
         };
 
         // Save config
@@ -229,6 +235,7 @@ mod tests {
         let config = Config {
             tmdb_api_key: "test_key".to_string(),
             tvdb_api_key: None,
+            cookies_from_browser: None,
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -249,6 +256,7 @@ mod tests {
         let config = Config {
             tmdb_api_key: "tmdb_key".to_string(),
             tvdb_api_key: Some("tvdb_key".to_string()),
+            cookies_from_browser: None,
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -283,6 +291,7 @@ mod property_tests {
             let config = Config {
                 tmdb_api_key: tmdb_key.clone(),
                 tvdb_api_key: tvdb_key.clone(),
+                cookies_from_browser: None,
             };
 
             // Serialize to JSON

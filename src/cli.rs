@@ -90,6 +90,11 @@ pub struct CliArgs {
     /// Force classification as either 'movie' or 'series'
     #[arg(long, value_name = "TYPE")]
     pub r#type: Option<String>,
+
+    /// Browser to use for yt-dlp cookie authentication (e.g. chrome, firefox, edge)
+    /// Resolves YouTube bot-detection errors. Overrides cookies_from_browser in config.cfg.
+    #[arg(long, value_name = "BROWSER")]
+    pub cookies_from_browser: Option<String>,
 }
 
 /// CLI configuration
@@ -106,6 +111,7 @@ pub struct CliConfig {
     pub specials: bool,
     pub specials_folder: String,
     pub media_type: Option<String>,
+    pub cookies_from_browser: Option<String>,
 }
 
 impl From<CliArgs> for CliConfig {
@@ -131,6 +137,7 @@ impl From<CliArgs> for CliConfig {
             specials: args.specials,
             specials_folder: args.specials_folder,
             media_type: args.r#type,
+            cookies_from_browser: args.cookies_from_browser,
         }
     }
 }
@@ -330,6 +337,7 @@ mod tests {
             specials: true,
             specials_folder: "Specials".to_string(),
             r#type: Some("series".to_string()),
+            cookies_from_browser: None,
         };
 
         let config: CliConfig = args.into();
@@ -361,6 +369,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: None,
+            cookies_from_browser: None,
         };
 
         let result = validate_config(&args);
@@ -382,6 +391,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: None,
+            cookies_from_browser: None,
         };
 
         let result = validate_config(&args);
@@ -414,6 +424,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: None,
+            cookies_from_browser: None,
         };
 
         let result = validate_config(&args);
@@ -442,6 +453,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: None,
+            cookies_from_browser: None,
         };
 
         let result = validate_config(&args);
@@ -470,6 +482,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: None,
+            cookies_from_browser: None,
         };
 
         let result = validate_config(&args);
@@ -507,6 +520,7 @@ mod tests {
             specials: true,
             specials_folder: "Specials".to_string(),
             media_type: Some("series".to_string()),
+            cookies_from_browser: None,
         };
 
         // Just verify the config can be displayed without panicking
@@ -529,6 +543,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: None,
+            cookies_from_browser: None,
         };
 
         let config: CliConfig = args.into();
@@ -554,6 +569,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: None,
+            cookies_from_browser: None,
         };
 
         let config: CliConfig = args.into();
@@ -579,6 +595,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: None,
+            cookies_from_browser: None,
         };
 
         let result = validate_config(&args);
@@ -607,6 +624,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: Some("movie".to_string()),
+            cookies_from_browser: None,
         };
 
         let result = validate_config(&args);
@@ -629,6 +647,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: Some("series".to_string()),
+            cookies_from_browser: None,
         };
 
         let result = validate_config(&args);
@@ -651,6 +670,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: Some("invalid".to_string()),
+            cookies_from_browser: None,
         };
 
         let result = validate_config(&args);
@@ -679,6 +699,7 @@ mod tests {
             specials: false,
             specials_folder: "Specials".to_string(),
             r#type: None,
+            cookies_from_browser: None,
         };
 
         let config: CliConfig = args.into();
@@ -701,6 +722,7 @@ mod tests {
             specials: true,
             specials_folder: "Specials".to_string(),
             r#type: None,
+            cookies_from_browser: None,
         };
 
         let config: CliConfig = args.into();
@@ -743,6 +765,7 @@ mod property_tests {
                 specials: false,
                 specials_folder: "Specials".to_string(),
                 media_type: None,
+                cookies_from_browser: None,
             };
 
             // Capture the display output
@@ -809,6 +832,7 @@ mod property_tests {
                 specials: false,
                 specials_folder: "Specials".to_string(),
                 media_type: None,
+                cookies_from_browser: None,
             };
 
             // Verify the verbose flag is correctly stored
