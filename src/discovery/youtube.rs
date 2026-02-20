@@ -170,9 +170,9 @@ impl YoutubeDiscoverer {
         }
 
         let output = cmd.output().await.map_err(|e| {
-                error!("Failed to execute yt-dlp: {}", e);
-                DiscoveryError::YtDlpError(format!("Failed to execute yt-dlp: {}", e))
-            })?;
+            error!("Failed to execute yt-dlp: {}", e);
+            DiscoveryError::YtDlpError(format!("Failed to execute yt-dlp: {}", e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

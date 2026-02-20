@@ -12,8 +12,8 @@ use crate::output;
 use crate::scanner::Scanner;
 use log::{debug, error, info, warn};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Semaphore;
 
 /// Shared context for series processing, bundling dependencies passed between phases

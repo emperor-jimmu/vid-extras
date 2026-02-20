@@ -120,7 +120,10 @@ impl SpecialValidator {
     }
 
     /// Run `yt-dlp --dump-json` to fetch metadata for up to 5 search results
-    async fn fetch_candidates(query: &str, cookies_from_browser: Option<&str>) -> Vec<VideoCandidate> {
+    async fn fetch_candidates(
+        query: &str,
+        cookies_from_browser: Option<&str>,
+    ) -> Vec<VideoCandidate> {
         let search_url = format!("ytsearch5:{}", query);
 
         let mut cmd = Command::new("yt-dlp");

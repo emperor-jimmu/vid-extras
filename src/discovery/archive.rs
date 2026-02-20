@@ -7,6 +7,93 @@ use serde::Deserialize;
 
 use super::ContentDiscoverer;
 
+/// Deserializes a field that may be a single string or an array of strings.
+/// Archive.org's API is inconsistent — fields like `subject` and `collection`
+/// can return either `"value"` or `["value1", "value2"]`.
+fn deserialize_string_or_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    struct StringOrVec;
+
+    impl<'de> de::Visitor<'de> for StringOrVec {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or array of strings")
+        }
+
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<Vec<String>, E> {
+            Ok(vec![value.to_owned()])
+        }
+
+        fn visit_string<E: de::Error>(self, value: String) -> Result<Vec<String>, E> {
+            Ok(vec![value])
+        }
+
+        fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<String>, A::Error> {
+            let mut vec = Vec::new();
+            while let Some(item) = seq.next_element::<String>()? {
+                vec.push(item);
+            }
+            Ok(vec)
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Vec<String>, E> {
+            Ok(Vec::new())
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Vec<String>, E> {
+            Ok(Vec::new())
+        }
+    }
+
+    deserializer.deserialize_any(StringOrVec)
+}
+
+/// Deserializes a field that may be a single string, an array of strings, or absent.
+/// Returns the first value as `Option<String>`, or `None` if empty/absent.
+fn deserialize_string_or_vec_first<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    struct StringOrVecFirst;
+
+    impl<'de> de::Visitor<'de> for StringOrVecFirst {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string, array of strings, or null")
+        }
+
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<Option<String>, E> {
+            Ok(Some(value.to_owned()))
+        }
+
+        fn visit_string<E: de::Error>(self, value: String) -> Result<Option<String>, E> {
+            Ok(Some(value))
+        }
+
+        fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Option<String>, A::Error> {
+            seq.next_element::<String>()
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Option<String>, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Option<String>, E> {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_any(StringOrVecFirst)
+}
+
 /// Archive.org API response for search
 #[derive(Debug, Deserialize)]
 struct ArchiveOrgSearchResponse {
@@ -24,11 +111,11 @@ struct ArchiveOrgResponse {
 struct ArchiveOrgDoc {
     identifier: String,
     title: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_vec")]
     subject: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_vec_first")]
     description: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_vec")]
     collection: Vec<String>,
 }
 
@@ -164,9 +251,25 @@ impl ArchiveOrgDiscoverer {
             )));
         }
 
-        let search_result: ArchiveOrgSearchResponse = response.json().await.map_err(|e| {
-            error!("Failed to parse Archive.org search response: {}", e);
-            DiscoveryError::NetworkError(e)
+        // Read body as text first so we can diagnose non-JSON responses
+        // (Archive.org sometimes returns HTML error pages)
+        let body = response.text().await.map_err(|e| {
+            error!("Failed to read Archive.org response body: {}", e);
+            DiscoveryError::ApiError(format!("Failed to read response body: {}", e))
+        })?;
+
+        if body.trim_start().starts_with('<') {
+            debug!("Archive.org returned HTML instead of JSON, treating as empty result");
+            return Ok(Vec::new());
+        }
+
+        let search_result: ArchiveOrgSearchResponse = serde_json::from_str(&body).map_err(|e| {
+            error!(
+                "Failed to parse Archive.org JSON: {} (body starts with: {:?})",
+                e,
+                &body[..body.len().min(200)]
+            );
+            DiscoveryError::ApiError(format!("Failed to parse JSON: {}", e))
         })?;
 
         Ok(search_result.response.docs)
