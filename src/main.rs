@@ -1,6 +1,7 @@
 use extras_fetcher::cli::{display_banner, display_config, parse_args};
 use extras_fetcher::config::Config;
-use extras_fetcher::orchestrator::Orchestrator;
+use extras_fetcher::error::ValidationError;
+use extras_fetcher::orchestrator::{Orchestrator, OrchestratorConfig};
 use extras_fetcher::output::display_summary;
 use extras_fetcher::validation::Validator;
 
@@ -49,16 +50,33 @@ async fn main() {
             // Fatal error: missing dependencies
             // Requirements: 10.5, 11.5
             eprintln!("\n✗ Dependency validation failed");
-            eprintln!("  Error: {}", e);
-            eprintln!("\nPlease ensure:");
-            eprintln!("  • yt-dlp is installed and available in PATH");
-            eprintln!("  • ffmpeg is installed with HEVC/x265 support");
-            eprintln!("  • TMDB API key is configured in config.cfg");
-            eprintln!("    (You will be prompted to enter it if config.cfg doesn't exist)");
-            eprintln!("\nInstallation instructions:");
-            eprintln!("  yt-dlp:  https://github.com/yt-dlp/yt-dlp#installation");
-            eprintln!("  ffmpeg:  https://ffmpeg.org/download.html");
-            eprintln!("  TMDB:    https://www.themoviedb.org/settings/api");
+            match &e {
+                ValidationError::MissingBinary(name) => {
+                    eprintln!("  Missing binary: {}", name);
+                    match name.as_str() {
+                        "yt-dlp" => {
+                            eprintln!("\n  Install yt-dlp:");
+                            eprintln!("    https://github.com/yt-dlp/yt-dlp#installation");
+                        }
+                        "ffmpeg" => {
+                            eprintln!("\n  Install ffmpeg:");
+                            eprintln!("    https://ffmpeg.org/download.html");
+                        }
+                        _ => eprintln!("\n  Please install {} and ensure it is in PATH", name),
+                    }
+                }
+                ValidationError::UnsupportedCodec => {
+                    eprintln!("  ffmpeg is missing HEVC/x265 codec support");
+                    eprintln!("\n  Rebuild or reinstall ffmpeg with libx265 support");
+                    eprintln!("    https://ffmpeg.org/download.html");
+                }
+                ValidationError::MissingApiKey(key) => {
+                    eprintln!("  Missing API key: {}", key);
+                    eprintln!("\n  Configure your TMDB API key in config.cfg");
+                    eprintln!("    (You will be prompted to enter it if config.cfg doesn't exist)");
+                    eprintln!("    Get a key: https://www.themoviedb.org/settings/api");
+                }
+            }
             std::process::exit(1);
         }
     };
@@ -106,20 +124,20 @@ async fn main() {
     display_config(&display);
 
     // Create orchestrator with validated configuration
-    let orchestrator = match Orchestrator::new(
-        config.root_directory.clone(),
+    let orchestrator = match Orchestrator::new(OrchestratorConfig {
+        root_dir: config.root_directory.clone(),
         tmdb_api_key,
         tvdb_api_key,
-        config.mode.to_models_source_mode(),
-        config.force,
-        config.concurrency,
-        config.single,
-        config.processing_mode,
-        config.season_extras,
-        config.specials,
-        config.specials_folder,
+        mode: config.mode.to_models_source_mode(),
+        force: config.force,
+        concurrency: config.concurrency,
+        single: config.single,
+        processing_mode: config.processing_mode,
+        season_extras: config.season_extras,
+        specials: config.specials,
+        specials_folder: config.specials_folder,
         cookies_from_browser,
-    ) {
+    }) {
         Ok(orch) => orch,
         Err(e) => {
             // Fatal error: orchestrator initialization failed

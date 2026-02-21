@@ -381,22 +381,22 @@ async fn test_complete_execution_flow() {
     // Step 3: If validation succeeded, try to create orchestrator
     if let Ok(api_key) = validation_result {
         use extras_fetcher::models::{ProcessingMode, SourceMode};
-        use extras_fetcher::orchestrator::Orchestrator;
+        use extras_fetcher::orchestrator::{Orchestrator, OrchestratorConfig};
 
-        let orchestrator = Orchestrator::new(
-            root,
-            api_key,
-            None,
-            SourceMode::YoutubeOnly,
-            false,
-            1,
-            false,
-            ProcessingMode::Both,
-            false,
-            false,
-            "Specials".to_string(),
-            None,
-        );
+        let orchestrator = Orchestrator::new(OrchestratorConfig {
+            root_dir: root,
+            tmdb_api_key: api_key,
+            tvdb_api_key: None,
+            mode: SourceMode::YoutubeOnly,
+            force: false,
+            concurrency: 1,
+            single: false,
+            processing_mode: ProcessingMode::Both,
+            season_extras: false,
+            specials: false,
+            specials_folder: "Specials".to_string(),
+            cookies_from_browser: None,
+        });
 
         // Orchestrator creation should succeed
         assert!(orchestrator.is_ok());
