@@ -377,6 +377,7 @@ So that cross-promotional featurettes and franchise retrospectives appear in my 
 **And** collection videos are filtered by TMDB video type: only "Featurette" and "Behind the Scenes" types are kept from siblings; "Trailer", "Teaser", and "Clip" types for sibling movies are excluded since they promote the sibling, not the library movie (FR17)
 **And** each collection-sourced video is tagged with the originating sibling movie title for traceability (FR18)
 **And** collection videos are added to the library movie's extras, not the sibling's
+**And** sibling movies that are already present in the scanned library are excluded from collection video fetching — those movies will discover their own extras when processed
 **And** network timeouts are capped at 30 seconds per API call (NFR9)
 
 

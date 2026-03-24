@@ -373,13 +373,28 @@ impl TmdbDiscoverer {
 
         metadata
     }
-}
 
-impl ContentDiscoverer for TmdbDiscoverer {
-    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
+    /// Returns true if a collection sibling is already present in the scanned library.
+    ///
+    /// Siblings in the library will process their own extras — fetching their featurettes
+    /// for the current movie would produce duplicates across library folders.
+    fn is_sibling_in_library(sibling: &TmdbCollectionPart, library: &[MovieEntry]) -> bool {
+        library
+            .iter()
+            .any(|m| m.title.eq_ignore_ascii_case(&sibling.title))
+    }
+
+    /// Discover TMDB content, skipping collection siblings already present in the library.
+    ///
+    /// Pass the full scanned `library` so siblings that will be processed on their own
+    /// turn are excluded from this movie's collection extras fetch.
+    pub async fn discover_with_library(
+        &self,
+        movie: &MovieEntry,
+        library: &[MovieEntry],
+    ) -> Result<Vec<VideoSource>, DiscoveryError> {
         info!("Discovering TMDB content for: {}", movie);
 
-        // Search for the movie
         let (movie_id, collection_opt) = match self.search_movie(&movie.title, movie.year).await {
             Ok(Some(result)) => result,
             Ok(None) => {
@@ -392,7 +407,6 @@ impl ContentDiscoverer for TmdbDiscoverer {
             }
         };
 
-        // Fetch videos for the movie
         let videos = match self.fetch_videos(movie_id).await {
             Ok(v) => v,
             Err(e) => {
@@ -401,10 +415,9 @@ impl ContentDiscoverer for TmdbDiscoverer {
             }
         };
 
-        // Convert TMDB videos to VideoSource
         let mut sources: Vec<VideoSource> = videos
             .into_iter()
-            .filter(|v| v.site == "YouTube") // Only YouTube videos are downloadable
+            .filter(|v| v.site == "YouTube")
             .filter_map(|v| {
                 Self::map_tmdb_type(&v.video_type).map(|category| VideoSource {
                     url: format!("https://www.youtube.com/watch?v={}", v.key),
@@ -419,7 +432,8 @@ impl ContentDiscoverer for TmdbDiscoverer {
         info!("Discovered {} TMDB sources for: {}", sources.len(), movie);
 
         // Fetch collection sibling videos if movie belongs to a collection.
-        // Requests are staggered by 100ms to avoid TMDB rate limits, then awaited concurrently.
+        // Siblings already in the library are skipped — they will fetch their own extras.
+        // Requests are staggered by 100ms to avoid TMDB rate limits.
         if let Some(coll) = collection_opt {
             let parts = match self.fetch_collection(coll.id).await {
                 Ok(p) => p,
@@ -429,12 +443,17 @@ impl ContentDiscoverer for TmdbDiscoverer {
                 }
             };
 
-            // Collect existing URLs to deduplicate against primary movie's own videos
             let mut seen_urls: HashSet<String> = sources.iter().map(|s| s.url.clone()).collect();
 
-            // Spawn staggered tasks — one per sibling, 100ms apart
             let mut handles = Vec::with_capacity(parts.len());
             for (i, part) in parts.into_iter().enumerate() {
+                if Self::is_sibling_in_library(&part, library) {
+                    info!(
+                        "Skipping collection sibling '{}' — already in library",
+                        part.title
+                    );
+                    continue;
+                }
                 let discoverer = TmdbDiscoverer::new(self.api_key.clone());
                 let delay = tokio::time::Duration::from_millis(100 * i as u64);
                 handles.push(tokio::spawn(async move {
@@ -478,6 +497,14 @@ impl ContentDiscoverer for TmdbDiscoverer {
         }
 
         Ok(sources)
+    }
+}
+
+impl ContentDiscoverer for TmdbDiscoverer {
+    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
+        // No library context — collection siblings are not filtered.
+        // Use discover_with_library when the scanned library is available.
+        self.discover_with_library(movie, &[]).await
     }
 }
 
@@ -639,5 +666,59 @@ mod tests {
                 t
             );
         }
+    }
+
+    #[test]
+    fn test_is_sibling_in_library_match() {
+        use std::path::PathBuf;
+        let library = vec![
+            MovieEntry {
+                path: PathBuf::from("/movies/Iron Man (2008)"),
+                title: "Iron Man".to_string(),
+                year: 2008,
+                has_done_marker: false,
+            },
+            MovieEntry {
+                path: PathBuf::from("/movies/Iron Man 2 (2010)"),
+                title: "Iron Man 2".to_string(),
+                year: 2010,
+                has_done_marker: false,
+            },
+        ];
+        let sibling_present = TmdbCollectionPart {
+            id: 99,
+            title: "Iron Man 2".to_string(),
+        };
+        let sibling_absent = TmdbCollectionPart {
+            id: 100,
+            title: "Iron Man 3".to_string(),
+        };
+        assert!(TmdbDiscoverer::is_sibling_in_library(&sibling_present, &library));
+        assert!(!TmdbDiscoverer::is_sibling_in_library(&sibling_absent, &library));
+    }
+
+    #[test]
+    fn test_is_sibling_in_library_case_insensitive() {
+        use std::path::PathBuf;
+        let library = vec![MovieEntry {
+            path: PathBuf::from("/movies/Thor (2011)"),
+            title: "Thor".to_string(),
+            year: 2011,
+            has_done_marker: false,
+        }];
+        let sibling = TmdbCollectionPart {
+            id: 42,
+            title: "THOR".to_string(),
+        };
+        assert!(TmdbDiscoverer::is_sibling_in_library(&sibling, &library));
+    }
+
+    #[test]
+    fn test_is_sibling_in_library_empty_library() {
+        let sibling = TmdbCollectionPart {
+            id: 1,
+            title: "Any Movie".to_string(),
+        };
+        assert!(!TmdbDiscoverer::is_sibling_in_library(&sibling, &[]));
     }
 }

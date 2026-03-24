@@ -60,7 +60,14 @@ impl DiscoveryOrchestrator {
     /// - Behind the Scenes: max 10
     ///
     /// When limits are exceeded, prioritizes TMDB > Archive.org > YouTube
-    pub async fn discover_all(&self, movie: &MovieEntry) -> (Vec<VideoSource>, Vec<SourceResult>) {
+    ///
+    /// `library` is the full scanned movie list. TMDB collection siblings already present
+    /// in the library are skipped — they will fetch their own extras when processed.
+    pub async fn discover_all(
+        &self,
+        movie: &MovieEntry,
+        library: &[MovieEntry],
+    ) -> (Vec<VideoSource>, Vec<SourceResult>) {
         let mut all_sources = Vec::new();
         let mut source_results = Vec::new();
 
@@ -77,7 +84,7 @@ impl DiscoveryOrchestrator {
         };
 
         if self.sources.contains(&Source::Tmdb) {
-            match self.tmdb.discover(movie).await {
+            match self.tmdb.discover_with_library(movie, library).await {
                 Ok(sources) => {
                     info!("Found {} sources from TMDB for {}", sources.len(), movie);
                     source_results.push(SourceResult {

@@ -36,6 +36,7 @@ struct MovieProcessingContext {
     converter: Arc<Converter>,
     temp_base: PathBuf,
     dry_run: bool,
+    library_movies: Arc<Vec<MovieEntry>>,
 }
 
 /// Summary statistics for processing run
@@ -393,10 +394,11 @@ impl Orchestrator {
 
         if self.processing_mode != ProcessingMode::SeriesOnly && !movies.is_empty() {
             info!("Processing movies");
+            let library = Arc::new(movies.clone());
             let results = if self.concurrency > 1 {
-                self.process_movies_parallel(movies).await
+                self.process_movies_parallel(movies, library).await
             } else {
-                self.process_movies_sequential(movies).await
+                self.process_movies_sequential(movies, library).await
             };
 
             for result in results {
@@ -446,18 +448,26 @@ impl Orchestrator {
         Ok(summary)
     }
 
-    async fn process_movies_sequential(&self, movies: Vec<MovieEntry>) -> Vec<MovieResult> {
+    async fn process_movies_sequential(
+        &self,
+        movies: Vec<MovieEntry>,
+        library: Arc<Vec<MovieEntry>>,
+    ) -> Vec<MovieResult> {
         let total = movies.len();
         let mut results = Vec::new();
         for (idx, movie) in movies.into_iter().enumerate() {
             output::display_movie_start(&movie, idx + 1, total);
-            let result = self.process_movie(movie).await;
+            let result = self.process_movie(movie, library.clone()).await;
             results.push(result);
         }
         results
     }
 
-    async fn process_movies_parallel(&self, movies: Vec<MovieEntry>) -> Vec<MovieResult> {
+    async fn process_movies_parallel(
+        &self,
+        movies: Vec<MovieEntry>,
+        library: Arc<Vec<MovieEntry>>,
+    ) -> Vec<MovieResult> {
         let semaphore = Arc::new(Semaphore::new(self.concurrency));
         let total = movies.len();
         let counter = Arc::new(AtomicUsize::new(0));
@@ -473,6 +483,7 @@ impl Orchestrator {
                 converter: self.converter.clone(),
                 temp_base: self.temp_base.clone(),
                 dry_run: self.dry_run,
+                library_movies: library.clone(),
             };
 
             let task = tokio::spawn(async move {
@@ -493,13 +504,14 @@ impl Orchestrator {
         results
     }
 
-    async fn process_movie(&self, movie: MovieEntry) -> MovieResult {
+    async fn process_movie(&self, movie: MovieEntry, library: Arc<Vec<MovieEntry>>) -> MovieResult {
         let ctx = MovieProcessingContext {
             discovery: self.discovery.clone(),
             downloader: self.downloader.clone(),
             converter: self.converter.clone(),
             temp_base: self.temp_base.clone(),
             dry_run: self.dry_run,
+            library_movies: library,
         };
         Self::process_movie_standalone(movie, ctx).await
     }
@@ -516,7 +528,7 @@ impl Orchestrator {
 
         // Phase 2: Discovery
         info!("Phase 2: Discovering content for {}", movie);
-        let (sources, source_results) = ctx.discovery.discover_all(&movie).await;
+        let (sources, source_results) = ctx.discovery.discover_all(&movie, &ctx.library_movies).await;
 
         // Dry-run: display results and return early — no file I/O (AC3/NFR5)
         if ctx.dry_run {
