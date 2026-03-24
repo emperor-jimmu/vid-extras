@@ -428,7 +428,7 @@ impl Orchestrator {
 
         // Phase 2: Discovery
         info!("Phase 2: Discovering content for {}", movie);
-        let sources = discovery.discover_all(&movie).await;
+        let (sources, _source_results) = discovery.discover_all(&movie).await;
         if sources.is_empty() {
             warn!("No sources found for {}", movie);
             return MovieResult::success(movie, 0, 0);
@@ -744,7 +744,7 @@ async fn discover_series_content(
     );
 
     // Stage 1: Series-level extras (always)
-    let mut all_extras = series_discovery.discover_all(series).await;
+    let (mut all_extras, _series_source_results) = series_discovery.discover_all(series).await;
     let series_level_count = all_extras.len();
     info!(
         "Series-level discovery: found {} extras",
@@ -755,7 +755,7 @@ async fn discover_series_content(
     let mut season_specific_count = 0;
     if season_extras_enabled {
         for &season in &series.seasons {
-            let extras = series_discovery
+            let (extras, _season_source_results) = series_discovery
                 .discover_season_extras(series, season)
                 .await;
             info!(

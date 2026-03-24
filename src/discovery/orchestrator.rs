@@ -1,13 +1,24 @@
 // Discovery orchestrator - coordinates discovery from all sources
 
 use crate::models::{ContentCategory, MovieEntry, Source, SourceType, VideoSource};
-use log::info;
+use log::{info, warn};
 use std::collections::HashMap;
 
 use super::ContentDiscoverer;
 use super::archive::ArchiveOrgDiscoverer;
 use super::tmdb::TmdbDiscoverer;
 use super::youtube::YoutubeDiscoverer;
+
+/// Result of querying a single discovery source
+#[derive(Debug, Clone)]
+pub struct SourceResult {
+    /// Which source was queried
+    pub source: Source,
+    /// Number of videos returned by this source before deduplication and content limits are applied
+    pub videos_found: usize,
+    /// Error message if the source failed, None on success
+    pub error: Option<String>,
+}
 
 /// Orchestrates discovery from all sources
 pub struct DiscoveryOrchestrator {
@@ -49,19 +60,41 @@ impl DiscoveryOrchestrator {
     /// - Behind the Scenes: max 10
     ///
     /// When limits are exceeded, prioritizes TMDB > Archive.org > YouTube
-    pub async fn discover_all(&self, movie: &MovieEntry) -> Vec<VideoSource> {
+    pub async fn discover_all(&self, movie: &MovieEntry) -> (Vec<VideoSource>, Vec<SourceResult>) {
         let mut all_sources = Vec::new();
+        let mut source_results = Vec::new();
 
-        // Get metadata from TMDB (collection info for YouTube filtering)
-        let metadata = self.tmdb.get_metadata(movie).await;
+        // Fetch TMDB collection metadata only when at least one source that uses it is active.
+        // YouTube filtering uses collection titles to exclude trailers for other films in the same
+        // franchise; TMDB discovery uses it implicitly via search. Skip the extra network call
+        // when neither source is requested.
+        let needs_metadata =
+            self.sources.contains(&Source::Tmdb) || self.sources.contains(&Source::Youtube);
+        let metadata = if needs_metadata {
+            self.tmdb.get_metadata(movie).await
+        } else {
+            Default::default()
+        };
 
         if self.sources.contains(&Source::Tmdb) {
             match self.tmdb.discover(movie).await {
                 Ok(sources) => {
                     info!("Found {} sources from TMDB for {}", sources.len(), movie);
+                    source_results.push(SourceResult {
+                        source: Source::Tmdb,
+                        videos_found: sources.len(),
+                        error: None,
+                    });
                     all_sources.extend(sources);
                 }
-                Err(e) => info!("TMDB discovery failed for {}: {}", movie, e),
+                Err(e) => {
+                    warn!("TMDB discovery failed for {}: {}", movie, e);
+                    source_results.push(SourceResult {
+                        source: Source::Tmdb,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
+                }
             }
         }
 
@@ -73,9 +106,21 @@ impl DiscoveryOrchestrator {
                         sources.len(),
                         movie
                     );
+                    source_results.push(SourceResult {
+                        source: Source::Archive,
+                        videos_found: sources.len(),
+                        error: None,
+                    });
                     all_sources.extend(sources);
                 }
-                Err(e) => info!("Archive.org discovery failed for {}: {}", movie, e),
+                Err(e) => {
+                    warn!("Archive.org discovery failed for {}: {}", movie, e);
+                    source_results.push(SourceResult {
+                        source: Source::Archive,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
+                }
             }
         }
 
@@ -83,18 +128,33 @@ impl DiscoveryOrchestrator {
             match self.youtube.discover_with_metadata(movie, &metadata).await {
                 Ok(sources) => {
                     info!("Found {} sources from YouTube for {}", sources.len(), movie);
+                    source_results.push(SourceResult {
+                        source: Source::Youtube,
+                        videos_found: sources.len(),
+                        error: None,
+                    });
                     all_sources.extend(sources);
                 }
-                Err(e) => info!("YouTube discovery failed for {}: {}", movie, e),
+                Err(e) => {
+                    warn!("YouTube discovery failed for {}: {}", movie, e);
+                    source_results.push(SourceResult {
+                        source: Source::Youtube,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
+                }
             }
         }
 
         // Dailymotion, Vimeo, Bilibili stubs — discoverers not yet implemented.
         // Log when a user-requested source is skipped so it's not silently ignored.
+        // These are NOT added to source_results as errors — they are intentionally
+        // unimplemented stubs, not runtime failures. Including them as errors would
+        // make every default run (which includes Dailymotion) appear to have failures.
         for source in &self.sources {
             match source {
                 Source::Dailymotion | Source::Vimeo | Source::Bilibili => {
-                    info!(
+                    warn!(
                         "{} source requested but discoverer not yet implemented — skipping for {}",
                         source, movie
                     );
@@ -134,7 +194,17 @@ impl DiscoveryOrchestrator {
             movie,
             all_sources.len()
         );
-        all_sources
+
+        // Log per-source summary
+        for sr in &source_results {
+            if let Some(ref err) = sr.error {
+                warn!("  {} — failed: {}", sr.source, err);
+            } else {
+                info!("  {} — {} videos", sr.source, sr.videos_found);
+            }
+        }
+
+        (all_sources, source_results)
     }
 
     /// Apply content limits per category, prioritizing TMDB > Archive.org > YouTube
@@ -178,5 +248,101 @@ impl DiscoveryOrchestrator {
         }
 
         limited_sources
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_source_result_success() {
+        let result = SourceResult {
+            source: Source::Tmdb,
+            videos_found: 5,
+            error: None,
+        };
+        assert_eq!(result.source, Source::Tmdb);
+        assert_eq!(result.videos_found, 5);
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn test_source_result_failure() {
+        let result = SourceResult {
+            source: Source::Youtube,
+            videos_found: 0,
+            error: Some("Network timeout".to_string()),
+        };
+        assert_eq!(result.source, Source::Youtube);
+        assert_eq!(result.videos_found, 0);
+        assert_eq!(result.error.as_deref(), Some("Network timeout"));
+    }
+
+    #[test]
+    fn test_source_result_with_zero_videos_and_error() {
+        // A SourceResult can represent any source that returned an error
+        let result = SourceResult {
+            source: Source::Dailymotion,
+            videos_found: 0,
+            error: Some("connection refused".to_string()),
+        };
+        assert_eq!(result.source, Source::Dailymotion);
+        assert!(result.error.is_some());
+        assert_eq!(result.videos_found, 0);
+    }
+
+    #[test]
+    fn test_source_result_clone() {
+        let result = SourceResult {
+            source: Source::Archive,
+            videos_found: 3,
+            error: None,
+        };
+        let cloned = result.clone();
+        assert_eq!(cloned.source, result.source);
+        assert_eq!(cloned.videos_found, result.videos_found);
+        assert_eq!(cloned.error, result.error);
+    }
+
+    #[test]
+    fn test_source_result_debug() {
+        let result = SourceResult {
+            source: Source::Tmdb,
+            videos_found: 2,
+            error: None,
+        };
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("Tmdb"));
+        assert!(debug_str.contains("2"));
+    }
+
+    #[test]
+    fn test_source_result_filtering_by_error_state() {
+        // Verify the SourceResult struct can represent all source states
+        let results = vec![
+            SourceResult {
+                source: Source::Tmdb,
+                videos_found: 3,
+                error: None,
+            },
+            SourceResult {
+                source: Source::Archive,
+                videos_found: 0,
+                error: Some("API error".to_string()),
+            },
+            SourceResult {
+                source: Source::Youtube,
+                videos_found: 7,
+                error: None,
+            },
+        ];
+
+        let successful: Vec<_> = results.iter().filter(|r| r.error.is_none()).collect();
+        let failed: Vec<_> = results.iter().filter(|r| r.error.is_some()).collect();
+
+        assert_eq!(successful.len(), 2);
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].source, Source::Archive);
     }
 }

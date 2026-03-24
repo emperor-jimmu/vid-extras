@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use super::id_bridge::IdBridge;
 use super::monitor_policy::MonitorPolicy;
+use super::orchestrator::SourceResult;
 use super::series_tmdb::TmdbSeriesDiscoverer;
 use super::series_youtube::YoutubeSeriesDiscoverer;
 use super::special_searcher::SpecialSearcher;
@@ -86,8 +87,12 @@ impl SeriesDiscoveryOrchestrator {
     ///
     /// Errors from individual sources are logged but don't stop the overall discovery process.
     /// This ensures graceful degradation if one source fails.
-    pub async fn discover_all(&self, series: &SeriesEntry) -> Vec<SeriesExtra> {
+    pub async fn discover_all(
+        &self,
+        series: &SeriesEntry,
+    ) -> (Vec<SeriesExtra>, Vec<SourceResult>) {
         let mut all_sources = Vec::new();
+        let mut source_results = Vec::new();
 
         if self.sources.contains(&Source::Tmdb) {
             // Query TMDB for series ID and extras
@@ -118,18 +123,38 @@ impl SeriesDiscoveryOrchestrator {
                                 );
                             }
 
+                            source_results.push(SourceResult {
+                                source: Source::Tmdb,
+                                videos_found: sources.len(),
+                                error: None,
+                            });
                             all_sources.extend(sources);
                         }
                         Err(e) => {
-                            info!("TMDB series extras discovery failed for {}: {}", series, e);
+                            warn!("TMDB series extras discovery failed for {}: {}", series, e);
+                            source_results.push(SourceResult {
+                                source: Source::Tmdb,
+                                videos_found: 0,
+                                error: Some(e.to_string()),
+                            });
                         }
                     }
                 }
                 Ok(None) => {
                     info!("Series not found on TMDB: {}", series);
+                    source_results.push(SourceResult {
+                        source: Source::Tmdb,
+                        videos_found: 0,
+                        error: None,
+                    });
                 }
                 Err(e) => {
-                    info!("TMDB series search failed for {}: {}", series, e);
+                    warn!("TMDB series search failed for {}: {}", series, e);
+                    source_results.push(SourceResult {
+                        source: Source::Tmdb,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
                 }
             }
         }
@@ -142,11 +167,30 @@ impl SeriesDiscoveryOrchestrator {
                         sources.len(),
                         series
                     );
+                    source_results.push(SourceResult {
+                        source: Source::Youtube,
+                        videos_found: sources.len(),
+                        error: None,
+                    });
                     all_sources.extend(sources);
                 }
                 Err(e) => {
-                    info!("YouTube discovery failed for {}: {}", series, e);
+                    warn!("YouTube discovery failed for {}: {}", series, e);
+                    source_results.push(SourceResult {
+                        source: Source::Youtube,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
                 }
+            }
+        }
+
+        // Log per-source summary
+        for sr in &source_results {
+            if let Some(ref err) = sr.error {
+                warn!("  {} — failed: {}", sr.source, err);
+            } else {
+                info!("  {} — {} videos", sr.source, sr.videos_found);
             }
         }
 
@@ -155,7 +199,7 @@ impl SeriesDiscoveryOrchestrator {
             series,
             all_sources.len()
         );
-        all_sources
+        (all_sources, source_results)
     }
 
     /// Discovers season-specific extras for a given season
@@ -167,17 +211,18 @@ impl SeriesDiscoveryOrchestrator {
         &self,
         series: &SeriesEntry,
         season: u8,
-    ) -> Vec<SeriesExtra> {
+    ) -> (Vec<SeriesExtra>, Vec<SourceResult>) {
         // Only discover extras for seasons that exist on disk
         if !series.seasons.contains(&season) {
             info!(
                 "Skipping season {} - not found on disk for {}",
                 season, series
             );
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         }
 
         let mut all_sources = Vec::new();
+        let mut source_results = Vec::new();
 
         if self.sources.contains(&Source::Youtube) {
             match self.youtube.discover_season_extras(series, season).await {
@@ -188,13 +233,23 @@ impl SeriesDiscoveryOrchestrator {
                         series,
                         season
                     );
+                    source_results.push(SourceResult {
+                        source: Source::Youtube,
+                        videos_found: sources.len(),
+                        error: None,
+                    });
                     all_sources.extend(sources);
                 }
                 Err(e) => {
-                    info!(
+                    warn!(
                         "YouTube season-specific discovery failed for {} Season {}: {}",
                         series, season, e
                     );
+                    source_results.push(SourceResult {
+                        source: Source::Youtube,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
                 }
             }
         }
@@ -227,7 +282,7 @@ impl SeriesDiscoveryOrchestrator {
             season,
             all_sources.len()
         );
-        all_sources
+        (all_sources, source_results)
     }
 
     /// Discovers Season 0 specials for a series via TheTVDB
@@ -653,6 +708,28 @@ mod tests {
             seasons: vec![1, 2, 3, 4, 5],
         };
         assert_eq!(series.to_string(), "Breaking Bad");
+    }
+
+    #[test]
+    fn test_source_result_tracking_for_series() {
+        // Verify SourceResult can represent series discovery outcomes
+        let results = vec![
+            SourceResult {
+                source: Source::Tmdb,
+                videos_found: 4,
+                error: None,
+            },
+            SourceResult {
+                source: Source::Youtube,
+                videos_found: 0,
+                error: Some("yt-dlp not found".to_string()),
+            },
+        ];
+
+        let successful: Vec<_> = results.iter().filter(|r| r.error.is_none()).collect();
+        assert_eq!(successful.len(), 1);
+        assert_eq!(successful[0].source, Source::Tmdb);
+        assert_eq!(successful[0].videos_found, 4);
     }
 }
 

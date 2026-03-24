@@ -89,7 +89,10 @@ impl TmdbDiscoverer {
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("reqwest client builder should not fail with default TLS"),
         }
     }
 

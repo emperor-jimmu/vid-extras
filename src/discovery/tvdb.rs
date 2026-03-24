@@ -171,7 +171,10 @@ impl TvdbClient {
     pub fn new(api_key: String) -> Self {
         Self {
             api_key,
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("reqwest client builder should not fail with default TLS"),
             token: Arc::new(RwLock::new(None)),
         }
     }

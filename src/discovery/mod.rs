@@ -23,6 +23,7 @@ pub use fuzzy_matching::FuzzyMatcher;
 pub use id_bridge::IdBridge;
 pub use monitor_policy::MonitorPolicy;
 pub use orchestrator::DiscoveryOrchestrator;
+pub use orchestrator::SourceResult;
 pub use season_pack::SeasonPackProcessor;
 pub use season_zero_import::Season0Importer;
 pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};
