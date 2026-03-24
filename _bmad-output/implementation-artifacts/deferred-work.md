@@ -17,3 +17,7 @@
 - **D3** 429 retry counter not incremented — the retry request after a 429 response does not call `fetch_add` on `request_count`, so the shared counter under-counts by one per rate-limited request. Minor accuracy issue; does not affect correctness of the 80% warning threshold in practice.
 - **D4** `series_id` collision for yearless series — `SeriesDiscoveryOrchestrator` constructs `series_id` as `{title}_{year}` where `year` defaults to `0` for yearless series. Two different yearless series with the same title would share a `series_id`. Pre-existing pattern in the series pipeline.
 - **D5** Concurrent sibling tasks can hit TMDB rate limits — `DiscoveryOrchestrator::discover_all` fires TMDB, Archive.org, and YouTube concurrently per movie; when `--concurrency > 1`, multiple movies run simultaneously, multiplying TMDB API calls. No per-source rate limiting. Pre-existing architecture pattern.
+
+## Deferred from: code review of 6-1-dailymotion-rest-api-discoverer (2026-03-25)
+
+- VideoSource→SeriesExtra conversion closure duplicated in `discover_all` and `discover_season_extras` in `src/discovery/series_orchestrator.rs` — pre-existing pattern (same duplication exists for YouTube). Could extract a helper fn but the closures differ in `season_number` field.

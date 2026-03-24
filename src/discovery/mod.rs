@@ -1,6 +1,7 @@
 // Discovery module - handles content discovery from multiple sources
 
 mod archive;
+pub(crate) mod dailymotion;
 mod fuzzy_matching;
 mod id_bridge;
 mod kinocheck;

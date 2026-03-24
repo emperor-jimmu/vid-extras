@@ -5,6 +5,7 @@ use log::{debug, info, warn};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use super::dailymotion::DailymotionDiscoverer;
 use super::id_bridge::IdBridge;
 use super::monitor_policy::MonitorPolicy;
 use super::orchestrator::SourceResult;
@@ -18,6 +19,7 @@ use super::tvdb::TvdbClient;
 pub struct SeriesDiscoveryOrchestrator {
     tmdb: TmdbSeriesDiscoverer,
     youtube: YoutubeSeriesDiscoverer,
+    dailymotion: DailymotionDiscoverer,
     sources: Vec<Source>,
     tvdb_client: Option<Arc<TvdbClient>>,
     id_bridge: Option<Arc<IdBridge>>,
@@ -30,6 +32,7 @@ impl SeriesDiscoveryOrchestrator {
         Self {
             tmdb: TmdbSeriesDiscoverer::new(tmdb_api_key),
             youtube: YoutubeSeriesDiscoverer::new(),
+            dailymotion: DailymotionDiscoverer::new(),
             sources,
             tvdb_client: None,
             id_bridge: None,
@@ -54,6 +57,7 @@ impl SeriesDiscoveryOrchestrator {
         Self {
             tmdb: TmdbSeriesDiscoverer::new(tmdb_api_key),
             youtube: YoutubeSeriesDiscoverer::new(),
+            dailymotion: DailymotionDiscoverer::new(),
             sources,
             tvdb_client: Some(tvdb_client),
             id_bridge: Some(id_bridge),
@@ -191,13 +195,57 @@ impl SeriesDiscoveryOrchestrator {
             }
         }
 
-        // Dailymotion, Vimeo, Bilibili stubs — discoverers not yet implemented.
+        if self.sources.contains(&Source::Dailymotion) {
+            let year = series.year.unwrap_or(0);
+            match self.dailymotion.discover(&series.title, year).await {
+                Ok(sources) => {
+                    // Convert VideoSource to SeriesExtra for the series pipeline
+                    let extras: Vec<SeriesExtra> = sources
+                        .into_iter()
+                        .map(|vs| SeriesExtra {
+                            series_id: format!(
+                                "{}_{}",
+                                series.title.replace(' ', "_"),
+                                series.year.unwrap_or(0)
+                            ),
+                            season_number: None,
+                            category: vs.category,
+                            title: vs.title,
+                            url: vs.url,
+                            source_type: vs.source_type,
+                            local_path: None,
+                        })
+                        .collect();
+                    info!(
+                        "Found {} sources from Dailymotion for {}",
+                        extras.len(),
+                        series
+                    );
+                    source_results.push(SourceResult {
+                        source: Source::Dailymotion,
+                        videos_found: extras.len(),
+                        error: None,
+                    });
+                    all_sources.extend(extras);
+                }
+                Err(e) => {
+                    warn!("Dailymotion discovery failed for {}: {}", series, e);
+                    source_results.push(SourceResult {
+                        source: Source::Dailymotion,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
+                }
+            }
+        }
+
+        // Vimeo, Bilibili stubs — discoverers not yet implemented.
         // Log when a user-requested source is skipped so it's not silently ignored.
         // These are NOT added to source_results as errors — they are intentionally
         // unimplemented stubs, not runtime failures.
         for source in &self.sources {
             match source {
-                Source::Dailymotion | Source::Vimeo | Source::Bilibili => {
+                Source::Vimeo | Source::Bilibili => {
                     warn!(
                         "{} source requested but discoverer not yet implemented — skipping for {}",
                         source, series
@@ -275,6 +323,12 @@ impl SeriesDiscoveryOrchestrator {
                 }
             }
         }
+
+        // Dailymotion is intentionally skipped in season-specific discovery: the API
+        // has no season-aware search, so it returns the same title-level results as
+        // discover_all(). Calling it per-season would waste API calls (with 1s pacing)
+        // and produce duplicate extras. Series-level Dailymotion results are already
+        // fetched in discover_all().
 
         // Filter out videos that reference seasons not available on disk
         // (YouTube search is fuzzy and may return results for other seasons)

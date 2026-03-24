@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicU32;
 
 use super::ContentDiscoverer;
 use super::archive::ArchiveOrgDiscoverer;
+use super::dailymotion::DailymotionDiscoverer;
 use super::kinocheck::KinoCheckDiscoverer;
 use super::tmdb::TmdbDiscoverer;
 use super::youtube::YoutubeDiscoverer;
@@ -29,6 +30,7 @@ pub struct DiscoveryOrchestrator {
     archive: ArchiveOrgDiscoverer,
     youtube: YoutubeDiscoverer,
     kinocheck: KinoCheckDiscoverer,
+    dailymotion: DailymotionDiscoverer,
     sources: Vec<Source>,
 }
 
@@ -44,6 +46,7 @@ impl DiscoveryOrchestrator {
             archive: ArchiveOrgDiscoverer::new(),
             youtube: YoutubeDiscoverer::new(),
             kinocheck: KinoCheckDiscoverer::new(kinocheck_request_count),
+            dailymotion: DailymotionDiscoverer::new(),
             sources,
         }
     }
@@ -60,6 +63,7 @@ impl DiscoveryOrchestrator {
             archive: ArchiveOrgDiscoverer::new(),
             youtube: YoutubeDiscoverer::with_cookies(browser),
             kinocheck: KinoCheckDiscoverer::new(kinocheck_request_count),
+            dailymotion: DailymotionDiscoverer::new(),
             sources,
         }
     }
@@ -197,14 +201,39 @@ impl DiscoveryOrchestrator {
             }
         }
 
-        // Dailymotion, Vimeo, Bilibili stubs — discoverers not yet implemented.
+        if self.sources.contains(&Source::Dailymotion) {
+            match self.dailymotion.discover(&movie.title, movie.year).await {
+                Ok(sources) => {
+                    info!(
+                        "Found {} sources from Dailymotion for {}",
+                        sources.len(),
+                        movie
+                    );
+                    source_results.push(SourceResult {
+                        source: Source::Dailymotion,
+                        videos_found: sources.len(),
+                        error: None,
+                    });
+                    all_sources.extend(sources);
+                }
+                Err(e) => {
+                    warn!("Dailymotion discovery failed for {}: {}", movie, e);
+                    source_results.push(SourceResult {
+                        source: Source::Dailymotion,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
+                }
+            }
+        }
+
+        // Vimeo, Bilibili stubs — discoverers not yet implemented.
         // Log when a user-requested source is skipped so it's not silently ignored.
         // These are NOT added to source_results as errors — they are intentionally
-        // unimplemented stubs, not runtime failures. Including them as errors would
-        // make every default run (which includes Dailymotion) appear to have failures.
+        // unimplemented stubs, not runtime failures.
         for source in &self.sources {
             match source {
-                Source::Dailymotion | Source::Vimeo | Source::Bilibili => {
+                Source::Vimeo | Source::Bilibili => {
                     warn!(
                         "{} source requested but discoverer not yet implemented — skipping for {}",
                         source, movie

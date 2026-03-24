@@ -99,6 +99,7 @@ DiscoveryOrchestrator
 ├── TmdbDiscoverer          (TMDB API: search + video list + collection sibling videos)
 ├── ArchiveOrgDiscoverer    (Archive.org: all movies — general, making-of, DVDXtras queries)
 ├── YoutubeDiscoverer       (yt-dlp ytsearch5: always queried)
+├── DailymotionDiscoverer   (Dailymotion REST API: keyword search, paginated, 1 req/sec)
 └── KinoCheckDiscoverer     (implicit fallback when TMDB returns 0 videos)
 ```
 
@@ -279,6 +280,14 @@ ProcessingSummary → terminal output
 - **Auth:** None (free public API, 1,000 req/day limit)
 - **Movie lookup:** `GET https://api.kinocheck.de/movies?tmdb_id={id}` — returns single trailer object with YouTube video ID
 - **Used for:** Implicit TMDB fallback when TMDB returns zero videos for a movie or series
+
+### Dailymotion API
+
+- **Auth:** None (free public API)
+- **Video search:** `GET https://api.dailymotion.com/videos?search={query}&fields=id,title,duration,url&limit=10&page={n}`
+- **Rate limit:** Undocumented; paced at 1 request per second to be safe
+- **Used for:** Discovering official distributor uploads and extras not available on YouTube
+- **Pagination:** Up to 3 pages; `has_more` boolean indicates more results available
 
 ### Archive.org
 
