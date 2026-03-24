@@ -73,6 +73,10 @@ pub struct CliArgs {
     #[arg(long, value_name = "BROWSER")]
     pub cookies_from_browser: Option<String>,
 
+    /// Discover extras without downloading, converting, or organizing files
+    #[arg(long)]
+    pub dry_run: bool,
+
     /// DEPRECATED: Use --sources instead
     #[arg(long, hide = true)]
     pub mode: Option<String>,
@@ -93,6 +97,7 @@ pub struct CliConfig {
     pub specials_folder: String,
     pub media_type: Option<String>,
     pub cookies_from_browser: Option<String>,
+    pub dry_run: bool,
 }
 
 impl From<CliArgs> for CliConfig {
@@ -118,6 +123,7 @@ impl From<CliArgs> for CliConfig {
             specials_folder: args.specials_folder,
             media_type: args.r#type,
             cookies_from_browser: args.cookies_from_browser,
+            dry_run: args.dry_run,
         }
     }
 }
@@ -310,6 +316,13 @@ pub fn display_config(config: &CliConfig) {
             browser.bright_cyan()
         );
     }
+    if config.dry_run {
+        println!(
+            "  {} {}",
+            "Dry Run:".bright_white(),
+            "Yes (discovery only)".bright_yellow()
+        );
+    }
     println!();
 }
 
@@ -336,6 +349,7 @@ mod tests {
             r#type: None,
             cookies_from_browser: None,
             mode: None,
+            dry_run: false,
         }
     }
 
@@ -364,6 +378,7 @@ mod tests {
             r#type: Some("series".to_string()),
             cookies_from_browser: None,
             mode: None,
+            dry_run: false,
         };
 
         let config: CliConfig = args.into();
@@ -463,6 +478,7 @@ mod tests {
             specials_folder: "Specials".to_string(),
             media_type: Some("series".to_string()),
             cookies_from_browser: None,
+            dry_run: false,
         };
         display_config(&config);
     }
@@ -579,6 +595,48 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_dry_run_flag_parsed_correctly() {
+        use clap::Parser;
+
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path().to_str().unwrap();
+
+        // Without --dry-run: default is false
+        let args = CliArgs::try_parse_from(["extras_fetcher", root]).expect("parse should succeed");
+        assert!(!args.dry_run);
+        let config: CliConfig = args.into();
+        assert!(!config.dry_run);
+
+        // With --dry-run: should be true
+        let args = CliArgs::try_parse_from(["extras_fetcher", root, "--dry-run"])
+            .expect("parse should succeed");
+        assert!(args.dry_run);
+        let config: CliConfig = args.into();
+        assert!(config.dry_run);
+    }
+
+    #[test]
+    fn test_display_config_with_dry_run() {
+        let config = CliConfig {
+            root_directory: PathBuf::from("/test/movies"),
+            force: false,
+            sources: default_sources(),
+            concurrency: 2,
+            verbose: false,
+            single: false,
+            processing_mode: crate::models::ProcessingMode::Both,
+            season_extras: false,
+            specials: false,
+            specials_folder: "Specials".to_string(),
+            media_type: None,
+            cookies_from_browser: None,
+            dry_run: true,
+        };
+        // Should not panic and should display dry-run indicator
+        display_config(&config);
+    }
 }
 
 #[cfg(test)]
@@ -611,6 +669,7 @@ mod property_tests {
                 specials_folder: "Specials".to_string(),
                 media_type: None,
                 cookies_from_browser: None,
+                dry_run: false,
             };
 
             let mut output = Vec::new();
@@ -672,6 +731,7 @@ mod property_tests {
                 specials_folder: "Specials".to_string(),
                 media_type: None,
                 cookies_from_browser: None,
+                dry_run: false,
             };
 
             prop_assert_eq!(config.verbose, verbose);

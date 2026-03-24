@@ -1,5 +1,6 @@
 // Output module - handles CLI output formatting and progress display
 
+use crate::discovery::SourceResult;
 use crate::models::{ContentCategory, MovieEntry, SeriesEntry, SourceType};
 use crate::orchestrator::ProcessingSummary;
 use colored::Colorize;
@@ -130,6 +131,85 @@ pub fn display_error(movie_title: &str, operation: &str, error: &str) {
         movie_title.bright_white().bold(),
         operation.bright_yellow(),
         error.red()
+    );
+}
+
+/// Display per-source discovery results for a movie in dry-run mode
+///
+/// Shows what would be downloaded without actually downloading.
+/// Requirements: FR31, FR32
+pub fn display_dry_run_movie_results(
+    movie: &MovieEntry,
+    source_results: &[SourceResult],
+    total_videos: usize,
+) {
+    println!(
+        "\n  {} {} {}",
+        "[DRY RUN]".bright_yellow().bold(),
+        "Discovery results for".bright_white(),
+        format!("{}", movie).bright_cyan()
+    );
+    for sr in source_results {
+        if let Some(ref err) = sr.error {
+            println!(
+                "    {} {} {}",
+                format!("{:>12}", sr.source).bright_white(),
+                "—".bright_white(),
+                format!("failed: {}", err).red()
+            );
+        } else {
+            println!(
+                "    {} {} {}",
+                format!("{:>12}", sr.source).bright_white(),
+                "—".bright_white(),
+                format!("{} videos", sr.videos_found).bright_cyan()
+            );
+        }
+    }
+    println!(
+        "    {} {} {}",
+        "Total:".bright_white().bold(),
+        total_videos.to_string().bright_yellow(),
+        "videos (would download)".bright_white()
+    );
+}
+
+/// Display discovery results for a series in dry-run mode
+///
+/// Requirements: FR31, FR32
+pub fn display_dry_run_series_results(
+    series: &SeriesEntry,
+    source_results: &[SourceResult],
+    total_extras: usize,
+) {
+    println!(
+        "\n  {} {} {}",
+        "[DRY RUN]".bright_yellow().bold(),
+        "Discovery results for".bright_white(),
+        format!("{}", series).bright_cyan()
+    );
+    for sr in source_results {
+        if let Some(ref err) = sr.error {
+            println!(
+                "    {} {} {}",
+                format!("{:>12}", sr.source).bright_white(),
+                "—".bright_white(),
+                format!("failed: {}", err).red()
+            );
+        } else {
+            println!(
+                "    {} {} {}",
+                format!("{:>12}", sr.source).bright_white(),
+                "—".bright_white(),
+                format!("{} extras", sr.videos_found).bright_cyan()
+            );
+        }
+    }
+    println!(
+        "    {} {} {}",
+        "Total:".bright_white().bold(),
+        total_extras.to_string().bright_yellow(),
+        "extras (would download)".bright_white()
     );
 }
 
@@ -559,6 +639,81 @@ mod tests {
     fn test_display_series_complete_failure() {
         let series = create_test_series();
         display_series_complete(&series, 0, 0, false);
+    }
+
+    #[test]
+    fn test_display_dry_run_movie_results_empty() {
+        let movie = create_test_movie();
+        // Empty source results — should not panic
+        display_dry_run_movie_results(&movie, &[], 0);
+    }
+
+    #[test]
+    fn test_display_dry_run_movie_results_populated() {
+        use crate::models::Source;
+        let movie = create_test_movie();
+        let source_results = vec![
+            SourceResult {
+                source: Source::Tmdb,
+                videos_found: 3,
+                error: None,
+            },
+            SourceResult {
+                source: Source::Youtube,
+                videos_found: 7,
+                error: None,
+            },
+            SourceResult {
+                source: Source::Archive,
+                videos_found: 0,
+                error: None,
+            },
+        ];
+        display_dry_run_movie_results(&movie, &source_results, 10);
+    }
+
+    #[test]
+    fn test_display_dry_run_movie_results_with_errors() {
+        use crate::models::Source;
+        let movie = create_test_movie();
+        let source_results = vec![
+            SourceResult {
+                source: Source::Tmdb,
+                videos_found: 3,
+                error: None,
+            },
+            SourceResult {
+                source: Source::Youtube,
+                videos_found: 0,
+                error: Some("connection refused".to_string()),
+            },
+        ];
+        display_dry_run_movie_results(&movie, &source_results, 3);
+    }
+
+    #[test]
+    fn test_display_dry_run_series_results_empty() {
+        let series = create_test_series();
+        display_dry_run_series_results(&series, &[], 0);
+    }
+
+    #[test]
+    fn test_display_dry_run_series_results_populated() {
+        use crate::models::Source;
+        let series = create_test_series();
+        let source_results = vec![
+            SourceResult {
+                source: Source::Tmdb,
+                videos_found: 5,
+                error: None,
+            },
+            SourceResult {
+                source: Source::Youtube,
+                videos_found: 7,
+                error: None,
+            },
+        ];
+        display_dry_run_series_results(&series, &source_results, 12);
     }
 
     #[test]

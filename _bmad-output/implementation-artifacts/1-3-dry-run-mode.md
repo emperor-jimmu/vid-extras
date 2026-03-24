@@ -1,6 +1,6 @@
 # Story 1.3: Dry-Run Mode
 
-Status: draft
+Status: done
 
 ## Story
 
@@ -19,35 +19,35 @@ So that I can preview results and validate source value before committing to a f
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add `--dry-run` flag to CLI (AC: #1)
-  - [ ] 1.1 Add `dry_run: bool` field to `CliArgs` in `src/cli.rs` with `#[arg(long)]`
-  - [ ] 1.2 Add `dry_run: bool` field to `CliConfig` in `src/cli.rs`
-  - [ ] 1.3 Propagate `dry_run` in `From<CliArgs> for CliConfig`
-  - [ ] 1.4 Add `dry_run: bool` field to `OrchestratorConfig` in `src/orchestrator.rs`
-  - [ ] 1.5 Add `dry_run: bool` field to `Orchestrator` struct in `src/orchestrator.rs`
-  - [ ] 1.6 Pass `dry_run` through `Orchestrator::new()` and store it on the struct
-  - [ ] 1.7 Update `display_config()` in `src/cli.rs` to show dry-run status when enabled
-  - [ ] 1.8 Update `main.rs` to pass `dry_run` from `CliConfig` to `OrchestratorConfig`
+- [x] Task 1: Add `--dry-run` flag to CLI (AC: #1)
+  - [x] 1.1 Add `dry_run: bool` field to `CliArgs` in `src/cli.rs` with `#[arg(long)]`
+  - [x] 1.2 Add `dry_run: bool` field to `CliConfig` in `src/cli.rs`
+  - [x] 1.3 Propagate `dry_run` in `From<CliArgs> for CliConfig`
+  - [x] 1.4 Add `dry_run: bool` field to `OrchestratorConfig` in `src/orchestrator.rs`
+  - [x] 1.5 Add `dry_run: bool` field to `Orchestrator` struct in `src/orchestrator.rs`
+  - [x] 1.6 Pass `dry_run` through `Orchestrator::new()` and store it on the struct
+  - [x] 1.7 Update `display_config()` in `src/cli.rs` to show dry-run status when enabled
+  - [x] 1.8 Update `main.rs` to pass `dry_run` from `CliConfig` to `OrchestratorConfig`
 
-- [ ] Task 2: Implement dry-run pipeline short-circuit (AC: #2, #3, #5)
-  - [ ] 2.1 In `process_movie_standalone()`: after discovery, if `dry_run` is true, log the discovered sources and return `MovieResult::success(movie, 0, 0)` — no download, conversion, or organization
-  - [ ] 2.2 In `process_series_standalone()`: after `discover_series_content()`, if `dry_run` is true, log the discovered extras and return `SeriesResult::success(series, 0, 0)` — no download, conversion, or organization
-  - [ ] 2.3 Verify no file I/O occurs in the dry-run path (no temp dir creation, no done marker write)
-  - [ ] 2.4 `process_movie_standalone()` needs `dry_run: bool` added to its parameter list (or passed via a context struct); use the same approach as `SeriesProcessingContext` if needed
-  - [ ] 2.5 `process_series_standalone()` already uses `SeriesProcessingContext` — add `dry_run: bool` to that struct
+- [x] Task 2: Implement dry-run pipeline short-circuit (AC: #2, #3, #5)
+  - [x] 2.1 In `process_movie_standalone()`: after discovery, if `dry_run` is true, log the discovered sources and return `MovieResult::success(movie, 0, 0)` — no download, conversion, or organization
+  - [x] 2.2 In `process_series_standalone()`: after `discover_series_content()`, if `dry_run` is true, log the discovered extras and return `SeriesResult::success(series, 0, 0)` — no download, conversion, or organization
+  - [x] 2.3 Verify no file I/O occurs in the dry-run path (no temp dir creation, no done marker write)
+  - [x] 2.4 `process_movie_standalone()` needs `dry_run: bool` added to its parameter list (or passed via a context struct); use the same approach as `SeriesProcessingContext` if needed
+  - [x] 2.5 `process_series_standalone()` already uses `SeriesProcessingContext` — add `dry_run: bool` to that struct
 
-- [ ] Task 3: Display per-source discovery results in dry-run mode (AC: #4)
-  - [ ] 3.1 Add `display_dry_run_results()` function to `src/output.rs` that accepts `&[SourceResult]` and `total_videos: usize` and prints a formatted per-source table
-  - [ ] 3.2 Call `display_dry_run_results()` from the dry-run early-return path in `process_movie_standalone()` and `process_series_standalone()`
-  - [ ] 3.3 The display should show: source name, video count (or "failed: <error>") for each `SourceResult`
-  - [ ] 3.4 The `_source_results` variable currently discarded in `process_movie_standalone()` must be used — remove the `_` prefix and pass it to the display function
+- [x] Task 3: Display per-source discovery results in dry-run mode (AC: #4)
+  - [x] 3.1 Add `display_dry_run_results()` function to `src/output.rs` that accepts `&[SourceResult]` and `total_videos: usize` and prints a formatted per-source table
+  - [x] 3.2 Call `display_dry_run_results()` from the dry-run early-return path in `process_movie_standalone()` and `process_series_standalone()`
+  - [x] 3.3 The display should show: source name, video count (or "failed: <error>") for each `SourceResult`
+  - [x] 3.4 The `_source_results` variable currently discarded in `process_movie_standalone()` must be used — remove the `_` prefix and pass it to the display function
 
-- [ ] Task 4: Update tests (AC: #6)
-  - [ ] 4.1 Add unit test: `--dry-run` flag is parsed correctly and sets `dry_run: true` in `CliConfig`
-  - [ ] 4.2 Add unit test: dry-run mode returns 0 downloads and 0 conversions in `ProcessingSummary`
-  - [ ] 4.3 Add unit test: `display_dry_run_results()` does not panic with empty or populated `SourceResult` slices
-  - [ ] 4.4 Add unit test: done marker is NOT written when `dry_run` is true (verify no `done.ext` file created)
-  - [ ] 4.5 Run `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt -- --check`
+- [x] Task 4: Update tests (AC: #6)
+  - [x] 4.1 Add unit test: `--dry-run` flag is parsed correctly and sets `dry_run: true` in `CliConfig`
+  - [x] 4.2 Add unit test: dry-run mode returns 0 downloads and 0 conversions in `ProcessingSummary`
+  - [x] 4.3 Add unit test: `display_dry_run_results()` does not panic with empty or populated `SourceResult` slices
+  - [x] 4.4 Add unit test: done marker is NOT written when `dry_run` is true (verify no `done.ext` file created)
+  - [x] 4.5 Run `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt -- --check`
 
 ## Dev Notes
 
@@ -175,7 +175,7 @@ if config.dry_run {
 
 ### Agent Model Used
 
-_TBD_
+Claude Opus 4.6
 
 ### Debug Log References
 
@@ -183,8 +183,38 @@ _None_
 
 ### Completion Notes List
 
-_TBD_
+- Task 1: Added `dry_run: bool` to `CliArgs` (with `#[arg(long)]`), `CliConfig`, `OrchestratorConfig`, `Orchestrator`, and `SeriesProcessingContext`. Created `MovieProcessingContext` struct to bundle movie processing dependencies (consistent with `SeriesProcessingContext` pattern). Updated `display_config()` to show dry-run status. Updated `main.rs` to propagate `dry_run` through to `OrchestratorConfig`.
+- Task 2: Implemented dry-run early return in both `process_movie_standalone()` (after discovery, before Phase 3) and `process_series_standalone()` (after `discover_series_content()`, before Phase 3). Both paths call display functions and return success with 0 downloads/0 conversions. No file I/O occurs — no temp dirs created, no done markers written.
+- Task 3: Added `display_dry_run_movie_results()` (per-source breakdown with error handling) and `display_dry_run_series_results()` (total extras count) to `src/output.rs`. Movie function uses `source_results` from `discover_all()` (previously discarded as `_source_results`).
+- Task 4: Added 9 new tests — `test_dry_run_flag_parsed_correctly` and `test_display_config_with_dry_run` in cli.rs; `test_display_dry_run_movie_results_empty`, `test_display_dry_run_movie_results_populated`, `test_display_dry_run_movie_results_with_errors`, `test_display_dry_run_series_results_empty`, `test_display_dry_run_series_results_populated` in output.rs; `test_dry_run_returns_zero_downloads_and_conversions` and `test_dry_run_does_not_write_done_marker` in orchestrator.rs. All existing tests updated with `dry_run: false` where `OrchestratorConfig`/`CliArgs`/`CliConfig` are constructed.
+- All quality gates pass: `cargo test` (460 unit + 49 integration = 509 total, 0 failures), `cargo clippy -- -D warnings` (clean), `cargo fmt -- --check` (clean).
 
 ### File List
 
-_TBD_
+- `src/cli.rs` — Added `dry_run: bool` to `CliArgs` and `CliConfig`, updated `From<CliArgs>`, `display_config()`, added 2 tests, updated existing test helpers with `dry_run: false`
+- `src/orchestrator.rs` — Added `dry_run: bool` to `OrchestratorConfig`, `Orchestrator`, `SeriesProcessingContext`; created `MovieProcessingContext` struct; refactored `process_movie_standalone()` to accept context struct; added dry-run early returns in movie and series paths; added 2 tests; updated `test_config()` helper with `dry_run: false`
+- `src/output.rs` — Added `display_dry_run_movie_results()` and `display_dry_run_series_results()` functions; added `use crate::discovery::SourceResult`; added 5 tests
+- `src/main.rs` — Added `dry_run` field to `OrchestratorConfig` construction
+- `tests/main_integration_tests.rs` — Added `dry_run: false` to `OrchestratorConfig` construction
+
+## Change Log
+
+- 2026-03-24: Implemented Story 1.3 — Dry-Run Mode. Added `--dry-run` CLI flag, pipeline short-circuit after discovery, per-source display functions, and 9 new tests. All quality gates pass.
+- 2026-03-24: Code review patches applied — F1: moved `remove_stale_done_marker` after dry-run guard; F2: added per-source breakdown to series dry-run display; F3: fixed `total_videos` to sum `videos_found` not `sources.len()`; F4: split `OrchestratorConfig` into `SeriesConfig` + `DiscoveryConfig` sub-configs; F5: added zero-extras diagnostic log in series dry-run; F6: removed dead `movie.mp4` writes from dry-run tests. All 509 tests pass, clippy clean, fmt clean.
+
+## Senior Developer Review (AI)
+
+**Review Date:** 2026-03-24
+**Outcome:** Changes Requested
+**Layers Run:** Blind Hunter, Edge Case Hunter, Acceptance Auditor
+**Dismissed:** 3 (micro-optimization, internal struct visibility, test `.unwrap()` convention)
+
+### Action Items
+
+- [x] [Review][Patch] F1 [HIGH] `remove_stale_done_marker` fires before dry-run guard — deletes `done.ext` in dry-run, violating AC3/NFR5 [`src/orchestrator.rs`]
+- [x] [Review][Patch] F2 [HIGH] Series dry-run shows only total count, no per-source breakdown — violates AC4/FR32 [`src/output.rs`, `src/orchestrator.rs`]
+- [x] [Review][Patch] F3 [MED] `total_videos` passed as `sources.len()` (post-dedup) instead of sum of `source_results.videos_found` — display mismatch [`src/orchestrator.rs`]
+- [x] [Review][Decision→Patch] F4 [MED] `OrchestratorConfig` split into `SeriesConfig` + `DiscoveryConfig` sub-configs [`src/orchestrator.rs`, `src/main.rs`]
+- [x] [Review][Patch] F5 [MED] Series dry-run: zero extras indistinguishable from discovery error — no diagnostic message [`src/orchestrator.rs`]
+- [x] [Review][Patch] F6 [LOW] Dead `movie.mp4` write in two orchestrator dry-run tests — misleading test setup [`src/orchestrator.rs`]
+- [x] [Review][Defer] F7 [LOW] `Orchestrator` struct at 12 fields — at boundary of guideline, pre-existing growth trend [`src/orchestrator.rs`] — deferred, pre-existing

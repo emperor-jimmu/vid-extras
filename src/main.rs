@@ -1,7 +1,9 @@
 use extras_fetcher::cli::{display_banner, display_config, parse_args};
 use extras_fetcher::config::Config;
 use extras_fetcher::error::ValidationError;
-use extras_fetcher::orchestrator::{Orchestrator, OrchestratorConfig};
+use extras_fetcher::orchestrator::{
+    DiscoveryConfig, Orchestrator, OrchestratorConfig, SeriesConfig,
+};
 use extras_fetcher::output::display_summary;
 use extras_fetcher::validation::Validator;
 
@@ -128,15 +130,20 @@ async fn main() {
         root_dir: config.root_directory.clone(),
         tmdb_api_key,
         tvdb_api_key,
-        sources: config.sources.clone(),
         force: config.force,
         concurrency: config.concurrency,
         single: config.single,
         processing_mode: config.processing_mode,
-        season_extras: config.season_extras,
-        specials: config.specials,
-        specials_folder: config.specials_folder,
-        cookies_from_browser,
+        series: SeriesConfig {
+            season_extras: config.season_extras,
+            specials: config.specials,
+            specials_folder: config.specials_folder.clone(),
+        },
+        discovery: DiscoveryConfig {
+            sources: config.sources.clone(),
+            cookies_from_browser,
+            dry_run: config.dry_run,
+        },
     }) {
         Ok(orch) => orch,
         Err(e) => {

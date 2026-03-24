@@ -25,6 +25,16 @@ struct SeriesProcessingContext {
     season_extras: bool,
     specials: bool,
     specials_folder: String,
+    dry_run: bool,
+}
+
+/// Shared context for movie processing, bundling dependencies passed between phases
+struct MovieProcessingContext {
+    discovery: Arc<DiscoveryOrchestrator>,
+    downloader: Arc<Downloader>,
+    converter: Arc<Converter>,
+    temp_base: PathBuf,
+    dry_run: bool,
 }
 
 /// Summary statistics for processing run
@@ -141,6 +151,46 @@ impl SeriesResult {
     }
 }
 
+/// Series-specific configuration options
+pub struct SeriesConfig {
+    /// Enable season-specific extras discovery for series
+    pub season_extras: bool,
+    /// Enable Season 0 specials discovery for series
+    pub specials: bool,
+    /// Folder name for Season 0 specials (e.g., "Specials", "Season 00")
+    pub specials_folder: String,
+}
+
+impl Default for SeriesConfig {
+    fn default() -> Self {
+        Self {
+            season_extras: false,
+            specials: false,
+            specials_folder: "Specials".to_string(),
+        }
+    }
+}
+
+/// Discovery and download configuration options
+pub struct DiscoveryConfig {
+    /// Discovery sources to query
+    pub sources: Vec<Source>,
+    /// Optional browser name for cookie-based authentication
+    pub cookies_from_browser: Option<String>,
+    /// Discovery-only mode: skip download, conversion, and organization
+    pub dry_run: bool,
+}
+
+impl DiscoveryConfig {
+    pub fn new(sources: Vec<Source>) -> Self {
+        Self {
+            sources,
+            cookies_from_browser: None,
+            dry_run: false,
+        }
+    }
+}
+
 /// Configuration for creating an Orchestrator instance.
 /// Groups all parameters to avoid a long argument list.
 pub struct OrchestratorConfig {
@@ -150,8 +200,6 @@ pub struct OrchestratorConfig {
     pub tmdb_api_key: String,
     /// Optional TheTVDB API key for Season 0 specials discovery
     pub tvdb_api_key: Option<String>,
-    /// Discovery sources to query
-    pub sources: Vec<Source>,
     /// Ignore done markers and reprocess all media
     pub force: bool,
     /// Maximum number of media items to process concurrently
@@ -160,14 +208,10 @@ pub struct OrchestratorConfig {
     pub single: bool,
     /// Which media types to process (Both, MoviesOnly, SeriesOnly)
     pub processing_mode: ProcessingMode,
-    /// Enable season-specific extras discovery for series
-    pub season_extras: bool,
-    /// Enable Season 0 specials discovery for series
-    pub specials: bool,
-    /// Folder name for Season 0 specials (e.g., "Specials", "Season 00")
-    pub specials_folder: String,
-    /// Optional browser name for cookie-based authentication
-    pub cookies_from_browser: Option<String>,
+    /// Series-specific configuration
+    pub series: SeriesConfig,
+    /// Discovery and download configuration
+    pub discovery: DiscoveryConfig,
 }
 
 /// Orchestrator coordinates all processing phases
@@ -183,6 +227,7 @@ pub struct Orchestrator {
     season_extras: bool,
     specials: bool,
     specials_folder: String,
+    dry_run: bool,
 }
 
 impl Orchestrator {
@@ -206,58 +251,63 @@ impl Orchestrator {
 
         info!("Initializing Orchestrator");
         info!("  Root directory: {:?}", config.root_dir);
-        info!("  Sources: {:?}", config.sources);
+        info!("  Sources: {:?}", config.discovery.sources);
         info!("  Force: {}", config.force);
         info!("  Concurrency: {}", config.concurrency);
         info!("  Single folder mode: {}", config.single);
         info!("  Processing mode: {}", config.processing_mode);
-        info!("  Season extras: {}", config.season_extras);
-        info!("  Specials (Season 0): {}", config.specials);
-        if config.specials {
-            info!("  Specials folder: {}", config.specials_folder);
+        info!("  Season extras: {}", config.series.season_extras);
+        info!("  Specials (Season 0): {}", config.series.specials);
+        if config.series.specials {
+            info!("  Specials folder: {}", config.series.specials_folder);
         }
-        if let Some(ref browser) = config.cookies_from_browser {
+        if let Some(ref browser) = config.discovery.cookies_from_browser {
             info!("  Cookie auth: {} browser", browser);
+        }
+        if config.discovery.dry_run {
+            info!("  Dry run: enabled (discovery only)");
         }
 
         // Build series discovery — consumes tvdb_api_key, clones tmdb_api_key
         let series_discovery =
-            if let (true, Some(tvdb_key)) = (config.specials, config.tvdb_api_key) {
+            if let (true, Some(tvdb_key)) = (config.series.specials, config.tvdb_api_key) {
                 let cache_dir = config.root_dir.join(".cache").join("tvdb_ids");
                 info!("  TVDB support enabled for Season 0 specials");
                 let mut orch = SeriesDiscoveryOrchestrator::new_with_tvdb(
                     config.tmdb_api_key.clone(),
                     tvdb_key,
-                    config.sources.clone(),
+                    config.discovery.sources.clone(),
                     cache_dir,
                 );
-                if let Some(ref browser) = config.cookies_from_browser {
+                if let Some(ref browser) = config.discovery.cookies_from_browser {
                     orch = orch.with_cookies(browser.clone());
                 }
                 Arc::new(orch)
             } else {
                 let mut orch = SeriesDiscoveryOrchestrator::new(
                     config.tmdb_api_key.clone(),
-                    config.sources.clone(),
+                    config.discovery.sources.clone(),
                 );
-                if let Some(ref browser) = config.cookies_from_browser {
+                if let Some(ref browser) = config.discovery.cookies_from_browser {
                     orch = orch.with_cookies(browser.clone());
                 }
                 Arc::new(orch)
             };
 
         // Build movie discovery — clones tmdb_api_key (last clone before move)
-        let discovery = match &config.cookies_from_browser {
+        let discovery = match &config.discovery.cookies_from_browser {
             Some(browser) => DiscoveryOrchestrator::with_cookies(
                 config.tmdb_api_key.clone(),
-                config.sources.clone(),
+                config.discovery.sources.clone(),
                 browser.clone(),
             ),
-            None => DiscoveryOrchestrator::new(config.tmdb_api_key, config.sources),
+            None => {
+                DiscoveryOrchestrator::new(config.tmdb_api_key, config.discovery.sources.clone())
+            }
         };
 
         // Build downloader — consumes cookies_from_browser
-        let downloader = match config.cookies_from_browser {
+        let downloader = match config.discovery.cookies_from_browser {
             Some(browser) => Downloader::with_cookies(temp_base.clone(), browser),
             None => Downloader::new(temp_base.clone()),
         };
@@ -271,9 +321,10 @@ impl Orchestrator {
             temp_base,
             concurrency: config.concurrency,
             processing_mode: config.processing_mode,
-            season_extras: config.season_extras,
-            specials: config.specials,
-            specials_folder: config.specials_folder,
+            season_extras: config.series.season_extras,
+            specials: config.series.specials,
+            specials_folder: config.series.specials_folder,
+            dry_run: config.discovery.dry_run,
         })
     }
 
@@ -373,18 +424,21 @@ impl Orchestrator {
 
         for movie in movies {
             let sem = semaphore.clone();
-            let discovery = self.discovery.clone();
-            let downloader = self.downloader.clone();
-            let converter = self.converter.clone();
-            let temp_base = self.temp_base.clone();
             let counter = counter.clone();
+
+            let ctx = MovieProcessingContext {
+                discovery: self.discovery.clone(),
+                downloader: self.downloader.clone(),
+                converter: self.converter.clone(),
+                temp_base: self.temp_base.clone(),
+                dry_run: self.dry_run,
+            };
 
             let task = tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore should not be closed");
                 let current = counter.fetch_add(1, Ordering::SeqCst) + 1;
                 output::display_movie_start(&movie, current, total);
-                Self::process_movie_standalone(movie, discovery, downloader, converter, temp_base)
-                    .await
+                Self::process_movie_standalone(movie, ctx).await
             });
             tasks.push(task);
         }
@@ -399,36 +453,42 @@ impl Orchestrator {
     }
 
     async fn process_movie(&self, movie: MovieEntry) -> MovieResult {
-        Self::process_movie_standalone(
-            movie,
-            self.discovery.clone(),
-            self.downloader.clone(),
-            self.converter.clone(),
-            self.temp_base.clone(),
-        )
-        .await
+        let ctx = MovieProcessingContext {
+            discovery: self.discovery.clone(),
+            downloader: self.downloader.clone(),
+            converter: self.converter.clone(),
+            temp_base: self.temp_base.clone(),
+            dry_run: self.dry_run,
+        };
+        Self::process_movie_standalone(movie, ctx).await
     }
 
     /// Process a single movie through all phases without requiring &self.
     /// Used by both sequential and parallel paths.
     async fn process_movie_standalone(
         movie: MovieEntry,
-        discovery: Arc<DiscoveryOrchestrator>,
-        downloader: Arc<Downloader>,
-        converter: Arc<Converter>,
-        temp_base: PathBuf,
+        ctx: MovieProcessingContext,
     ) -> MovieResult {
         info!("Processing movie: {}", movie);
-
-        if movie.has_done_marker {
-            remove_stale_done_marker(&movie.path).await;
-        }
 
         let movie_id = format!("{}_{}", movie.title.replace(' ', "_"), movie.year);
 
         // Phase 2: Discovery
         info!("Phase 2: Discovering content for {}", movie);
-        let (sources, _source_results) = discovery.discover_all(&movie).await;
+        let (sources, source_results) = ctx.discovery.discover_all(&movie).await;
+
+        // Dry-run: display results and return early — no file I/O (AC3/NFR5)
+        if ctx.dry_run {
+            let total = source_results.iter().map(|sr| sr.videos_found).sum();
+            output::display_dry_run_movie_results(&movie, &source_results, total);
+            return MovieResult::success(movie, 0, 0);
+        }
+
+        // Remove stale done marker only when actually reprocessing (not in dry-run)
+        if movie.has_done_marker {
+            remove_stale_done_marker(&movie.path).await;
+        }
+
         if sources.is_empty() {
             warn!("No sources found for {}", movie);
             return MovieResult::success(movie, 0, 0);
@@ -441,7 +501,7 @@ impl Orchestrator {
             sources.len(),
             movie
         );
-        let downloads = downloader.download_all(&movie_id, sources).await;
+        let downloads = ctx.downloader.download_all(&movie_id, sources).await;
         let successful_downloads = downloads.iter().filter(|d| d.success).count();
         info!(
             "Downloaded {}/{} videos for {}",
@@ -452,7 +512,7 @@ impl Orchestrator {
 
         if successful_downloads == 0 {
             warn!("No successful downloads for {}", movie);
-            cleanup_temp_dir(&temp_base.join(&movie_id)).await;
+            cleanup_temp_dir(&ctx.temp_base.join(&movie_id)).await;
             return MovieResult::success(movie, downloads.len(), 0);
         }
 
@@ -461,7 +521,7 @@ impl Orchestrator {
             "Phase 4: Converting {} videos for {}",
             successful_downloads, movie
         );
-        let conversions = converter.convert_batch(downloads).await;
+        let conversions = ctx.converter.convert_batch(downloads).await;
         let successful_conversions = conversions.iter().filter(|c| c.success).count();
         info!(
             "Converted {}/{} videos for {}",
@@ -472,7 +532,7 @@ impl Orchestrator {
 
         if successful_conversions == 0 {
             warn!("No successful conversions for {}", movie);
-            cleanup_temp_dir(&temp_base.join(&movie_id)).await;
+            cleanup_temp_dir(&ctx.temp_base.join(&movie_id)).await;
             return MovieResult::success(movie, successful_downloads, 0);
         }
 
@@ -482,7 +542,7 @@ impl Orchestrator {
             successful_conversions, movie
         );
         let organizer = Organizer::new(movie.path.clone());
-        let temp_dir = temp_base.join(&movie_id);
+        let temp_dir = ctx.temp_base.join(&movie_id);
 
         match organizer.organize(conversions, &temp_dir).await {
             Ok(_) => {
@@ -532,6 +592,7 @@ impl Orchestrator {
                 season_extras,
                 specials,
                 specials_folder,
+                dry_run: self.dry_run,
             };
 
             let task = tokio::spawn(async move {
@@ -561,6 +622,7 @@ impl Orchestrator {
             season_extras: self.season_extras,
             specials: self.specials,
             specials_folder: self.specials_folder.clone(),
+            dry_run: self.dry_run,
         };
         Self::process_series_standalone(series, ctx).await
     }
@@ -573,10 +635,6 @@ impl Orchestrator {
     ) -> SeriesResult {
         info!("Processing series: {}", series);
 
-        if series.has_done_marker {
-            remove_stale_done_marker(&series.path).await;
-        }
-
         let series_id = format!(
             "{}_{}",
             series.title.replace(' ', "_"),
@@ -584,13 +642,32 @@ impl Orchestrator {
         );
 
         // Phase 2: Discovery
-        let (all_extras, season_zero_extras, tvdb_episodes_metadata) = discover_series_content(
-            &series,
-            &ctx.series_discovery,
-            ctx.season_extras,
-            ctx.specials,
-        )
-        .await;
+        let (all_extras, season_zero_extras, tvdb_episodes_metadata, series_source_results) =
+            discover_series_content(
+                &series,
+                &ctx.series_discovery,
+                ctx.season_extras,
+                ctx.specials,
+            )
+            .await;
+
+        // Dry-run: display results and return early — no file I/O (AC3/NFR5)
+        if ctx.dry_run {
+            let total = all_extras.len() + season_zero_extras.len();
+            if total == 0 {
+                info!(
+                    "Dry-run: no extras discovered for {} (discovery may have failed or returned no results)",
+                    series
+                );
+            }
+            output::display_dry_run_series_results(&series, &series_source_results, total);
+            return SeriesResult::success(series, 0, 0);
+        }
+
+        // Remove stale done marker only when actually reprocessing (not in dry-run)
+        if series.has_done_marker {
+            remove_stale_done_marker(&series.path).await;
+        }
 
         if all_extras.is_empty() && season_zero_extras.is_empty() {
             warn!("No extras found for {}", series);
@@ -726,7 +803,7 @@ async fn write_done_marker(path: &std::path::Path, label: &str) {
 }
 
 /// Discover all content for a series: regular extras, season extras, and Season 0 specials.
-/// Returns (regular_extras, season_zero_extras, tvdb_episode_metadata).
+/// Returns (regular_extras, season_zero_extras, tvdb_episode_metadata, source_results).
 async fn discover_series_content(
     series: &SeriesEntry,
     series_discovery: &SeriesDiscoveryOrchestrator,
@@ -736,6 +813,7 @@ async fn discover_series_content(
     Vec<SeriesExtra>,
     Vec<SeriesExtra>,
     Vec<crate::discovery::TvdbEpisodeExtended>,
+    Vec<crate::discovery::SourceResult>,
 ) {
     info!("Phase 2: Discovering content for {}", series);
     info!(
@@ -744,7 +822,7 @@ async fn discover_series_content(
     );
 
     // Stage 1: Series-level extras (always)
-    let (mut all_extras, _series_source_results) = series_discovery.discover_all(series).await;
+    let (mut all_extras, series_source_results) = series_discovery.discover_all(series).await;
     let series_level_count = all_extras.len();
     info!(
         "Series-level discovery: found {} extras",
@@ -793,7 +871,12 @@ async fn discover_series_content(
         season_zero_extras.len()
     );
 
-    (all_extras, season_zero_extras, tvdb_episodes)
+    (
+        all_extras,
+        season_zero_extras,
+        tvdb_episodes,
+        series_source_results,
+    )
 }
 
 /// Discover Season 0 specials via TVDB candidate selection.
@@ -1036,15 +1119,12 @@ mod tests {
             root_dir,
             tmdb_api_key: "fake_api_key".to_string(),
             tvdb_api_key: None,
-            sources: default_sources(),
             force: false,
             concurrency: 1,
             single: false,
             processing_mode: ProcessingMode::Both,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            cookies_from_browser: None,
+            series: SeriesConfig::default(),
+            discovery: DiscoveryConfig::new(default_sources()),
         }
     }
 
@@ -1222,7 +1302,7 @@ mod tests {
         // Test sequential processing (concurrency = 1)
         let orchestrator_seq = Orchestrator::new(OrchestratorConfig {
             root_dir: root_dir.clone(),
-            sources: vec![crate::models::Source::Youtube],
+            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
             ..test_config(PathBuf::new())
         })
         .expect("orchestrator build should succeed");
@@ -1230,7 +1310,7 @@ mod tests {
         // Test parallel processing (concurrency = 2)
         let orchestrator_par = Orchestrator::new(OrchestratorConfig {
             root_dir,
-            sources: vec![crate::models::Source::Youtube],
+            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
             concurrency: 2,
             ..test_config(PathBuf::new())
         })
@@ -1369,7 +1449,7 @@ mod tests {
         // Without force flag - should skip movie2
         let orchestrator = Orchestrator::new(OrchestratorConfig {
             root_dir: root_dir.clone(),
-            sources: vec![crate::models::Source::Youtube],
+            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
             ..test_config(PathBuf::new())
         })
         .expect("orchestrator build should succeed");
@@ -1380,7 +1460,7 @@ mod tests {
         // With force flag - should process both
         let orchestrator_force = Orchestrator::new(OrchestratorConfig {
             root_dir,
-            sources: vec![crate::models::Source::Youtube],
+            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
             force: true,
             ..test_config(PathBuf::new())
         })
@@ -1549,7 +1629,7 @@ mod tests {
         // Test with Both mode - should find both
         let orchestrator = Orchestrator::new(OrchestratorConfig {
             root_dir: root_dir.clone(),
-            sources: vec![crate::models::Source::Youtube],
+            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
             ..test_config(PathBuf::new())
         })
         .expect("orchestrator build should succeed");
@@ -1564,7 +1644,7 @@ mod tests {
         // Test with MoviesOnly mode - should only find movies
         let orchestrator_movies = Orchestrator::new(OrchestratorConfig {
             root_dir: root_dir.clone(),
-            sources: vec![crate::models::Source::Youtube],
+            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
             processing_mode: ProcessingMode::MoviesOnly,
             ..test_config(PathBuf::new())
         })
@@ -1584,7 +1664,7 @@ mod tests {
         // Test with SeriesOnly mode - should only find series
         let orchestrator_series = Orchestrator::new(OrchestratorConfig {
             root_dir,
-            sources: vec![crate::models::Source::Youtube],
+            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
             processing_mode: ProcessingMode::SeriesOnly,
             ..test_config(PathBuf::new())
         })
@@ -1600,6 +1680,83 @@ mod tests {
             "Scanner still finds movies regardless of mode"
         );
         assert_eq!(series_series.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_dry_run_returns_zero_downloads_and_conversions() {
+        use tempfile::TempDir;
+
+        let temp_root = TempDir::new().expect("tempdir creation should succeed");
+        let root_dir = temp_root.path().join("movies");
+        tokio::fs::create_dir(&root_dir)
+            .await
+            .expect("dir creation should succeed");
+
+        // Create a movie folder so the scanner finds something
+        let movie_dir = root_dir.join("DryRunTest (2023)");
+        tokio::fs::create_dir(&movie_dir)
+            .await
+            .expect("dir creation should succeed");
+        // A video file is needed so the scanner classifies this as a movie folder
+        tokio::fs::write(movie_dir.join("movie.mp4"), b"")
+            .await
+            .expect("file write should succeed");
+
+        let orchestrator = Orchestrator::new(OrchestratorConfig {
+            root_dir,
+            discovery: DiscoveryConfig {
+                sources: vec![crate::models::Source::Youtube],
+                dry_run: true,
+                cookies_from_browser: None,
+            },
+            ..test_config(PathBuf::new())
+        })
+        .expect("orchestrator build should succeed");
+
+        assert!(orchestrator.dry_run);
+
+        let summary = orchestrator.run().await.expect("run should succeed");
+
+        // Dry-run should report the movie but 0 downloads and 0 conversions
+        assert_eq!(summary.total_movies, 1);
+        assert_eq!(summary.total_downloads, 0);
+        assert_eq!(summary.total_conversions, 0);
+    }
+
+    #[tokio::test]
+    async fn test_dry_run_does_not_write_done_marker() {
+        use tempfile::TempDir;
+
+        let temp_root = TempDir::new().expect("tempdir creation should succeed");
+        let root_dir = temp_root.path().join("movies");
+        tokio::fs::create_dir(&root_dir)
+            .await
+            .expect("dir creation should succeed");
+
+        let movie_dir = root_dir.join("MarkerTest (2023)");
+        tokio::fs::create_dir(&movie_dir)
+            .await
+            .expect("dir creation should succeed");
+
+        let orchestrator = Orchestrator::new(OrchestratorConfig {
+            root_dir,
+            discovery: DiscoveryConfig {
+                sources: vec![crate::models::Source::Youtube],
+                dry_run: true,
+                cookies_from_browser: None,
+            },
+            ..test_config(PathBuf::new())
+        })
+        .expect("orchestrator build should succeed");
+
+        let _summary = orchestrator.run().await.expect("run should succeed");
+
+        // Verify no done marker was written
+        let marker_path = movie_dir.join("done.ext");
+        assert!(
+            !marker_path.exists(),
+            "done.ext should NOT be created in dry-run mode"
+        );
     }
 }
 
