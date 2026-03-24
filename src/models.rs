@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
 
+/// Subtitle file extensions recognised throughout the pipeline.
+pub const SUBTITLE_EXTENSIONS: &[&str] =
+    &["vtt", "srt", "ass", "ttml", "srv3", "srv2", "srv1", "json3"];
+
 /// Represents a movie entry discovered during library scanning
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MovieEntry {
@@ -59,6 +63,8 @@ pub struct DownloadResult {
     pub success: bool,
     /// Error message if download failed
     pub error: Option<String>,
+    /// Subtitle files downloaded alongside the video (best-effort, may be empty)
+    pub subtitle_paths: Vec<PathBuf>,
 }
 
 impl fmt::Display for DownloadResult {

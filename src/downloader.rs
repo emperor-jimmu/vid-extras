@@ -1,7 +1,7 @@
 // Downloader module - handles video downloading using yt-dlp
 
 use crate::error::DownloadError;
-use crate::models::{DownloadResult, VideoSource};
+use crate::models::{DownloadResult, SUBTITLE_EXTENSIONS, VideoSource};
 use log::{debug, error, info, warn};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -73,6 +73,7 @@ impl Downloader {
                         local_path: PathBuf::new(),
                         success: false,
                         error: Some(format!("Failed to create temp directory: {}", e)),
+                        subtitle_paths: vec![],
                     })
                     .collect();
             }
@@ -198,11 +199,53 @@ impl Downloader {
                             // Verify the file actually exists before marking as success
                             if local_path.exists() {
                                 info!("Successfully downloaded: {:?}", local_path);
+
+                                // Detect audio language; absent metadata is treated as English
+                                // to avoid false positives on content with missing tags.
+                                let subtitle_paths = {
+                                    let lang = Self::detect_audio_language(&source.url).await;
+                                    let yt_dlp_non_english = match lang.as_deref() {
+                                        None | Some("en") | Some("eng") => false,
+                                        Some(_) => true,
+                                    };
+
+                                    if yt_dlp_non_english {
+                                        // Confirm with ffprobe before fetching subs to
+                                        // avoid false positives from yt-dlp metadata gaps.
+                                        let ffprobe_lang =
+                                            Self::detect_audio_language_ffprobe(&local_path).await;
+                                        let confirmed = match ffprobe_lang.as_deref() {
+                                            // ffprobe says English — trust it, skip subs
+                                            Some("en") | Some("eng") => false,
+                                            // Non-English or absent — proceed with subs
+                                            _ => true,
+                                        };
+
+                                        if confirmed {
+                                            let base_name = local_path
+                                                .file_stem()
+                                                .and_then(|s| s.to_str())
+                                                .unwrap_or("subtitle");
+                                            self.download_subtitles(
+                                                &source.url,
+                                                dest_dir,
+                                                base_name,
+                                            )
+                                            .await
+                                        } else {
+                                            vec![]
+                                        }
+                                    } else {
+                                        vec![]
+                                    }
+                                };
+
                                 DownloadResult {
                                     source: source.clone(),
                                     local_path,
                                     success: true,
                                     error: None,
+                                    subtitle_paths,
                                 }
                             } else {
                                 error!(
@@ -217,6 +260,7 @@ impl Downloader {
                                         "File not found after download: {:?}",
                                         local_path
                                     )),
+                                    subtitle_paths: vec![],
                                 }
                             }
                         }
@@ -227,6 +271,7 @@ impl Downloader {
                                 local_path: PathBuf::new(),
                                 success: false,
                                 error: Some(format!("File not found after download: {}", e)),
+                                subtitle_paths: vec![],
                             }
                         }
                     }
@@ -248,6 +293,7 @@ impl Downloader {
                         local_path: PathBuf::new(),
                         success: false,
                         error: Some(error_msg),
+                        subtitle_paths: vec![],
                     }
                 }
             }
@@ -264,6 +310,7 @@ impl Downloader {
                     local_path: PathBuf::new(),
                     success: false,
                     error: Some(error_msg),
+                    subtitle_paths: vec![],
                 }
             }
             Err(_) => {
@@ -282,6 +329,7 @@ impl Downloader {
                     local_path: PathBuf::new(),
                     success: false,
                     error: Some(error_msg),
+                    subtitle_paths: vec![],
                 }
             }
         }
@@ -468,6 +516,150 @@ impl Downloader {
             .replace(['｜', '＜', '＞', '：', '／', '＼', '＊'], "-")
             .replace(['"', '"'], "'") // Left and right double quotation marks
             .replace('？', "") // Full-width question mark (U+FF1F)
+    }
+
+    /// Detect audio language from yt-dlp metadata for a URL.
+    ///
+    /// Finds the best audio format (highest abr) and returns its language code.
+    /// Returns `None` on any error or if no audio format is found — callers treat
+    /// `None` as English to avoid false positives on content with missing metadata.
+    async fn detect_audio_language(url: &str) -> Option<String> {
+        let output = match timeout(
+            Duration::from_secs(30),
+            Command::new("yt-dlp")
+                .args(["--dump-json", "--no-playlist", "--quiet", url])
+                .output(),
+        )
+        .await
+        {
+            Ok(Ok(o)) => o,
+            _ => return None,
+        };
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+        let formats = json.get("formats")?.as_array()?;
+
+        // Find the audio format with the highest bitrate
+        let best_audio = formats
+            .iter()
+            .filter(|f| f.get("acodec").and_then(|v| v.as_str()) != Some("none"))
+            .max_by(|a, b| {
+                let abr_a = a.get("abr").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let abr_b = b.get("abr").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                abr_a
+                    .partial_cmp(&abr_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })?;
+
+        best_audio
+            .get("language")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    }
+
+    /// Detect audio language from a local file using ffprobe.
+    ///
+    /// Used as confirmation after `detect_audio_language` returns a non-English result.
+    /// Returns `None` on any error or if the audio stream has no language tag.
+    async fn detect_audio_language_ffprobe(path: &Path) -> Option<String> {
+        let output = match timeout(
+            Duration::from_secs(15),
+            Command::new("ffprobe")
+                .args(["-v", "quiet", "-print_format", "json", "-show_streams"])
+                .arg(path)
+                .output(),
+        )
+        .await
+        {
+            Ok(Ok(o)) => o,
+            _ => return None,
+        };
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+        let streams = json.get("streams")?.as_array()?;
+
+        streams
+            .iter()
+            .find(|s| s.get("codec_type").and_then(|v| v.as_str()) == Some("audio"))
+            .and_then(|s| s.get("tags"))
+            .and_then(|t| t.get("language"))
+            .and_then(|l| l.as_str())
+            .map(|s| s.to_string())
+    }
+
+    /// Download English subtitles for a video URL into `dest_dir`.
+    ///
+    /// Uses `--write-subs --write-auto-subs` so manual subtitles are preferred over
+    /// auto-generated ones. Returns paths of any subtitle files written; returns an
+    /// empty `Vec` if yt-dlp fails or no subtitles are available (subtitles are best-effort).
+    async fn download_subtitles(
+        &self,
+        url: &str,
+        dest_dir: &Path,
+        base_name: &str,
+    ) -> Vec<PathBuf> {
+        let output_template = dest_dir.join(format!("{}.%(ext)s", base_name));
+        let output_template_str = output_template.to_string_lossy().to_string();
+
+        let mut cmd = Command::new("yt-dlp");
+        cmd.args([
+            "--write-subs",
+            "--write-auto-subs",
+            "--sub-langs",
+            "en",
+            "--skip-download",
+            "--no-playlist",
+            "--quiet",
+            "-o",
+            &output_template_str,
+            url,
+        ]);
+
+        if let Some(browser) = &self.cookies_from_browser {
+            cmd.arg("--cookies-from-browser").arg(browser);
+        }
+
+        match timeout(self.download_timeout, cmd.output()).await {
+            Ok(Ok(output)) if output.status.success() => {
+                let mut found = Vec::new();
+                if let Ok(mut entries) = tokio::fs::read_dir(dest_dir).await {
+                    while let Ok(Some(entry)) = entries.next_entry().await {
+                        let path = entry.path();
+                        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                        if SUBTITLE_EXTENSIONS.contains(&ext)
+                            && (stem == base_name || stem.starts_with(&format!("{}.", base_name)))
+                        {
+                            found.push(path);
+                        }
+                    }
+                }
+                if found.is_empty() {
+                    debug!("No subtitle files found after yt-dlp for: {}", url);
+                }
+                found
+            }
+            Ok(Ok(_)) => {
+                debug!("yt-dlp returned non-zero exit for subtitles: {}", url);
+                vec![]
+            }
+            Ok(Err(e)) => {
+                debug!("Failed to execute yt-dlp for subtitles: {}", e);
+                vec![]
+            }
+            Err(_) => {
+                debug!("Subtitle download timed out for: {}", url);
+                vec![]
+            }
+        }
     }
 
     /// Clean up partial files after a failed download

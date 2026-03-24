@@ -302,6 +302,7 @@ mod tests {
             local_path: path,
             success: true,
             error: None,
+            subtitle_paths: vec![],
         }
     }
 
@@ -479,6 +480,7 @@ mod tests {
             local_path: input_path.clone(),
             success: true,
             error: None,
+            subtitle_paths: vec![],
         };
 
         let expected_output = input_path.with_extension("mp4");
@@ -529,6 +531,7 @@ mod tests {
             local_path: PathBuf::from("/nonexistent/path.mp4"),
             success: false,
             error: Some("Download failed".to_string()),
+            subtitle_paths: vec![],
         };
 
         let results = converter.convert_batch(vec![successful, failed]).await;
@@ -801,6 +804,7 @@ mod property_tests {
                     local_path: input_path.clone(),
                     success: true,
                     error: None,
+                    subtitle_paths: vec![],
                 };
 
                 // Attempt conversion (will fail because it's not a real video)
@@ -853,6 +857,7 @@ mod property_tests {
                     local_path: input_path.clone(),
                     success: true,
                     error: None,
+                    subtitle_paths: vec![],
                 };
 
                 // Attempt conversion (will fail because it's not a real video)

@@ -1,7 +1,9 @@
 // Organizer module - moves converted files to Jellyfin subdirectories and creates done markers
 
 use crate::error::OrganizerError;
-use crate::models::{ContentCategory, ConversionResult, DoneMarker, SpecialEpisode};
+use crate::models::{
+    ContentCategory, ConversionResult, DoneMarker, SUBTITLE_EXTENSIONS, SpecialEpisode,
+};
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -53,6 +55,59 @@ fn sanitize_filename(filename: &str) -> String {
         .replace(['｜', '＜', '＞', '：', '／', '＼', '＊'], "-")
         .replace(['\u{201c}', '\u{201d}'], "'")
         .replace('？', "")
+}
+
+/// Move subtitle sidecar files that share the same stem as `video_path` into `dest_dir`.
+///
+/// yt-dlp writes subtitles as `{stem}.{lang}.{format}` (e.g., `My Trailer.en.vtt`).
+/// Subtitle files are never renamed — they keep their yt-dlp-assigned names.
+/// Failures are logged at `warn!` level and do not abort the organize operation.
+async fn move_sibling_subtitles(video_path: &Path, dest_dir: &Path) {
+    let stem = match video_path.file_stem().and_then(|s| s.to_str()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        _ => return,
+    };
+
+    let parent = video_path.parent().unwrap_or(Path::new("."));
+
+    let mut entries = match tokio::fs::read_dir(parent).await {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("Failed to read dir for subtitle scan {:?}: {}", parent, e);
+            return;
+        }
+    };
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let entry_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+
+        if SUBTITLE_EXTENSIONS.contains(&ext)
+            && (entry_stem == stem || entry_stem.starts_with(&format!("{}.", stem)))
+            && let Some(filename) = path.file_name()
+        {
+            let dest = dest_dir.join(filename);
+            match tokio::fs::rename(&path, &dest).await {
+                Ok(_) => {
+                    debug!("Moved subtitle {:?} -> {:?}", path, dest);
+                }
+                Err(e) if e.raw_os_error() == Some(17) => {
+                    // Cross-drive move on Windows — fall back to copy+delete
+                    if let Err(e) = tokio::fs::copy(&path, &dest).await {
+                        warn!("Failed to copy subtitle {:?} to {:?}: {}", path, dest, e);
+                    } else if let Err(e) = tokio::fs::remove_file(&path).await {
+                        warn!("Failed to delete subtitle source {:?}: {}", path, e);
+                    } else {
+                        debug!("Copied subtitle {:?} -> {:?}", path, dest);
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to move subtitle {:?} to {:?}: {}", path, dest, e);
+                }
+            }
+        }
+    }
 }
 
 /// Organizer handles file organization into Jellyfin-compatible directory structure
@@ -129,6 +184,7 @@ impl Organizer {
                     continue;
                 }
                 self.move_file(&file_path, &subdir, &dest_filename).await?;
+                move_sibling_subtitles(&file_path, &subdir).await;
             }
         }
 
@@ -346,6 +402,7 @@ impl SeriesOrganizer {
                     continue;
                 }
                 self.move_file(&file_path, &subdir, &dest_filename).await?;
+                move_sibling_subtitles(&file_path, &subdir).await;
             }
         }
 
@@ -1432,6 +1489,90 @@ mod tests {
 
         // Source numeric files are gone (temp dir itself is cleaned up by organize)
         assert!(!temp_dir.exists());
+    }
+
+    // Task 4.7: subtitle file is moved alongside its video into the Jellyfin subfolder
+    #[tokio::test]
+    async fn test_organize_moves_subtitle_alongside_video() {
+        let temp = TempDir::new().unwrap();
+        let movie_path = temp.path().join("Movie (2020)");
+        fs::create_dir(&movie_path).await.unwrap();
+
+        let tmp_dir = temp.path().join("tmp_downloads");
+        fs::create_dir(&tmp_dir).await.unwrap();
+
+        // Create a video file and a sibling subtitle file
+        let video = tmp_dir.join("trailer.mp4");
+        let subtitle = tmp_dir.join("trailer.en.vtt");
+        fs::write(&video, b"video content").await.unwrap();
+        fs::write(&subtitle, b"WEBVTT\n").await.unwrap();
+
+        let conversions = vec![ConversionResult {
+            input_path: video.clone(),
+            output_path: video.clone(),
+            category: ContentCategory::Trailer,
+            season_number: None,
+            success: true,
+            error: None,
+        }];
+
+        let organizer = Organizer::new(movie_path.clone());
+        organizer.organize(conversions, &tmp_dir).await.unwrap();
+
+        let trailers_dir = movie_path.join("trailers");
+        // Video was moved (descriptive name preserved)
+        assert!(trailers_dir.join("trailer.mp4").exists());
+        // Subtitle was moved alongside the video with its original name
+        assert!(
+            trailers_dir.join("trailer.en.vtt").exists(),
+            "subtitle should be in trailers dir"
+        );
+    }
+
+    // Task 4.8: numeric video is renamed; subtitle keeps its original name in the same subfolder
+    #[tokio::test]
+    async fn test_organize_subtitle_kept_original_name_when_video_renamed() {
+        let temp = TempDir::new().unwrap();
+        let movie_path = temp.path().join("Movie (2020)");
+        fs::create_dir(&movie_path).await.unwrap();
+
+        let tmp_dir = temp.path().join("tmp_downloads");
+        fs::create_dir(&tmp_dir).await.unwrap();
+
+        // Numeric video + sibling subtitle
+        let video = tmp_dir.join("10032.mp4");
+        let subtitle = tmp_dir.join("10032.en.vtt");
+        fs::write(&video, b"video content").await.unwrap();
+        fs::write(&subtitle, b"WEBVTT\n").await.unwrap();
+
+        let conversions = vec![ConversionResult {
+            input_path: video.clone(),
+            output_path: video.clone(),
+            category: ContentCategory::Trailer,
+            season_number: None,
+            success: true,
+            error: None,
+        }];
+
+        let organizer = Organizer::new(movie_path.clone());
+        organizer.organize(conversions, &tmp_dir).await.unwrap();
+
+        let trailers_dir = movie_path.join("trailers");
+        // Video was renamed to normalized form
+        assert!(
+            trailers_dir.join("Trailer #1.mp4").exists(),
+            "video should be renamed"
+        );
+        // Subtitle keeps its original name (NOT renamed)
+        assert!(
+            trailers_dir.join("10032.en.vtt").exists(),
+            "subtitle should keep original name"
+        );
+        // Subtitle is NOT renamed to match the video
+        assert!(
+            !trailers_dir.join("Trailer #1.en.vtt").exists(),
+            "subtitle should not be renamed"
+        );
     }
 }
 
