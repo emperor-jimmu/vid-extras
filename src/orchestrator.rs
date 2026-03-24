@@ -593,7 +593,7 @@ impl Orchestrator {
         // Dry-run: display results and return early — no file I/O (AC3/NFR5)
         if ctx.dry_run {
             let total = source_results.iter().map(|sr| sr.videos_found).sum();
-            output::display_dry_run_movie_results(&movie, &source_results, total);
+            output::display_dry_run_movie_results(&movie, &source_results, total, dedup_removed);
             return MovieResult::success_with_dedup(movie, 0, 0, source_results, dedup_removed);
         }
 
@@ -799,7 +799,12 @@ impl Orchestrator {
                     series
                 );
             }
-            output::display_dry_run_series_results(&series, &series_source_results, total);
+            output::display_dry_run_series_results(
+                &series,
+                &series_source_results,
+                total,
+                dedup_removed,
+            );
             return SeriesResult::success_with_dedup(
                 series,
                 0,

@@ -142,6 +142,7 @@ pub fn display_dry_run_movie_results(
     movie: &MovieEntry,
     source_results: &[SourceResult],
     total_videos: usize,
+    duplicates_removed: usize,
 ) {
     println!(
         "\n  {} {} {}",
@@ -172,6 +173,14 @@ pub fn display_dry_run_movie_results(
         total_videos.to_string().bright_yellow(),
         "videos (would download)".bright_white()
     );
+    if duplicates_removed > 0 {
+        println!(
+            "    {} {} {}",
+            "Duplicates:".bright_white().bold(),
+            duplicates_removed.to_string().bright_magenta(),
+            "removed (tier dedup)".bright_white()
+        );
+    }
 }
 
 /// Display discovery results for a series in dry-run mode
@@ -181,6 +190,7 @@ pub fn display_dry_run_series_results(
     series: &SeriesEntry,
     source_results: &[SourceResult],
     total_extras: usize,
+    duplicates_removed: usize,
 ) {
     println!(
         "\n  {} {} {}",
@@ -211,6 +221,14 @@ pub fn display_dry_run_series_results(
         total_extras.to_string().bright_yellow(),
         "extras (would download)".bright_white()
     );
+    if duplicates_removed > 0 {
+        println!(
+            "    {} {} {}",
+            "Duplicates:".bright_white().bold(),
+            duplicates_removed.to_string().bright_magenta(),
+            "removed (tier dedup)".bright_white()
+        );
+    }
 }
 
 /// Display processing summary statistics
@@ -300,6 +318,14 @@ pub fn display_summary(summary: &ProcessingSummary) {
             summary.total_videos_discovered.to_string().bright_yellow(),
             "videos".bright_white()
         );
+        if summary.duplicates_removed > 0 {
+            println!(
+                "  {} {} {}",
+                "Duplicates:".bright_white().bold(),
+                summary.duplicates_removed.to_string().bright_magenta(),
+                "removed (tier dedup)".bright_white()
+            );
+        }
     }
 
     println!("{}", "═".repeat(60).bright_cyan());
@@ -677,8 +703,7 @@ mod tests {
     #[test]
     fn test_display_dry_run_movie_results_empty() {
         let movie = create_test_movie();
-        // Empty source results — should not panic
-        display_dry_run_movie_results(&movie, &[], 0);
+        display_dry_run_movie_results(&movie, &[], 0, 0);
     }
 
     #[test]
@@ -702,7 +727,7 @@ mod tests {
                 error: None,
             },
         ];
-        display_dry_run_movie_results(&movie, &source_results, 10);
+        display_dry_run_movie_results(&movie, &source_results, 10, 0);
     }
 
     #[test]
@@ -721,13 +746,13 @@ mod tests {
                 error: Some("connection refused".to_string()),
             },
         ];
-        display_dry_run_movie_results(&movie, &source_results, 3);
+        display_dry_run_movie_results(&movie, &source_results, 3, 0);
     }
 
     #[test]
     fn test_display_dry_run_series_results_empty() {
         let series = create_test_series();
-        display_dry_run_series_results(&series, &[], 0);
+        display_dry_run_series_results(&series, &[], 0, 0);
     }
 
     #[test]
@@ -746,7 +771,7 @@ mod tests {
                 error: None,
             },
         ];
-        display_dry_run_series_results(&series, &source_results, 12);
+        display_dry_run_series_results(&series, &source_results, 12, 0);
     }
 
     #[test]
@@ -790,6 +815,70 @@ mod tests {
             duplicates_removed: 0,
         };
         display_summary(&summary);
+    }
+
+    #[test]
+    fn test_display_summary_with_duplicates_removed() {
+        use crate::models::Source;
+        let mut source_totals = std::collections::HashMap::new();
+        source_totals.insert(Source::Tmdb, 42);
+        source_totals.insert(Source::Youtube, 18);
+
+        let summary = ProcessingSummary {
+            total_movies: 3,
+            successful_movies: 3,
+            failed_movies: 0,
+            total_series: 0,
+            successful_series: 0,
+            failed_series: 0,
+            total_downloads: 10,
+            total_conversions: 8,
+            source_totals,
+            total_videos_discovered: 60,
+            duplicates_removed: 12,
+        };
+        // Should not panic and should display the dedup line
+        display_summary(&summary);
+    }
+
+    #[test]
+    fn test_display_dry_run_movie_with_duplicates() {
+        use crate::models::Source;
+        let movie = create_test_movie();
+        let source_results = vec![
+            SourceResult {
+                source: Source::Tmdb,
+                videos_found: 8,
+                error: None,
+            },
+            SourceResult {
+                source: Source::Youtube,
+                videos_found: 7,
+                error: None,
+            },
+        ];
+        // Should not panic and should display the dedup line
+        display_dry_run_movie_results(&movie, &source_results, 15, 5);
+    }
+
+    #[test]
+    fn test_display_dry_run_series_with_duplicates() {
+        use crate::models::Source;
+        let series = create_test_series();
+        let source_results = vec![
+            SourceResult {
+                source: Source::Tmdb,
+                videos_found: 6,
+                error: None,
+            },
+            SourceResult {
+                source: Source::Youtube,
+                videos_found: 5,
+                error: None,
+            },
+        ];
+        // Should not panic and should display the dedup line
+        display_dry_run_series_results(&series, &source_results, 8, 3);
     }
 
     #[test]
