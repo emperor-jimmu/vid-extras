@@ -1,7 +1,7 @@
 // Orchestrator module - coordinates all processing phases
 
 use crate::converter::Converter;
-use crate::discovery::{DiscoveryOrchestrator, SeriesDiscoveryOrchestrator};
+use crate::discovery::{DiscoveryOrchestrator, SeriesDiscoveryOrchestrator, SourceResult};
 use crate::downloader::Downloader;
 use crate::error::OrchestratorError;
 use crate::models::{
@@ -11,6 +11,7 @@ use crate::organizer::{Organizer, SeriesOrganizer};
 use crate::output;
 use crate::scanner::Scanner;
 use log::{debug, error, info, warn};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -56,12 +57,24 @@ pub struct ProcessingSummary {
     pub total_downloads: usize,
     /// Total number of videos converted
     pub total_conversions: usize,
+    /// Per-source video counts (pre-dedup raw totals)
+    pub(crate) source_totals: HashMap<Source, usize>,
+    /// Total videos discovered across all sources (pre-dedup raw total)
+    pub(crate) total_videos_discovered: usize,
 }
 
 impl ProcessingSummary {
     /// Create a new empty summary
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Merge source results into the running per-source totals
+    pub fn add_source_results(&mut self, results: &[SourceResult]) {
+        for sr in results {
+            *self.source_totals.entry(sr.source).or_insert(0) += sr.videos_found;
+            self.total_videos_discovered += sr.videos_found;
+        }
     }
 
     /// Add statistics from a movie result
@@ -73,6 +86,7 @@ impl ProcessingSummary {
         }
         self.total_downloads += result.downloads;
         self.total_conversions += result.conversions;
+        self.add_source_results(&result.source_results);
     }
 
     /// Add statistics from a series result
@@ -84,6 +98,7 @@ impl ProcessingSummary {
         }
         self.total_downloads += result.downloads;
         self.total_conversions += result.conversions;
+        self.add_source_results(&result.source_results);
     }
 }
 
@@ -95,26 +110,39 @@ struct MovieResult {
     downloads: usize,
     conversions: usize,
     error: Option<String>,
+    source_results: Vec<SourceResult>,
 }
 
 impl MovieResult {
-    fn success(movie: MovieEntry, downloads: usize, conversions: usize) -> Self {
+    fn success(
+        movie: MovieEntry,
+        downloads: usize,
+        conversions: usize,
+        source_results: Vec<SourceResult>,
+    ) -> Self {
         Self {
             movie,
             success: true,
             downloads,
             conversions,
             error: None,
+            source_results,
         }
     }
 
-    fn failed(movie: MovieEntry, phase: &str, error: String) -> Self {
+    fn failed(
+        movie: MovieEntry,
+        phase: &str,
+        error: String,
+        source_results: Vec<SourceResult>,
+    ) -> Self {
         Self {
             movie,
             success: false,
             downloads: 0,
             conversions: 0,
             error: Some(format!("{} phase failed: {}", phase, error)),
+            source_results,
         }
     }
 }
@@ -127,26 +155,39 @@ struct SeriesResult {
     downloads: usize,
     conversions: usize,
     error: Option<String>,
+    source_results: Vec<SourceResult>,
 }
 
 impl SeriesResult {
-    fn success(series: SeriesEntry, downloads: usize, conversions: usize) -> Self {
+    fn success(
+        series: SeriesEntry,
+        downloads: usize,
+        conversions: usize,
+        source_results: Vec<SourceResult>,
+    ) -> Self {
         Self {
             series,
             success: true,
             downloads,
             conversions,
             error: None,
+            source_results,
         }
     }
 
-    fn failed(series: SeriesEntry, phase: &str, error: String) -> Self {
+    fn failed(
+        series: SeriesEntry,
+        phase: &str,
+        error: String,
+        source_results: Vec<SourceResult>,
+    ) -> Self {
         Self {
             series,
             success: false,
             downloads: 0,
             conversions: 0,
             error: Some(format!("{} phase failed: {}", phase, error)),
+            source_results,
         }
     }
 }
@@ -481,7 +522,7 @@ impl Orchestrator {
         if ctx.dry_run {
             let total = source_results.iter().map(|sr| sr.videos_found).sum();
             output::display_dry_run_movie_results(&movie, &source_results, total);
-            return MovieResult::success(movie, 0, 0);
+            return MovieResult::success(movie, 0, 0, source_results);
         }
 
         // Remove stale done marker only when actually reprocessing (not in dry-run)
@@ -491,7 +532,7 @@ impl Orchestrator {
 
         if sources.is_empty() {
             warn!("No sources found for {}", movie);
-            return MovieResult::success(movie, 0, 0);
+            return MovieResult::success(movie, 0, 0, source_results);
         }
         info!("Found {} sources for {}", sources.len(), movie);
 
@@ -513,7 +554,7 @@ impl Orchestrator {
         if successful_downloads == 0 {
             warn!("No successful downloads for {}", movie);
             cleanup_temp_dir(&ctx.temp_base.join(&movie_id)).await;
-            return MovieResult::success(movie, downloads.len(), 0);
+            return MovieResult::success(movie, downloads.len(), 0, source_results);
         }
 
         // Phase 4: Conversion
@@ -533,7 +574,7 @@ impl Orchestrator {
         if successful_conversions == 0 {
             warn!("No successful conversions for {}", movie);
             cleanup_temp_dir(&ctx.temp_base.join(&movie_id)).await;
-            return MovieResult::success(movie, successful_downloads, 0);
+            return MovieResult::success(movie, successful_downloads, 0, source_results);
         }
 
         // Phase 5: Organization
@@ -547,11 +588,16 @@ impl Orchestrator {
         match organizer.organize(conversions, &temp_dir).await {
             Ok(_) => {
                 info!("✓ Movie processing complete: {}", movie);
-                MovieResult::success(movie, successful_downloads, successful_conversions)
+                MovieResult::success(
+                    movie,
+                    successful_downloads,
+                    successful_conversions,
+                    source_results,
+                )
             }
             Err(e) => {
                 error!("✗ Movie processing failed: {}: {}", movie, e);
-                MovieResult::failed(movie, "organization", e.to_string())
+                MovieResult::failed(movie, "organization", e.to_string(), source_results)
             }
         }
     }
@@ -661,7 +707,7 @@ impl Orchestrator {
                 );
             }
             output::display_dry_run_series_results(&series, &series_source_results, total);
-            return SeriesResult::success(series, 0, 0);
+            return SeriesResult::success(series, 0, 0, series_source_results);
         }
 
         // Remove stale done marker only when actually reprocessing (not in dry-run)
@@ -671,7 +717,7 @@ impl Orchestrator {
 
         if all_extras.is_empty() && season_zero_extras.is_empty() {
             warn!("No extras found for {}", series);
-            return SeriesResult::success(series, 0, 0);
+            return SeriesResult::success(series, 0, 0, series_source_results);
         }
 
         // Phase 3 & 4: Download and convert
@@ -690,7 +736,12 @@ impl Orchestrator {
         if total_conversions == 0 {
             warn!("No successful conversions for {}", series);
             cleanup_temp_dir(&ctx.temp_base.join(&series_id)).await;
-            return SeriesResult::success(series, total_successful_downloads, 0);
+            return SeriesResult::success(
+                series,
+                total_successful_downloads,
+                0,
+                series_source_results,
+            );
         }
 
         // Phase 5: Organization
@@ -713,11 +764,21 @@ impl Orchestrator {
 
         if org_failed {
             error!("✗ Series processing had organization errors: {}", series);
-            SeriesResult::failed(series, "organization", "Some seasons failed".to_string())
+            SeriesResult::failed(
+                series,
+                "organization",
+                "Some seasons failed".to_string(),
+                series_source_results,
+            )
         } else {
             write_done_marker(&series.path, &format!("{}", series)).await;
             info!("✓ Series processing complete: {}", series);
-            SeriesResult::success(series, total_successful_downloads, total_conversions)
+            SeriesResult::success(
+                series,
+                total_successful_downloads,
+                total_conversions,
+                series_source_results,
+            )
         }
     }
 
@@ -1139,6 +1200,8 @@ mod tests {
         assert_eq!(summary.failed_series, 0);
         assert_eq!(summary.total_downloads, 0);
         assert_eq!(summary.total_conversions, 0);
+        assert!(summary.source_totals.is_empty());
+        assert_eq!(summary.total_videos_discovered, 0);
     }
 
     #[test]
@@ -1153,6 +1216,7 @@ mod tests {
             },
             5,
             4,
+            vec![],
         );
 
         summary.add_movie_result(&result);
@@ -1175,6 +1239,7 @@ mod tests {
             },
             "download",
             "Network error".to_string(),
+            vec![],
         );
 
         summary.add_movie_result(&result);
@@ -1194,7 +1259,7 @@ mod tests {
             has_done_marker: false,
         };
 
-        let result = MovieResult::success(movie, 3, 2);
+        let result = MovieResult::success(movie, 3, 2, vec![]);
 
         assert!(result.success);
         assert_eq!(result.downloads, 3);
@@ -1211,7 +1276,7 @@ mod tests {
             has_done_marker: false,
         };
 
-        let result = MovieResult::failed(movie, "conversion", "FFmpeg error".to_string());
+        let result = MovieResult::failed(movie, "conversion", "FFmpeg error".to_string(), vec![]);
 
         assert!(!result.success);
         assert_eq!(result.downloads, 0);
@@ -1360,12 +1425,13 @@ mod tests {
             has_done_marker: false,
         };
 
-        let success_result = MovieResult::success(movie.clone(), 5, 4);
+        let success_result = MovieResult::success(movie.clone(), 5, 4, vec![]);
         assert!(success_result.success);
         assert_eq!(success_result.downloads, 5);
         assert_eq!(success_result.conversions, 4);
 
-        let failed_result = MovieResult::failed(movie, "download", "Network error".to_string());
+        let failed_result =
+            MovieResult::failed(movie, "download", "Network error".to_string(), vec![]);
         assert!(!failed_result.success);
         assert!(failed_result.error.is_some());
         assert!(
@@ -1392,6 +1458,7 @@ mod tests {
                 },
                 2,
                 2,
+                vec![],
             );
             summary.add_movie_result(&result);
         }
@@ -1406,6 +1473,7 @@ mod tests {
                 },
                 "discovery",
                 "API error".to_string(),
+                vec![],
             );
             summary.add_movie_result(&result);
         }
@@ -1503,7 +1571,7 @@ mod tests {
             seasons: vec![1, 2],
         };
 
-        let result = SeriesResult::success(series, 3, 2);
+        let result = SeriesResult::success(series, 3, 2, vec![]);
 
         assert!(result.success);
         assert_eq!(result.downloads, 3);
@@ -1521,7 +1589,7 @@ mod tests {
             seasons: vec![1, 2],
         };
 
-        let result = SeriesResult::failed(series, "discovery", "API error".to_string());
+        let result = SeriesResult::failed(series, "discovery", "API error".to_string(), vec![]);
 
         assert!(!result.success);
         assert_eq!(result.downloads, 0);
@@ -1549,6 +1617,7 @@ mod tests {
             },
             4,
             3,
+            vec![],
         );
 
         summary.add_series_result(&result);
@@ -1757,6 +1826,143 @@ mod tests {
             !marker_path.exists(),
             "done.ext should NOT be created in dry-run mode"
         );
+    }
+
+    #[test]
+    fn test_add_source_results_accumulates_correctly() {
+        use crate::discovery::SourceResult;
+
+        let mut summary = ProcessingSummary::new();
+
+        // First batch: TMDB 5, YouTube 3
+        let batch1 = vec![
+            SourceResult {
+                source: Source::Tmdb,
+                videos_found: 5,
+                error: None,
+            },
+            SourceResult {
+                source: Source::Youtube,
+                videos_found: 3,
+                error: None,
+            },
+        ];
+        summary.add_source_results(&batch1);
+
+        assert_eq!(summary.source_totals[&Source::Tmdb], 5);
+        assert_eq!(summary.source_totals[&Source::Youtube], 3);
+        assert_eq!(summary.total_videos_discovered, 8);
+
+        // Second batch: TMDB 2, Archive 4 — TMDB should accumulate
+        let batch2 = vec![
+            SourceResult {
+                source: Source::Tmdb,
+                videos_found: 2,
+                error: None,
+            },
+            SourceResult {
+                source: Source::Archive,
+                videos_found: 4,
+                error: None,
+            },
+        ];
+        summary.add_source_results(&batch2);
+
+        assert_eq!(summary.source_totals[&Source::Tmdb], 7);
+        assert_eq!(summary.source_totals[&Source::Youtube], 3);
+        assert_eq!(summary.source_totals[&Source::Archive], 4);
+        assert_eq!(summary.total_videos_discovered, 14);
+    }
+
+    #[test]
+    fn test_add_movie_result_merges_source_results() {
+        use crate::discovery::SourceResult;
+
+        let mut summary = ProcessingSummary::new();
+        summary.total_movies = 1;
+
+        let result = MovieResult::success(
+            MovieEntry {
+                path: PathBuf::from("/movies/Test (2020)"),
+                title: "Test".to_string(),
+                year: 2020,
+                has_done_marker: false,
+            },
+            3,
+            2,
+            vec![
+                SourceResult {
+                    source: Source::Tmdb,
+                    videos_found: 5,
+                    error: None,
+                },
+                SourceResult {
+                    source: Source::Youtube,
+                    videos_found: 8,
+                    error: None,
+                },
+            ],
+        );
+
+        summary.add_movie_result(&result);
+
+        assert_eq!(summary.successful_movies, 1);
+        assert_eq!(summary.source_totals[&Source::Tmdb], 5);
+        assert_eq!(summary.source_totals[&Source::Youtube], 8);
+        assert_eq!(summary.total_videos_discovered, 13);
+    }
+
+    #[test]
+    fn test_add_series_result_merges_source_results() {
+        use crate::discovery::SourceResult;
+
+        let mut summary = ProcessingSummary::new();
+        summary.total_series = 1;
+
+        let result = SeriesResult::success(
+            SeriesEntry {
+                path: PathBuf::from("/series/Test (2020)"),
+                title: "Test".to_string(),
+                year: Some(2020),
+                has_done_marker: false,
+                seasons: vec![1],
+            },
+            4,
+            3,
+            vec![SourceResult {
+                source: Source::Tmdb,
+                videos_found: 6,
+                error: None,
+            }],
+        );
+
+        summary.add_series_result(&result);
+
+        assert_eq!(summary.successful_series, 1);
+        assert_eq!(summary.source_totals[&Source::Tmdb], 6);
+        assert_eq!(summary.total_videos_discovered, 6);
+    }
+
+    #[test]
+    fn test_failed_result_has_empty_source_results() {
+        let result = MovieResult::failed(
+            MovieEntry {
+                path: PathBuf::from("/movies/Test (2020)"),
+                title: "Test".to_string(),
+                year: 2020,
+                has_done_marker: false,
+            },
+            "discovery",
+            "API error".to_string(),
+            vec![],
+        );
+
+        assert!(result.source_results.is_empty());
+
+        let mut summary = ProcessingSummary::new();
+        summary.add_movie_result(&result);
+        assert!(summary.source_totals.is_empty());
+        assert_eq!(summary.total_videos_discovered, 0);
     }
 }
 

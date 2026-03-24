@@ -9,9 +9,11 @@ use std::path::{Path, PathBuf};
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// TMDB API key for content discovery
+    /// TMDB API key for content discovery.
+    /// SECURITY: Must never be logged, printed, or interpolated into log messages.
     pub tmdb_api_key: String,
-    /// TheTVDB API key for Season 0 specials discovery
+    /// TheTVDB API key for Season 0 specials discovery.
+    /// SECURITY: Must never be logged, printed, or interpolated into log messages.
     #[serde(default)]
     pub tvdb_api_key: Option<String>,
     /// Browser to source cookies from for yt-dlp (e.g. "chrome", "firefox", "edge")
@@ -45,9 +47,33 @@ impl Config {
     /// Save configuration to file
     ///
     /// Writes the configuration to the specified path in JSON format.
+    /// On Unix systems, creates the file with 0o600 permissions atomically
+    /// (using OpenOptions with mode) so the file is never world-readable,
+    /// even briefly. On non-Unix systems, falls back to a plain write.
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
         let contents = serde_json::to_string_pretty(self).map_err(ConfigError::SerializeError)?;
 
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(path)
+                .map_err(|e| ConfigError::WriteError(path.to_path_buf(), e))?;
+            file.write_all(contents.as_bytes())
+                .map_err(|e| ConfigError::WriteError(path.to_path_buf(), e))?;
+            // Also correct permissions on pre-existing files (mode() only applies at creation).
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            if let Err(e) = std::fs::set_permissions(path, perms) {
+                log::warn!("Could not set config file permissions to 600: {}", e);
+            }
+        }
+
+        #[cfg(not(unix))]
         fs::write(path, contents).map_err(|e| ConfigError::WriteError(path.to_path_buf(), e))?;
 
         Ok(())
@@ -272,6 +298,32 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.tmdb_api_key, "my_tmdb_key");
         assert_eq!(config.tvdb_api_key, Some("my_tvdb_key".to_string()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_config_save_sets_unix_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.cfg");
+
+        let config = Config {
+            tmdb_api_key: "test_key".to_string(),
+            tvdb_api_key: None,
+            cookies_from_browser: None,
+        };
+
+        config
+            .save(&config_path)
+            .expect("save should succeed on a writable temp path");
+
+        let metadata = fs::metadata(&config_path).expect("metadata should be readable after save");
+        let mode = metadata.permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "Config file should have 600 permissions on Unix"
+        );
     }
 }
 

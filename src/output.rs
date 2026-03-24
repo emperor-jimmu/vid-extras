@@ -1,7 +1,7 @@
 // Output module - handles CLI output formatting and progress display
 
 use crate::discovery::SourceResult;
-use crate::models::{ContentCategory, MovieEntry, SeriesEntry, SourceType};
+use crate::models::{ContentCategory, MovieEntry, SeriesEntry, Source, SourceType};
 use crate::orchestrator::ProcessingSummary;
 use colored::Colorize;
 
@@ -278,6 +278,30 @@ pub fn display_summary(summary: &ProcessingSummary) {
         summary.total_conversions.to_string().bright_cyan()
     );
 
+    // Per-source discovery section — show whenever sources reported results,
+    // even if all counts are zero, so operators can distinguish "found nothing"
+    // from "discovery was never called".
+    if !summary.source_totals.is_empty() {
+        let mut entries: Vec<(&Source, &usize)> = summary.source_totals.iter().collect();
+        entries.sort_by_key(|(s, _)| (s.tier(), s.to_string()));
+        println!("  {}", "─".repeat(45).bright_white());
+        println!("  {}", "Discovery:".bright_white().bold());
+        for (source, count) in &entries {
+            println!(
+                "    {} {} {}",
+                format!("{:>12}:", source.to_string().to_uppercase()).bright_white(),
+                count.to_string().bright_cyan(),
+                "videos".bright_white()
+            );
+        }
+        println!(
+            "  {} {} {}",
+            "Total Discovered:".bright_white().bold(),
+            summary.total_videos_discovered.to_string().bright_yellow(),
+            "videos".bright_white()
+        );
+    }
+
     println!("{}", "═".repeat(60).bright_cyan());
 
     // Display completion message
@@ -535,6 +559,8 @@ mod tests {
             failed_series: 0,
             total_downloads: 15,
             total_conversions: 12,
+            source_totals: std::collections::HashMap::new(),
+            total_videos_discovered: 0,
         };
         display_summary(&summary);
     }
@@ -550,6 +576,8 @@ mod tests {
             failed_series: 1,
             total_downloads: 10,
             total_conversions: 8,
+            source_totals: std::collections::HashMap::new(),
+            total_videos_discovered: 0,
         };
         display_summary(&summary);
     }
@@ -565,6 +593,8 @@ mod tests {
             failed_series: 0,
             total_downloads: 0,
             total_conversions: 0,
+            source_totals: std::collections::HashMap::new(),
+            total_videos_discovered: 0,
         };
         display_summary(&summary);
     }
@@ -717,6 +747,47 @@ mod tests {
     }
 
     #[test]
+    fn test_display_summary_with_empty_source_totals() {
+        // display_summary should not panic when source_totals is empty
+        let summary = ProcessingSummary {
+            total_movies: 1,
+            successful_movies: 1,
+            failed_movies: 0,
+            total_series: 0,
+            successful_series: 0,
+            failed_series: 0,
+            total_downloads: 3,
+            total_conversions: 2,
+            source_totals: std::collections::HashMap::new(),
+            total_videos_discovered: 0,
+        };
+        display_summary(&summary);
+    }
+
+    #[test]
+    fn test_display_summary_with_source_totals() {
+        use crate::models::Source;
+        let mut source_totals = std::collections::HashMap::new();
+        source_totals.insert(Source::Tmdb, 42);
+        source_totals.insert(Source::Archive, 3);
+        source_totals.insert(Source::Youtube, 18);
+
+        let summary = ProcessingSummary {
+            total_movies: 5,
+            successful_movies: 5,
+            failed_movies: 0,
+            total_series: 0,
+            successful_series: 0,
+            failed_series: 0,
+            total_downloads: 15,
+            total_conversions: 12,
+            source_totals,
+            total_videos_discovered: 63,
+        };
+        display_summary(&summary);
+    }
+
+    #[test]
     fn test_error_message_formatting() {
         // Test that error messages include all required context
         // Requirements: 10.1, 13.7
@@ -750,6 +821,8 @@ mod tests {
             failed_series: 0,
             total_downloads: 30,
             total_conversions: 25,
+            source_totals: std::collections::HashMap::new(),
+            total_videos_discovered: 0,
         };
         display_summary(&summary1);
 
@@ -763,6 +836,8 @@ mod tests {
             failed_series: 1,
             total_downloads: 20,
             total_conversions: 15,
+            source_totals: std::collections::HashMap::new(),
+            total_videos_discovered: 0,
         };
         display_summary(&summary2);
 
@@ -776,6 +851,8 @@ mod tests {
             failed_series: 0,
             total_downloads: 0,
             total_conversions: 0,
+            source_totals: std::collections::HashMap::new(),
+            total_videos_discovered: 0,
         };
         display_summary(&summary3);
     }
@@ -902,6 +979,8 @@ mod property_tests {
                 failed_series: total_series - successful_series,
                 total_downloads,
                 total_conversions,
+                source_totals: std::collections::HashMap::new(),
+                total_videos_discovered: 0,
             };
 
             // Verify the invariants that must hold for any valid summary:
