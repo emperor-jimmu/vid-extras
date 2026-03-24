@@ -561,6 +561,7 @@ mod tests {
             total_conversions: 12,
             source_totals: std::collections::HashMap::new(),
             total_videos_discovered: 0,
+            duplicates_removed: 0,
         };
         display_summary(&summary);
     }
@@ -578,6 +579,7 @@ mod tests {
             total_conversions: 8,
             source_totals: std::collections::HashMap::new(),
             total_videos_discovered: 0,
+            duplicates_removed: 0,
         };
         display_summary(&summary);
     }
@@ -595,6 +597,7 @@ mod tests {
             total_conversions: 0,
             source_totals: std::collections::HashMap::new(),
             total_videos_discovered: 0,
+            duplicates_removed: 0,
         };
         display_summary(&summary);
     }
@@ -760,6 +763,7 @@ mod tests {
             total_conversions: 2,
             source_totals: std::collections::HashMap::new(),
             total_videos_discovered: 0,
+            duplicates_removed: 0,
         };
         display_summary(&summary);
     }
@@ -783,6 +787,7 @@ mod tests {
             total_conversions: 12,
             source_totals,
             total_videos_discovered: 63,
+            duplicates_removed: 0,
         };
         display_summary(&summary);
     }
@@ -823,6 +828,7 @@ mod tests {
             total_conversions: 25,
             source_totals: std::collections::HashMap::new(),
             total_videos_discovered: 0,
+            duplicates_removed: 0,
         };
         display_summary(&summary1);
 
@@ -838,6 +844,7 @@ mod tests {
             total_conversions: 15,
             source_totals: std::collections::HashMap::new(),
             total_videos_discovered: 0,
+            duplicates_removed: 0,
         };
         display_summary(&summary2);
 
@@ -853,6 +860,7 @@ mod tests {
             total_conversions: 0,
             source_totals: std::collections::HashMap::new(),
             total_videos_discovered: 0,
+            duplicates_removed: 0,
         };
         display_summary(&summary3);
     }
@@ -981,6 +989,7 @@ mod property_tests {
                 total_conversions,
                 source_totals: std::collections::HashMap::new(),
                 total_videos_discovered: 0,
+                duplicates_removed: 0,
             };
 
             // Verify the invariants that must hold for any valid summary:

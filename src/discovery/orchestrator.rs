@@ -86,7 +86,7 @@ impl DiscoveryOrchestrator {
         &self,
         movie: &MovieEntry,
         library: &[MovieEntry],
-    ) -> (Vec<VideoSource>, Vec<SourceResult>) {
+    ) -> (Vec<VideoSource>, Vec<SourceResult>, usize) {
         let mut all_sources = Vec::new();
         let mut source_results = Vec::new();
         let mut tmdb_movie_id: Option<u64> = None;
@@ -243,7 +243,18 @@ impl DiscoveryOrchestrator {
             }
         }
 
-        // Deduplicate by URL
+        // Title+duration deduplication — runs before URL dedup and content limits.
+        // Prefers higher-tier sources (Tier 1 > Tier 2 > Tier 3) when duplicates are found.
+        let (mut all_sources, title_dedup_removed) =
+            crate::deduplication::deduplicate(all_sources, &self.sources);
+        if title_dedup_removed > 0 {
+            info!(
+                "Removed {} title+duration duplicates for {}",
+                title_dedup_removed, movie
+            );
+        }
+
+        // Deduplicate by URL — safety net after title+duration dedup
         let initial_count = all_sources.len();
         all_sources.sort_by(|a, b| a.url.cmp(&b.url));
         all_sources.dedup_by(|a, b| a.url == b.url);
@@ -284,7 +295,7 @@ impl DiscoveryOrchestrator {
             }
         }
 
-        (all_sources, source_results)
+        (all_sources, source_results, title_dedup_removed)
     }
 
     /// Apply content limits per category, prioritizing TMDB > Archive.org > YouTube

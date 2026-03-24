@@ -21,3 +21,7 @@
 ## Deferred from: code review of 6-1-dailymotion-rest-api-discoverer (2026-03-25)
 
 - VideoSource→SeriesExtra conversion closure duplicated in `discover_all` and `discover_season_extras` in `src/discovery/series_orchestrator.rs` — pre-existing pattern (same duplication exists for YouTube). Could extract a helper fn but the closures differ in `season_number` field.
+
+## Deferred from: code review of 7-1-duplicate-detection-engine (2026-03-25)
+
+- `sources` field on `Orchestrator` duplicates data already held inside `DiscoveryOrchestrator` — added to pass active source list to `SeriesProcessingContext` for dedup. Pre-existing architectural pattern: the series pipeline doesn't have access to `DiscoveryOrchestrator`'s internals. Could be resolved by exposing a `sources()` accessor on `DiscoveryOrchestrator` or passing the list through the series discovery orchestrator.

@@ -100,6 +100,7 @@ impl DailymotionDiscoverer {
             category,
             title: video.title.clone(),
             season_number: None,
+            duration_secs: Some(video.duration),
         })
     }
 

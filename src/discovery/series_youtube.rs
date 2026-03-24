@@ -225,6 +225,7 @@ impl YoutubeSeriesDiscoverer {
                             url,
                             source_type: SourceType::YouTube,
                             local_path: None,
+                            duration_secs: Some(duration),
                         });
                         debug!(
                             "Added YouTube video: {} (season: {:?})",

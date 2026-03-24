@@ -40,6 +40,8 @@ pub struct VideoSource {
     pub title: String,
     /// Optional season number for series extras (None = series-level or movie)
     pub season_number: Option<u8>,
+    /// Duration in seconds, populated from API metadata where available
+    pub duration_secs: Option<u32>,
 }
 
 impl fmt::Display for VideoSource {
@@ -228,6 +230,23 @@ impl fmt::Display for SourceType {
     }
 }
 
+impl SourceType {
+    /// Returns the deduplication priority tier (1 = highest).
+    /// Mirrors `Source::tier()` for use in deduplication logic.
+    pub fn tier(&self) -> u8 {
+        match self {
+            SourceType::TMDB => 1,
+            SourceType::KinoCheck => 1,
+            SourceType::TheTVDB => 1,
+            SourceType::ArchiveOrg => 2,
+            SourceType::Dailymotion => 2,
+            SourceType::Vimeo => 2,
+            SourceType::YouTube => 3,
+            SourceType::Bilibili => 3,
+        }
+    }
+}
+
 /// Content category for organizing extras
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ContentCategory {
@@ -368,6 +387,8 @@ pub struct SeriesExtra {
     pub source_type: SourceType,
     /// Local path after download (optional)
     pub local_path: Option<PathBuf>,
+    /// Duration in seconds, populated from API metadata where available
+    pub duration_secs: Option<u32>,
 }
 
 impl fmt::Display for SeriesExtra {
@@ -392,6 +413,7 @@ impl From<SeriesExtra> for VideoSource {
             category: extra.category,
             title: extra.title,
             season_number: extra.season_number,
+            duration_secs: extra.duration_secs,
         }
     }
 }
@@ -492,6 +514,7 @@ mod tests {
             url: "https://example.com/video".to_string(),
             source_type: SourceType::YouTube,
             local_path: None,
+            duration_secs: None,
         };
         assert_eq!(
             extra.to_string(),
@@ -509,6 +532,7 @@ mod tests {
             url: "https://example.com/video".to_string(),
             source_type: SourceType::TMDB,
             local_path: None,
+            duration_secs: None,
         };
         assert_eq!(
             extra.to_string(),
@@ -589,6 +613,18 @@ mod tests {
         assert_eq!(Source::Youtube.tier(), 3);
         assert_eq!(Source::Vimeo.tier(), 2);
         assert_eq!(Source::Bilibili.tier(), 3);
+    }
+
+    #[test]
+    fn test_source_type_tier_matches_source_tier() {
+        // Verify SourceType::tier() stays in sync with Source::tier()
+        // for all user-selectable source types.
+        assert_eq!(SourceType::TMDB.tier(), Source::Tmdb.tier());
+        assert_eq!(SourceType::ArchiveOrg.tier(), Source::Archive.tier());
+        assert_eq!(SourceType::Dailymotion.tier(), Source::Dailymotion.tier());
+        assert_eq!(SourceType::YouTube.tier(), Source::Youtube.tier());
+        assert_eq!(SourceType::Vimeo.tier(), Source::Vimeo.tier());
+        assert_eq!(SourceType::Bilibili.tier(), Source::Bilibili.tier());
     }
 
     #[test]
@@ -691,6 +727,7 @@ mod property_tests {
                 url: url.clone(),
                 source_type,
                 local_path: local_path.clone(),
+                duration_secs: None,
             };
 
             // Serialize to JSON

@@ -103,6 +103,7 @@ impl KinoCheckDiscoverer {
                     category,
                     title: trailer.title,
                     season_number: None,
+                    duration_secs: None,
                 }]
             }
             None => Vec::new(),
@@ -314,6 +315,7 @@ mod tests {
             category,
             title: trailer.title,
             season_number: None,
+            duration_secs: None,
         };
 
         assert_eq!(source.url, "https://www.youtube.com/watch?v=QW9wNFpLYiY");

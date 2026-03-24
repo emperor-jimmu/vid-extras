@@ -214,6 +214,7 @@ impl SeriesDiscoveryOrchestrator {
                             url: vs.url,
                             source_type: vs.source_type,
                             local_path: None,
+                            duration_secs: vs.duration_secs,
                         })
                         .collect();
                     info!(
@@ -518,6 +519,7 @@ impl SeriesDiscoveryOrchestrator {
                     url: format!("ytsearch5:{}", query), // Use ytsearch5 for multiple candidates
                     source_type: SourceType::TheTVDB,
                     local_path: None,
+                    duration_secs: None,
                 });
             }
         }
@@ -678,6 +680,7 @@ impl SeriesDiscoveryOrchestrator {
                     url: format!("ytsearch1:{}", query), // Use ytsearch1 for single best result
                     source_type: SourceType::TheTVDB,
                     local_path: None,
+                    duration_secs: None,
                 });
                 episode_metadata.push((*episode).clone());
             }
@@ -753,6 +756,7 @@ mod tests {
             url: "https://example.com/video".to_string(),
             source_type: crate::models::SourceType::TMDB,
             local_path: None,
+            duration_secs: None,
         };
 
         assert_eq!(extra.series_id, "bb");
@@ -770,6 +774,7 @@ mod tests {
             url: "https://example.com/video".to_string(),
             source_type: crate::models::SourceType::YouTube,
             local_path: None,
+            duration_secs: None,
         };
 
         assert_eq!(extra.series_id, "bb");

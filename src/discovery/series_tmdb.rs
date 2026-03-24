@@ -182,6 +182,7 @@ impl TmdbSeriesDiscoverer {
                     url: format!("https://www.youtube.com/watch?v={}", v.key),
                     source_type: SourceType::TMDB,
                     local_path: None,
+                    duration_secs: None,
                 })
             })
             .collect();
@@ -370,6 +371,7 @@ mod tests {
             url,
             source_type: SourceType::TMDB,
             local_path: None,
+            duration_secs: None,
         };
 
         assert_eq!(extra.series_id, "1234");
@@ -519,6 +521,7 @@ mod property_tests {
                     url: format!("https://example.com/video{}", i),
                     source_type: SourceType::TMDB,
                     local_path: None,
+                    duration_secs: None,
                 })
                 .collect();
 
@@ -532,6 +535,7 @@ mod property_tests {
                     url: format!("https://example.com/season_video{}", i),
                     source_type: SourceType::TMDB,
                     local_path: None,
+                    duration_secs: None,
                 })
                 .collect();
 

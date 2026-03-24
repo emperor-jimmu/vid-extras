@@ -292,6 +292,7 @@ impl TmdbDiscoverer {
                     category,
                     title: format!("{} - {}", sibling.title, v.name),
                     season_number: None,
+                    duration_secs: None,
                 })
             })
             .collect();
@@ -425,6 +426,7 @@ impl TmdbDiscoverer {
                     category,
                     title: v.name,
                     season_number: None,
+                    duration_secs: None,
                 })
             })
             .collect();

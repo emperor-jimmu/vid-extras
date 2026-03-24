@@ -2,6 +2,7 @@
 pub mod cli;
 pub mod config;
 pub mod converter;
+pub mod deduplication;
 pub mod discovery;
 pub mod downloader;
 pub mod error;

@@ -222,6 +222,7 @@ impl YoutubeDiscoverer {
                             category: resolved_category,
                             title,
                             season_number: None,
+                            duration_secs: Some(duration),
                         });
                         debug!("Added YouTube video: {}", sources.last().unwrap().title);
                     }

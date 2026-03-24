@@ -27,6 +27,7 @@ struct SeriesProcessingContext {
     specials: bool,
     specials_folder: String,
     dry_run: bool,
+    active_sources: Vec<Source>,
 }
 
 /// Shared context for movie processing, bundling dependencies passed between phases
@@ -62,6 +63,8 @@ pub struct ProcessingSummary {
     pub(crate) source_totals: HashMap<Source, usize>,
     /// Total videos discovered across all sources (pre-dedup raw total)
     pub(crate) total_videos_discovered: usize,
+    /// Total duplicates removed by title+duration deduplication
+    pub duplicates_removed: usize,
 }
 
 impl ProcessingSummary {
@@ -87,6 +90,7 @@ impl ProcessingSummary {
         }
         self.total_downloads += result.downloads;
         self.total_conversions += result.conversions;
+        self.duplicates_removed += result.duplicates_removed;
         self.add_source_results(&result.source_results);
     }
 
@@ -99,6 +103,7 @@ impl ProcessingSummary {
         }
         self.total_downloads += result.downloads;
         self.total_conversions += result.conversions;
+        self.duplicates_removed += result.duplicates_removed;
         self.add_source_results(&result.source_results);
     }
 }
@@ -112,9 +117,11 @@ struct MovieResult {
     conversions: usize,
     error: Option<String>,
     source_results: Vec<SourceResult>,
+    duplicates_removed: usize,
 }
 
 impl MovieResult {
+    #[cfg(test)]
     fn success(
         movie: MovieEntry,
         downloads: usize,
@@ -128,6 +135,25 @@ impl MovieResult {
             conversions,
             error: None,
             source_results,
+            duplicates_removed: 0,
+        }
+    }
+
+    fn success_with_dedup(
+        movie: MovieEntry,
+        downloads: usize,
+        conversions: usize,
+        source_results: Vec<SourceResult>,
+        duplicates_removed: usize,
+    ) -> Self {
+        Self {
+            movie,
+            success: true,
+            downloads,
+            conversions,
+            error: None,
+            source_results,
+            duplicates_removed,
         }
     }
 
@@ -144,6 +170,7 @@ impl MovieResult {
             conversions: 0,
             error: Some(format!("{} phase failed: {}", phase, error)),
             source_results,
+            duplicates_removed: 0,
         }
     }
 }
@@ -157,9 +184,11 @@ struct SeriesResult {
     conversions: usize,
     error: Option<String>,
     source_results: Vec<SourceResult>,
+    duplicates_removed: usize,
 }
 
 impl SeriesResult {
+    #[cfg(test)]
     fn success(
         series: SeriesEntry,
         downloads: usize,
@@ -173,6 +202,25 @@ impl SeriesResult {
             conversions,
             error: None,
             source_results,
+            duplicates_removed: 0,
+        }
+    }
+
+    fn success_with_dedup(
+        series: SeriesEntry,
+        downloads: usize,
+        conversions: usize,
+        source_results: Vec<SourceResult>,
+        duplicates_removed: usize,
+    ) -> Self {
+        Self {
+            series,
+            success: true,
+            downloads,
+            conversions,
+            error: None,
+            source_results,
+            duplicates_removed,
         }
     }
 
@@ -189,6 +237,7 @@ impl SeriesResult {
             conversions: 0,
             error: Some(format!("{} phase failed: {}", phase, error)),
             source_results,
+            duplicates_removed: 0,
         }
     }
 }
@@ -270,6 +319,7 @@ pub struct Orchestrator {
     specials: bool,
     specials_folder: String,
     dry_run: bool,
+    sources: Vec<Source>,
 }
 
 impl Orchestrator {
@@ -373,6 +423,7 @@ impl Orchestrator {
             specials: config.series.specials,
             specials_folder: config.series.specials_folder,
             dry_run: config.discovery.dry_run,
+            sources: config.discovery.sources,
         })
     }
 
@@ -534,7 +585,7 @@ impl Orchestrator {
 
         // Phase 2: Discovery
         info!("Phase 2: Discovering content for {}", movie);
-        let (sources, source_results) = ctx
+        let (sources, source_results, dedup_removed) = ctx
             .discovery
             .discover_all(&movie, &ctx.library_movies)
             .await;
@@ -543,7 +594,7 @@ impl Orchestrator {
         if ctx.dry_run {
             let total = source_results.iter().map(|sr| sr.videos_found).sum();
             output::display_dry_run_movie_results(&movie, &source_results, total);
-            return MovieResult::success(movie, 0, 0, source_results);
+            return MovieResult::success_with_dedup(movie, 0, 0, source_results, dedup_removed);
         }
 
         // Remove stale done marker only when actually reprocessing (not in dry-run)
@@ -553,7 +604,7 @@ impl Orchestrator {
 
         if sources.is_empty() {
             warn!("No sources found for {}", movie);
-            return MovieResult::success(movie, 0, 0, source_results);
+            return MovieResult::success_with_dedup(movie, 0, 0, source_results, dedup_removed);
         }
         info!("Found {} sources for {}", sources.len(), movie);
 
@@ -575,7 +626,13 @@ impl Orchestrator {
         if successful_downloads == 0 {
             warn!("No successful downloads for {}", movie);
             cleanup_temp_dir(&ctx.temp_base.join(&movie_id)).await;
-            return MovieResult::success(movie, downloads.len(), 0, source_results);
+            return MovieResult::success_with_dedup(
+                movie,
+                downloads.len(),
+                0,
+                source_results,
+                dedup_removed,
+            );
         }
 
         // Phase 4: Conversion
@@ -595,7 +652,13 @@ impl Orchestrator {
         if successful_conversions == 0 {
             warn!("No successful conversions for {}", movie);
             cleanup_temp_dir(&ctx.temp_base.join(&movie_id)).await;
-            return MovieResult::success(movie, successful_downloads, 0, source_results);
+            return MovieResult::success_with_dedup(
+                movie,
+                successful_downloads,
+                0,
+                source_results,
+                dedup_removed,
+            );
         }
 
         // Phase 5: Organization
@@ -609,11 +672,12 @@ impl Orchestrator {
         match organizer.organize(conversions, &temp_dir).await {
             Ok(_) => {
                 info!("✓ Movie processing complete: {}", movie);
-                MovieResult::success(
+                MovieResult::success_with_dedup(
                     movie,
                     successful_downloads,
                     successful_conversions,
                     source_results,
+                    dedup_removed,
                 )
             }
             Err(e) => {
@@ -660,6 +724,7 @@ impl Orchestrator {
                 specials,
                 specials_folder,
                 dry_run: self.dry_run,
+                active_sources: self.sources.clone(),
             };
 
             let task = tokio::spawn(async move {
@@ -690,6 +755,7 @@ impl Orchestrator {
             specials: self.specials,
             specials_folder: self.specials_folder.clone(),
             dry_run: self.dry_run,
+            active_sources: self.sources.clone(),
         };
         Self::process_series_standalone(series, ctx).await
     }
@@ -709,14 +775,20 @@ impl Orchestrator {
         );
 
         // Phase 2: Discovery
-        let (all_extras, season_zero_extras, tvdb_episodes_metadata, series_source_results) =
-            discover_series_content(
-                &series,
-                &ctx.series_discovery,
-                ctx.season_extras,
-                ctx.specials,
-            )
-            .await;
+        let (
+            all_extras,
+            season_zero_extras,
+            tvdb_episodes_metadata,
+            series_source_results,
+            dedup_removed,
+        ) = discover_series_content(
+            &series,
+            &ctx.series_discovery,
+            ctx.season_extras,
+            ctx.specials,
+            &ctx.active_sources,
+        )
+        .await;
 
         // Dry-run: display results and return early — no file I/O (AC3/NFR5)
         if ctx.dry_run {
@@ -728,7 +800,13 @@ impl Orchestrator {
                 );
             }
             output::display_dry_run_series_results(&series, &series_source_results, total);
-            return SeriesResult::success(series, 0, 0, series_source_results);
+            return SeriesResult::success_with_dedup(
+                series,
+                0,
+                0,
+                series_source_results,
+                dedup_removed,
+            );
         }
 
         // Remove stale done marker only when actually reprocessing (not in dry-run)
@@ -738,7 +816,13 @@ impl Orchestrator {
 
         if all_extras.is_empty() && season_zero_extras.is_empty() {
             warn!("No extras found for {}", series);
-            return SeriesResult::success(series, 0, 0, series_source_results);
+            return SeriesResult::success_with_dedup(
+                series,
+                0,
+                0,
+                series_source_results,
+                dedup_removed,
+            );
         }
 
         // Phase 3 & 4: Download and convert
@@ -757,11 +841,12 @@ impl Orchestrator {
         if total_conversions == 0 {
             warn!("No successful conversions for {}", series);
             cleanup_temp_dir(&ctx.temp_base.join(&series_id)).await;
-            return SeriesResult::success(
+            return SeriesResult::success_with_dedup(
                 series,
                 total_successful_downloads,
                 0,
                 series_source_results,
+                dedup_removed,
             );
         }
 
@@ -794,11 +879,12 @@ impl Orchestrator {
         } else {
             write_done_marker(&series.path, &format!("{}", series)).await;
             info!("✓ Series processing complete: {}", series);
-            SeriesResult::success(
+            SeriesResult::success_with_dedup(
                 series,
                 total_successful_downloads,
                 total_conversions,
                 series_source_results,
+                dedup_removed,
             )
         }
     }
@@ -885,17 +971,19 @@ async fn write_done_marker(path: &std::path::Path, label: &str) {
 }
 
 /// Discover all content for a series: regular extras, season extras, and Season 0 specials.
-/// Returns (regular_extras, season_zero_extras, tvdb_episode_metadata, source_results).
+/// Returns (regular_extras, season_zero_extras, tvdb_episode_metadata, source_results, duplicates_removed).
 async fn discover_series_content(
     series: &SeriesEntry,
     series_discovery: &SeriesDiscoveryOrchestrator,
     season_extras_enabled: bool,
     specials_enabled: bool,
+    active_sources: &[crate::models::Source],
 ) -> (
     Vec<SeriesExtra>,
     Vec<SeriesExtra>,
     Vec<crate::discovery::TvdbEpisodeExtended>,
     Vec<crate::discovery::SourceResult>,
+    usize,
 ) {
     info!("Phase 2: Discovering content for {}", series);
     info!(
@@ -936,7 +1024,18 @@ async fn discover_series_content(
         (Vec::new(), Vec::new())
     };
 
-    // Deduplicate regular extras by URL
+    // Title+duration deduplication — runs before URL dedup.
+    // Season 0 specials (season_zero_extras) are excluded — they use per-episode candidate scoring.
+    let (mut all_extras, title_dedup_removed) =
+        crate::deduplication::deduplicate_series(all_extras, active_sources);
+    if title_dedup_removed > 0 {
+        info!(
+            "Removed {} title+duration duplicates for {}",
+            title_dedup_removed, series
+        );
+    }
+
+    // Deduplicate regular extras by URL — safety net after title+duration dedup
     let before_dedup = all_extras.len();
     let mut seen_urls = std::collections::HashSet::new();
     all_extras.retain(|extra| seen_urls.insert(extra.url.clone()));
@@ -958,6 +1057,7 @@ async fn discover_series_content(
         season_zero_extras,
         tvdb_episodes,
         series_source_results,
+        title_dedup_removed,
     )
 }
 
@@ -1006,6 +1106,7 @@ async fn discover_season_zero_specials(
                 url: selected.url,
                 source_type: crate::models::SourceType::TheTVDB,
                 local_path: None,
+                duration_secs: None,
             });
             matched_episodes.push(episode);
         }

@@ -335,6 +335,7 @@ impl ArchiveOrgDiscoverer {
             category: cat,
             title: doc.title,
             season_number: None,
+            duration_secs: None,
         })
     }
 }

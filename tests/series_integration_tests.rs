@@ -383,6 +383,7 @@ fn test_series_extra_data_model() {
         url: "https://example.com/trailer".to_string(),
         source_type: SourceType::TMDB,
         local_path: None,
+        duration_secs: None,
     };
 
     assert_eq!(series_level.season_number, None);
@@ -397,6 +398,7 @@ fn test_series_extra_data_model() {
         url: "https://example.com/bts".to_string(),
         source_type: SourceType::YouTube,
         local_path: Some(PathBuf::from("/test/bts.mp4")),
+        duration_secs: None,
     };
 
     assert_eq!(season_specific.season_number, Some(1));
