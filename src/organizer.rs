@@ -1117,6 +1117,10 @@ mod property_tests {
                 Just(ContentCategory::BehindTheScenes),
                 Just(ContentCategory::DeletedScene),
                 Just(ContentCategory::Interview),
+                Just(ContentCategory::Short),
+                Just(ContentCategory::Clip),
+                Just(ContentCategory::Scene),
+                Just(ContentCategory::Extras),
             ]
         ) {
             let expected_subdir = match category {
@@ -1125,6 +1129,10 @@ mod property_tests {
                 ContentCategory::BehindTheScenes => "behind the scenes",
                 ContentCategory::DeletedScene => "deleted scenes",
                 ContentCategory::Interview => "interviews",
+                ContentCategory::Short => "shorts",
+                ContentCategory::Clip => "clips",
+                ContentCategory::Scene => "scenes",
+                ContentCategory::Extras => "extras",
             };
 
             prop_assert_eq!(category.subdirectory(), expected_subdir);
@@ -1142,6 +1150,10 @@ mod property_tests {
                 Just(ContentCategory::BehindTheScenes),
                 Just(ContentCategory::DeletedScene),
                 Just(ContentCategory::Interview),
+                Just(ContentCategory::Short),
+                Just(ContentCategory::Clip),
+                Just(ContentCategory::Scene),
+                Just(ContentCategory::Extras),
             ]
         ) {
             let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -1232,6 +1244,10 @@ mod property_tests {
                 Just(ContentCategory::BehindTheScenes),
                 Just(ContentCategory::DeletedScene),
                 Just(ContentCategory::Interview),
+                Just(ContentCategory::Short),
+                Just(ContentCategory::Clip),
+                Just(ContentCategory::Scene),
+                Just(ContentCategory::Extras),
             ],
             season in prop_oneof![
                 Just(None),

@@ -10,3 +10,7 @@
 - Tests only validate struct construction, not behavioral invariants — behavioral coverage via integration tests
 - Duplicate `Source` entries cause duplicate stub warnings — CLI deduplication is Story 1.1 scope
 - Single source active + fails → reported as success with 0 downloads — pre-existing, correct behavior (no extras ≠ error)
+
+## Deferred from: code review of 2-1-extend-content-category-enum-and-organizer-mappings (2026-03-24)
+
+- `Clip` and `Scene` doc comments are semantically near-identical ("Movie scene clips" vs "Full scenes from the movie") — pre-existing design ambiguity; Story 2.2 owns classification logic and should clarify the distinction when assigning these categories
