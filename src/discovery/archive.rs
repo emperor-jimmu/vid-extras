@@ -121,10 +121,11 @@ struct ArchiveOrgDoc {
 
 /// Archive.org content discoverer
 ///
-/// Discovers movie extras from Archive.org, searching two sources:
-/// 1. General movie content for pre-2010 films (trailers, featurettes, etc.)
-/// 2. DVDXtras collection - contains EPK content, behind-the-scenes, deleted scenes
-///    from DVD releases (searched for all movies regardless of year)
+/// Discovers movie extras from Archive.org using three query strategies:
+/// 1. General movie content (trailers, featurettes, etc.) — all movies
+/// 2. Making-of content via `subject:"making of"` — all movies
+/// 3. DVDXtras collection — EPK content, behind-the-scenes, deleted scenes
+///    from DVD releases — all movies
 ///
 /// Returns detail page URLs in the format `https://archive.org/details/{identifier}`
 /// which are fully supported by yt-dlp's archive.org extractor.
@@ -165,6 +166,15 @@ impl ArchiveOrgDiscoverer {
         format!(
             "collection:DVDXtras AND (title:\"{}\" OR description:\"{}\")",
             title, title
+        )
+    }
+
+    /// Build Archive.org search query for making-of content
+    /// Searches for items with `subject:"making of"` for all movies regardless of year
+    fn build_making_of_query(title: &str) -> String {
+        format!(
+            "title:\"{}\" AND subject:\"making of\" AND mediatype:movies",
+            title
         )
     }
 
@@ -278,7 +288,7 @@ impl ArchiveOrgDiscoverer {
         Ok(search_result.response.docs)
     }
 
-    /// Search Archive.org general collection for a movie (pre-2010 only)
+    /// Search Archive.org general collection for a movie (all movies)
     async fn search_general(
         &self,
         title: &str,
@@ -293,6 +303,13 @@ impl ArchiveOrgDiscoverer {
     async fn search_dvdxtras(&self, title: &str) -> Result<Vec<ArchiveOrgDoc>, DiscoveryError> {
         let query = Self::build_dvdxtras_query(title);
         debug!("Searching Archive.org DVDXtras for: {}", title);
+        self.execute_search(&query).await
+    }
+
+    /// Search Archive.org for making-of content (all years)
+    async fn search_making_of(&self, title: &str) -> Result<Vec<ArchiveOrgDoc>, DiscoveryError> {
+        let query = Self::build_making_of_query(title);
+        debug!("Searching Archive.org making-of for: {}", title);
         self.execute_search(&query).await
     }
 
@@ -328,27 +345,34 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
 
         let mut all_docs = Vec::new();
 
-        // Search general Archive.org collection for pre-2010 movies
-        if movie.year < 2010 {
-            match self.search_general(&movie.title, movie.year).await {
-                Ok(docs) => {
-                    info!(
-                        "Found {} results from Archive.org general for {}",
-                        docs.len(),
-                        movie
-                    );
-                    all_docs.extend(docs);
-                }
-                Err(e) => {
-                    // Log but continue - DVDXtras search may still succeed
-                    info!("Archive.org general search failed for {}: {}", movie, e);
-                }
+        // Search general Archive.org collection for all movies
+        match self.search_general(&movie.title, movie.year).await {
+            Ok(docs) => {
+                info!(
+                    "Found {} results from Archive.org general for {}",
+                    docs.len(),
+                    movie
+                );
+                all_docs.extend(docs);
             }
-        } else {
-            debug!(
-                "Skipping Archive.org general search for {} - year {} is >= 2010",
-                movie, movie.year
-            );
+            Err(e) => {
+                info!("Archive.org general search failed for {}: {}", movie, e);
+            }
+        }
+
+        // Search Archive.org for making-of content (all movies)
+        match self.search_making_of(&movie.title).await {
+            Ok(docs) => {
+                info!(
+                    "Found {} results from Archive.org making-of for {}",
+                    docs.len(),
+                    movie
+                );
+                all_docs.extend(docs);
+            }
+            Err(e) => {
+                info!("Archive.org making-of search failed for {}: {}", movie, e);
+            }
         }
 
         // Search DVDXtras collection for all movies (EPK content from DVD releases)
@@ -608,6 +632,20 @@ mod tests {
         let source = ArchiveOrgDiscoverer::doc_to_video_source(doc);
         assert!(source.is_none());
     }
+
+    #[test]
+    fn test_build_making_of_query() {
+        let query = ArchiveOrgDiscoverer::build_making_of_query("The Matrix");
+        assert!(query.contains("title:\"The Matrix\""));
+        assert!(query.contains("subject:\"making of\""));
+        assert!(query.contains("mediatype:movies"));
+    }
+
+    #[test]
+    fn test_build_making_of_query_no_year() {
+        let query = ArchiveOrgDiscoverer::build_making_of_query("Inception");
+        assert!(!query.contains("year:"));
+    }
 }
 
 #[cfg(test)]
@@ -615,11 +653,11 @@ mod property_tests {
     use super::*;
     use proptest::prelude::*;
 
-    // Property 8: Archive.org Year-Based Querying (updated for DVDXtras)
+    // Property 8: Archive.org general query always includes year in query string
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
         #[test]
-        fn prop_archive_general_query_year_based(year in 1900u16..2100u16) {
+        fn prop_archive_general_query_includes_year(year in 1900u16..2100u16) {
             let query = ArchiveOrgDiscoverer::build_general_query("Test Movie", year);
 
             // General query should always include year constraint
@@ -661,6 +699,17 @@ mod property_tests {
 
             // DVDXtras query should contain title
             prop_assert!(dvdxtras_query.contains(&title_pattern));
+        }
+    }
+
+    // Property: Making-of query does not include year constraint
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+        #[test]
+        fn prop_making_of_query_no_year(title in "[A-Za-z ]{1,50}") {
+            let query = ArchiveOrgDiscoverer::build_making_of_query(&title);
+            prop_assert!(query.contains("subject:\"making of\""));
+            prop_assert!(!query.contains("year:"));
         }
     }
 

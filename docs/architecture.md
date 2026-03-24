@@ -97,7 +97,7 @@ The most complex subsystem. Organized into 16 focused modules:
 ```
 DiscoveryOrchestrator
 ├── TmdbDiscoverer          (TMDB API: search + video list)
-├── ArchiveOrgDiscoverer    (Archive.org: pre-2010 movies only)
+├── ArchiveOrgDiscoverer    (Archive.org: all movies — general, making-of, DVDXtras queries)
 └── YoutubeDiscoverer       (yt-dlp ytsearch5: always queried)
 ```
 
@@ -274,8 +274,7 @@ ProcessingSummary → terminal output
 ### Archive.org
 
 - **Search:** `GET https://archive.org/advancedsearch.php?q={query}&fl[]=identifier,title,subject,description,mediatype&output=json`
-- **Used for:** Movies released before 2010 only
-- **Two query strategies:** general EPK/making-of search + dvdxtras collection search
+- **Used for:** All movies — three query strategies: general EPK/extras, subject:"making of", and DVDXtras collection
 
 ### YouTube (via yt-dlp)
 
