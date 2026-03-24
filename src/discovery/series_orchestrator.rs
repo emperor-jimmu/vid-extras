@@ -160,6 +160,11 @@ impl SeriesDiscoveryOrchestrator {
             }
         }
 
+        // KinoCheck is intentionally NOT used for series: the KinoCheck API endpoint
+        // (https://api.kinocheck.de/movies?tmdb_id={id}) is a movie database. TMDB uses
+        // separate ID namespaces for movies and TV series, so querying it with a series ID
+        // would return wrong content or a 404. KinoCheck fallback is movie-only.
+
         if self.sources.contains(&Source::Youtube) {
             match self.youtube.discover_series_extras(series).await {
                 Ok(sources) => {
@@ -672,7 +677,7 @@ mod tests {
     fn test_series_discovery_orchestrator_creation_with_tvdb() {
         use tempfile::TempDir;
 
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("create temp dir");
         let orchestrator = SeriesDiscoveryOrchestrator::new_with_tvdb(
             "tmdb_key".to_string(),
             "tvdb_key".to_string(),

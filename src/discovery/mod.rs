@@ -3,6 +3,7 @@
 mod archive;
 mod fuzzy_matching;
 mod id_bridge;
+mod kinocheck;
 mod monitor_policy;
 mod orchestrator;
 mod season_pack;

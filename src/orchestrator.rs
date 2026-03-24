@@ -14,7 +14,7 @@ use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use tokio::sync::Semaphore;
 
 /// Shared context for series processing, bundling dependencies passed between phases
@@ -310,6 +310,9 @@ impl Orchestrator {
             info!("  Dry run: enabled (discovery only)");
         }
 
+        // Shared KinoCheck request counter — tracks API usage across both pipelines
+        let kinocheck_counter = Arc::new(AtomicU32::new(0));
+
         // Build series discovery — consumes tvdb_api_key, clones tmdb_api_key
         let series_discovery =
             if let (true, Some(tvdb_key)) = (config.series.specials, config.tvdb_api_key) {
@@ -342,10 +345,13 @@ impl Orchestrator {
                 config.tmdb_api_key.clone(),
                 config.discovery.sources.clone(),
                 browser.clone(),
+                kinocheck_counter.clone(),
             ),
-            None => {
-                DiscoveryOrchestrator::new(config.tmdb_api_key, config.discovery.sources.clone())
-            }
+            None => DiscoveryOrchestrator::new(
+                config.tmdb_api_key,
+                config.discovery.sources.clone(),
+                kinocheck_counter,
+            ),
         };
 
         // Build downloader — consumes cookies_from_browser
@@ -528,7 +534,10 @@ impl Orchestrator {
 
         // Phase 2: Discovery
         info!("Phase 2: Discovering content for {}", movie);
-        let (sources, source_results) = ctx.discovery.discover_all(&movie, &ctx.library_movies).await;
+        let (sources, source_results) = ctx
+            .discovery
+            .discover_all(&movie, &ctx.library_movies)
+            .await;
 
         // Dry-run: display results and return early — no file I/O (AC3/NFR5)
         if ctx.dry_run {

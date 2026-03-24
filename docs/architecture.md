@@ -67,7 +67,7 @@ Key types:
 - `ConversionResult` — path to converted file, category, success/failure
 - `DoneMarker` — finished_at (ISO 8601), version
 - `ContentCategory` — enum: Trailer, Featurette, BehindTheScenes, DeletedScene
-- `SourceMode` — enum: All, YoutubeOnly
+- `Source` — enum: Tmdb, Archive, Youtube, Dailymotion, Vimeo, Bilibili (user-selectable sources)
 - `HardwareAccel` — enum: Nvenc, Qsv, VideoToolbox, Software
 
 ### `error.rs` — Centralized Error Types
@@ -98,10 +98,11 @@ The most complex subsystem. Organized into 16 focused modules:
 DiscoveryOrchestrator
 ├── TmdbDiscoverer          (TMDB API: search + video list + collection sibling videos)
 ├── ArchiveOrgDiscoverer    (Archive.org: all movies — general, making-of, DVDXtras queries)
-└── YoutubeDiscoverer       (yt-dlp ytsearch5: always queried)
+├── YoutubeDiscoverer       (yt-dlp ytsearch5: always queried)
+└── KinoCheckDiscoverer     (implicit fallback when TMDB returns 0 videos)
 ```
 
-`DiscoveryOrchestrator` runs all three sources concurrently and aggregates results. In `YoutubeOnly` mode, only `YoutubeDiscoverer` runs.
+`DiscoveryOrchestrator` runs all three sources concurrently and aggregates results. In `YoutubeOnly` mode, only `YoutubeDiscoverer` runs. When TMDB is active but returns zero videos for a movie, `KinoCheckDiscoverer` is queried as an internal fallback using the movie's TMDB ID.
 
 `title_matching.rs` provides shared filtering logic used by all movie discoverers:
 - Title normalization (lowercase, remove special chars, collapse whitespace)
@@ -116,6 +117,7 @@ DiscoveryOrchestrator
 SeriesDiscoveryOrchestrator
 ├── TmdbSeriesDiscoverer    (TMDB TV API: series extras + Season 0)
 ├── YoutubeSeriesDiscoverer (yt-dlp: series-level + season-specific queries)
+├── KinoCheckDiscoverer     (implicit fallback when TMDB returns 0 videos)
 ├── TvdbClient              (TVDB API v4: Season 0 episode metadata)
 │   └── IdBridge            (TMDB→TVDB ID resolution)
 │       └── IdMappingCache  (file-based, no expiration)
@@ -271,6 +273,12 @@ ProcessingSummary → terminal output
 - **Episode translation:** `GET /v4/episodes/{id}/translations/eng`
 - **Series search:** `GET /v4/search?query={title}&type=series` (fallback ID resolution)
 - **Network resilience:** 2-second retry on timeout, re-authenticate on 401
+
+### KinoCheck API
+
+- **Auth:** None (free public API, 1,000 req/day limit)
+- **Movie lookup:** `GET https://api.kinocheck.de/movies?tmdb_id={id}` — returns single trailer object with YouTube video ID
+- **Used for:** Implicit TMDB fallback when TMDB returns zero videos for a movie or series
 
 ### Archive.org
 

@@ -3,9 +3,12 @@
 use crate::models::{ContentCategory, MovieEntry, Source, SourceType, VideoSource};
 use log::{info, warn};
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 
 use super::ContentDiscoverer;
 use super::archive::ArchiveOrgDiscoverer;
+use super::kinocheck::KinoCheckDiscoverer;
 use super::tmdb::TmdbDiscoverer;
 use super::youtube::YoutubeDiscoverer;
 
@@ -25,26 +28,38 @@ pub struct DiscoveryOrchestrator {
     tmdb: TmdbDiscoverer,
     archive: ArchiveOrgDiscoverer,
     youtube: YoutubeDiscoverer,
+    kinocheck: KinoCheckDiscoverer,
     sources: Vec<Source>,
 }
 
 impl DiscoveryOrchestrator {
     /// Creates a new DiscoveryOrchestrator with the specified sources
-    pub fn new(tmdb_api_key: String, sources: Vec<Source>) -> Self {
+    pub fn new(
+        tmdb_api_key: String,
+        sources: Vec<Source>,
+        kinocheck_request_count: Arc<AtomicU32>,
+    ) -> Self {
         Self {
             tmdb: TmdbDiscoverer::new(tmdb_api_key),
             archive: ArchiveOrgDiscoverer::new(),
             youtube: YoutubeDiscoverer::new(),
+            kinocheck: KinoCheckDiscoverer::new(kinocheck_request_count),
             sources,
         }
     }
 
     /// Creates a new DiscoveryOrchestrator with browser cookie authentication for YouTube
-    pub fn with_cookies(tmdb_api_key: String, sources: Vec<Source>, browser: String) -> Self {
+    pub fn with_cookies(
+        tmdb_api_key: String,
+        sources: Vec<Source>,
+        browser: String,
+        kinocheck_request_count: Arc<AtomicU32>,
+    ) -> Self {
         Self {
             tmdb: TmdbDiscoverer::new(tmdb_api_key),
             archive: ArchiveOrgDiscoverer::new(),
             youtube: YoutubeDiscoverer::with_cookies(browser),
+            kinocheck: KinoCheckDiscoverer::new(kinocheck_request_count),
             sources,
         }
     }
@@ -70,6 +85,7 @@ impl DiscoveryOrchestrator {
     ) -> (Vec<VideoSource>, Vec<SourceResult>) {
         let mut all_sources = Vec::new();
         let mut source_results = Vec::new();
+        let mut tmdb_movie_id: Option<u64> = None;
 
         // Fetch TMDB collection metadata only when at least one source that uses it is active.
         // YouTube filtering uses collection titles to exclude trailers for other films in the same
@@ -85,7 +101,8 @@ impl DiscoveryOrchestrator {
 
         if self.sources.contains(&Source::Tmdb) {
             match self.tmdb.discover_with_library(movie, library).await {
-                Ok(sources) => {
+                Ok((sources, movie_id)) => {
+                    tmdb_movie_id = movie_id;
                     info!("Found {} sources from TMDB for {}", sources.len(), movie);
                     source_results.push(SourceResult {
                         source: Source::Tmdb,
@@ -101,6 +118,33 @@ impl DiscoveryOrchestrator {
                         videos_found: 0,
                         error: Some(e.to_string()),
                     });
+                }
+            }
+        }
+
+        // KinoCheck fallback: TMDB active + movie found on TMDB + returned 0 videos (no error).
+        // Note: `tmdb_movie_id` being Some already guarantees the movie was found; the
+        // `videos_found == 0 && error.is_none()` condition confirms TMDB succeeded but had
+        // no videos (as opposed to a search failure or a movie not found on TMDB).
+        let tmdb_found_zero = source_results
+            .iter()
+            .any(|r| r.source == Source::Tmdb && r.videos_found == 0 && r.error.is_none());
+
+        if self.sources.contains(&Source::Tmdb)
+            && tmdb_found_zero
+            && let Some(movie_id) = tmdb_movie_id
+        {
+            match self.kinocheck.discover_for_tmdb_id(movie_id).await {
+                Ok(sources) => {
+                    info!(
+                        "KinoCheck fallback found {} videos for {}",
+                        sources.len(),
+                        movie
+                    );
+                    all_sources.extend(sources);
+                }
+                Err(e) => {
+                    info!("KinoCheck fallback failed for {}: {}", movie, e);
                 }
             }
         }

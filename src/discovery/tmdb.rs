@@ -392,14 +392,14 @@ impl TmdbDiscoverer {
         &self,
         movie: &MovieEntry,
         library: &[MovieEntry],
-    ) -> Result<Vec<VideoSource>, DiscoveryError> {
+    ) -> Result<(Vec<VideoSource>, Option<u64>), DiscoveryError> {
         info!("Discovering TMDB content for: {}", movie);
 
         let (movie_id, collection_opt) = match self.search_movie(&movie.title, movie.year).await {
             Ok(Some(result)) => result,
             Ok(None) => {
                 info!("No TMDB match found for: {}", movie);
-                return Ok(Vec::new());
+                return Ok((Vec::new(), None));
             }
             Err(e) => {
                 error!("TMDB search failed for {}: {}", movie, e);
@@ -434,7 +434,13 @@ impl TmdbDiscoverer {
         // Fetch collection sibling videos if movie belongs to a collection.
         // Siblings already in the library are skipped — they will fetch their own extras.
         // Requests are staggered by 100ms to avoid TMDB rate limits.
-        if let Some(coll) = collection_opt {
+        //
+        // Skip entirely in single-folder mode (library.len() <= 1): we have no library
+        // context to determine which siblings the user actually owns, so fetching extras
+        // for all siblings would pull in content for films that may not be present.
+        if library.len() > 1
+            && let Some(coll) = collection_opt
+        {
             let parts = match self.fetch_collection(coll.id).await {
                 Ok(p) => p,
                 Err(e) => {
@@ -496,7 +502,7 @@ impl TmdbDiscoverer {
             }
         }
 
-        Ok(sources)
+        Ok((sources, Some(movie_id)))
     }
 }
 
@@ -504,7 +510,8 @@ impl ContentDiscoverer for TmdbDiscoverer {
     async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
         // No library context — collection siblings are not filtered.
         // Use discover_with_library when the scanned library is available.
-        self.discover_with_library(movie, &[]).await
+        let (sources, _movie_id) = self.discover_with_library(movie, &[]).await?;
+        Ok(sources)
     }
 }
 
@@ -693,8 +700,14 @@ mod tests {
             id: 100,
             title: "Iron Man 3".to_string(),
         };
-        assert!(TmdbDiscoverer::is_sibling_in_library(&sibling_present, &library));
-        assert!(!TmdbDiscoverer::is_sibling_in_library(&sibling_absent, &library));
+        assert!(TmdbDiscoverer::is_sibling_in_library(
+            &sibling_present,
+            &library
+        ));
+        assert!(!TmdbDiscoverer::is_sibling_in_library(
+            &sibling_absent,
+            &library
+        ));
     }
 
     #[test]
