@@ -3,8 +3,57 @@
 use crate::error::OrganizerError;
 use crate::models::{ContentCategory, ConversionResult, DoneMarker, SpecialEpisode};
 use log::{debug, info, warn};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
+
+/// Check if a filename is opaque numeric (stem consists entirely of digits)
+fn is_opaque_numeric_filename(path: &Path) -> bool {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .is_some_and(|stem| !stem.is_empty() && stem.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// Determine the final filename for a file being organized.
+/// Opaque numeric filenames (e.g., `10032.mp4`) are normalized to `{Category} #{N}.{ext}`.
+/// Descriptive filenames are preserved as-is. All results are sanitized for Windows compatibility.
+fn normalize_filename(path: &Path, category: ContentCategory, counter: usize) -> String {
+    let raw = if is_opaque_numeric_filename(path) {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("mp4")
+            .to_lowercase();
+        format!("{} #{}.{}", category, counter, ext)
+    } else {
+        // Preserve the original filename. If the path has no filename component
+        // (e.g., a bare directory path), log a warning and skip — returning an
+        // empty string here would cause move_file to target the directory itself.
+        match path.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name.to_string(),
+            None => {
+                warn!(
+                    "normalize_filename: path {:?} has no filename component, skipping",
+                    path
+                );
+                return String::new();
+            }
+        }
+    };
+    sanitize_filename(&raw)
+}
+
+/// Sanitize filename for Windows compatibility.
+/// Handles both ASCII and Unicode variants of special characters.
+fn sanitize_filename(filename: &str) -> String {
+    filename
+        .replace(['|', '<', '>', ':', '/', '\\', '*'], "-")
+        .replace('"', "'")
+        .replace('?', "")
+        .replace(['｜', '＜', '＞', '：', '／', '＼', '＊'], "-")
+        .replace(['\u{201c}', '\u{201d}'], "'")
+        .replace('？', "")
+}
 
 /// Organizer handles file organization into Jellyfin-compatible directory structure
 pub struct Organizer {
@@ -63,11 +112,23 @@ impl Organizer {
         }
 
         // Move files to their subdirectories
+        let mut category_counters: HashMap<ContentCategory, usize> = HashMap::new();
         for (category, files) in files_by_category {
             let subdir = self.ensure_subdirectory(category).await?;
 
             for file_path in files {
-                self.move_file(&file_path, &subdir).await?;
+                let counter = category_counters.entry(category).or_insert(0);
+                *counter += 1;
+                let n = *counter;
+                let dest_filename = normalize_filename(&file_path, category, n);
+                if dest_filename.is_empty() {
+                    warn!(
+                        "Skipping file with no valid filename component: {:?}",
+                        file_path
+                    );
+                    continue;
+                }
+                self.move_file(&file_path, &subdir, &dest_filename).await?;
             }
         }
 
@@ -104,13 +165,14 @@ impl Organizer {
         Ok(subdir_path)
     }
 
-    /// Move a file to the target subdirectory
-    async fn move_file(&self, source: &Path, dest_dir: &Path) -> Result<(), OrganizerError> {
-        let file_name = source
-            .file_name()
-            .ok_or_else(|| OrganizerError::FileMove("Invalid source path".to_string()))?;
-
-        let dest_path = dest_dir.join(file_name);
+    /// Move a file to the target subdirectory with the given destination filename
+    async fn move_file(
+        &self,
+        source: &Path,
+        dest_dir: &Path,
+        dest_filename: &str,
+    ) -> Result<(), OrganizerError> {
+        let dest_path = dest_dir.join(dest_filename);
 
         debug!("Moving file: {:?} -> {:?}", source, dest_path);
 
@@ -267,11 +329,23 @@ impl SeriesOrganizer {
         }
 
         // Move files to their subdirectories
+        let mut category_counters: HashMap<ContentCategory, usize> = HashMap::new();
         for (category, files) in files_by_category {
             let subdir = self.ensure_subdirectory(category, season).await?;
 
             for file_path in files {
-                self.move_file(&file_path, &subdir).await?;
+                let counter = category_counters.entry(category).or_insert(0);
+                *counter += 1;
+                let n = *counter;
+                let dest_filename = normalize_filename(&file_path, category, n);
+                if dest_filename.is_empty() {
+                    warn!(
+                        "Skipping file with no valid filename component: {:?}",
+                        file_path
+                    );
+                    continue;
+                }
+                self.move_file(&file_path, &subdir, &dest_filename).await?;
             }
         }
 
@@ -451,13 +525,14 @@ impl SeriesOrganizer {
         Ok(subdir_path)
     }
 
-    /// Move a file to the target subdirectory
-    async fn move_file(&self, source: &Path, dest_dir: &Path) -> Result<(), OrganizerError> {
-        let file_name = source
-            .file_name()
-            .ok_or_else(|| OrganizerError::FileMove("Invalid source path".to_string()))?;
-
-        let dest_path = dest_dir.join(file_name);
+    /// Move a file to the target subdirectory with the given destination filename
+    async fn move_file(
+        &self,
+        source: &Path,
+        dest_dir: &Path,
+        dest_filename: &str,
+    ) -> Result<(), OrganizerError> {
+        let dest_path = dest_dir.join(dest_filename);
 
         debug!("Moving file: {:?} -> {:?}", source, dest_path);
 
@@ -564,7 +639,7 @@ mod tests {
 
         let organizer = Organizer::new(movie_path.clone());
         organizer
-            .move_file(&source_file, &trailers_dir)
+            .move_file(&source_file, &trailers_dir, "test_trailer.mp4")
             .await
             .unwrap();
 
@@ -1098,6 +1173,265 @@ mod tests {
         assert!(series_path.join("Season 01").exists());
         // Verify file was not moved
         assert!(file.exists());
+    }
+
+    // --- Tests for Story 3.1: Numeric Filename Normalization ---
+
+    #[test]
+    fn test_is_opaque_numeric_filename() {
+        // Pure digits → true
+        assert!(is_opaque_numeric_filename(Path::new("10032.mp4")));
+        assert!(is_opaque_numeric_filename(Path::new("98765.mkv")));
+        assert!(is_opaque_numeric_filename(Path::new("0.mp4")));
+        // No extension → true (stem is still digits)
+        assert!(is_opaque_numeric_filename(Path::new("12345")));
+
+        // Alphabetic stem → false
+        assert!(!is_opaque_numeric_filename(Path::new("trailer.mp4")));
+        // Mixed → false
+        assert!(!is_opaque_numeric_filename(Path::new("trailer1.mp4")));
+        assert!(!is_opaque_numeric_filename(Path::new("1trailer.mp4")));
+        // Empty stem edge case
+        assert!(!is_opaque_numeric_filename(Path::new(".mp4")));
+        assert!(!is_opaque_numeric_filename(Path::new("")));
+    }
+
+    #[test]
+    fn test_normalize_filename_opaque_numeric() {
+        // Opaque numeric → "{Category} #{N}.{ext}"
+        let result = normalize_filename(Path::new("10032.mp4"), ContentCategory::Trailer, 1);
+        assert_eq!(result, "Trailer #1.mp4");
+
+        let result =
+            normalize_filename(Path::new("99999.MKV"), ContentCategory::BehindTheScenes, 3);
+        assert_eq!(result, "Behind the Scenes #3.mkv");
+    }
+
+    #[test]
+    fn test_normalize_filename_descriptive_preserved() {
+        // Descriptive filename → preserved as-is (after sanitization)
+        let result = normalize_filename(
+            Path::new("Official Trailer.mp4"),
+            ContentCategory::Trailer,
+            1,
+        );
+        assert_eq!(result, "Official Trailer.mp4");
+    }
+
+    #[test]
+    fn test_normalize_filename_sanitization_applied() {
+        // Sanitization applied to both branches
+        // Opaque numeric with no special chars — just verify format
+        let result = normalize_filename(Path::new("555.mp4"), ContentCategory::Featurette, 2);
+        assert_eq!(result, "Featurette #2.mp4");
+
+        // Descriptive with special chars → sanitized
+        let result = normalize_filename(
+            Path::new("Behind: The Scenes.mp4"),
+            ContentCategory::BehindTheScenes,
+            1,
+        );
+        assert_eq!(result, "Behind- The Scenes.mp4");
+    }
+
+    #[test]
+    fn test_sanitize_filename_module_level() {
+        // ASCII special chars
+        assert_eq!(sanitize_filename("a|b<c>d:e/f\\g*h"), "a-b-c-d-e-f-g-h");
+        assert_eq!(sanitize_filename("say \"hello\""), "say 'hello'");
+        assert_eq!(sanitize_filename("what?"), "what");
+
+        // Unicode variants
+        assert_eq!(sanitize_filename("a｜b＜c＞d"), "a-b-c-d");
+        assert_eq!(sanitize_filename("\u{201c}hi\u{201d}"), "'hi'");
+        assert_eq!(sanitize_filename("what？"), "what");
+
+        // Clean string unchanged
+        assert_eq!(sanitize_filename("clean name.mp4"), "clean name.mp4");
+    }
+
+    #[tokio::test]
+    async fn test_organize_normalizes_numeric_filenames() {
+        let temp = TempDir::new().expect("failed to create temp dir");
+        let movie_path = temp.path().join("Movie (2020)");
+        fs::create_dir(&movie_path).await.expect("create movie dir");
+
+        let temp_dir = temp.path().join("tmp_downloads");
+        fs::create_dir(&temp_dir).await.expect("create temp dir");
+
+        // Two numeric files in the same category
+        let file1 = temp_dir.join("10032.mp4");
+        let file2 = temp_dir.join("99887.mp4");
+        fs::write(&file1, b"trailer 1").await.expect("write file1");
+        fs::write(&file2, b"trailer 2").await.expect("write file2");
+
+        let conversions = vec![
+            ConversionResult {
+                input_path: temp_dir.join("10032.mp4"),
+                output_path: file1,
+                category: ContentCategory::Trailer,
+                season_number: None,
+                success: true,
+                error: None,
+            },
+            ConversionResult {
+                input_path: temp_dir.join("99887.mp4"),
+                output_path: file2,
+                category: ContentCategory::Trailer,
+                season_number: None,
+                success: true,
+                error: None,
+            },
+        ];
+
+        let organizer = Organizer::new(movie_path.clone());
+        organizer
+            .organize(conversions, &temp_dir)
+            .await
+            .expect("organize");
+
+        // Both should be renamed to Trailer #1.mp4 and Trailer #2.mp4
+        let trailers_dir = movie_path.join("trailers");
+        assert!(trailers_dir.join("Trailer #1.mp4").exists());
+        assert!(trailers_dir.join("Trailer #2.mp4").exists());
+    }
+
+    #[tokio::test]
+    async fn test_organize_preserves_descriptive_filenames() {
+        let temp = TempDir::new().expect("failed to create temp dir");
+        let movie_path = temp.path().join("Movie (2020)");
+        fs::create_dir(&movie_path).await.expect("create movie dir");
+
+        let temp_dir = temp.path().join("tmp_downloads");
+        fs::create_dir(&temp_dir).await.expect("create temp dir");
+
+        let file = temp_dir.join("Official Trailer.mp4");
+        fs::write(&file, b"trailer content")
+            .await
+            .expect("write file");
+
+        let conversions = vec![ConversionResult {
+            input_path: temp_dir.join("Official Trailer.mp4"),
+            output_path: file,
+            category: ContentCategory::Trailer,
+            season_number: None,
+            success: true,
+            error: None,
+        }];
+
+        let organizer = Organizer::new(movie_path.clone());
+        organizer
+            .organize(conversions, &temp_dir)
+            .await
+            .expect("organize");
+
+        // Descriptive filename should be preserved
+        assert!(movie_path.join("trailers/Official Trailer.mp4").exists());
+    }
+
+    #[tokio::test]
+    async fn test_series_organizer_normalizes_numeric_filenames() {
+        let temp = TempDir::new().expect("failed to create temp dir");
+        let series_path = temp.path().join("Breaking Bad (2008)");
+        fs::create_dir(&series_path)
+            .await
+            .expect("create series dir");
+
+        let temp_dir = temp.path().join("tmp_downloads");
+        fs::create_dir(&temp_dir).await.expect("create temp dir");
+
+        let file1 = temp_dir.join("44321.mp4");
+        let file2 = temp_dir.join("55678.mp4");
+        fs::write(&file1, b"trailer 1").await.expect("write file1");
+        fs::write(&file2, b"trailer 2").await.expect("write file2");
+
+        let conversions = vec![
+            ConversionResult {
+                input_path: temp_dir.join("44321.mp4"),
+                output_path: file1,
+                category: ContentCategory::Trailer,
+                season_number: None,
+                success: true,
+                error: None,
+            },
+            ConversionResult {
+                input_path: temp_dir.join("55678.mp4"),
+                output_path: file2,
+                category: ContentCategory::Trailer,
+                season_number: None,
+                success: true,
+                error: None,
+            },
+        ];
+
+        let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
+        organizer
+            .organize_extras(conversions, None)
+            .await
+            .expect("organize_extras");
+
+        let trailers_dir = series_path.join("trailers");
+        assert!(trailers_dir.join("Trailer #1.mp4").exists());
+        assert!(trailers_dir.join("Trailer #2.mp4").exists());
+    }
+
+    #[test]
+    fn test_normalize_filename_no_extension() {
+        // Numeric file with no extension → fallback to "mp4"
+        let result = normalize_filename(Path::new("12345"), ContentCategory::Trailer, 1);
+        assert_eq!(result, "Trailer #1.mp4");
+
+        let result = normalize_filename(Path::new("99999"), ContentCategory::Featurette, 2);
+        assert_eq!(result, "Featurette #2.mp4");
+    }
+
+    #[tokio::test]
+    async fn test_organize_normalizes_numeric_filenames_source_gone() {
+        // Verify source files are removed (moved, not copied) after organize
+        let temp = TempDir::new().expect("failed to create temp dir");
+        let movie_path = temp.path().join("Movie (2020)");
+        fs::create_dir(&movie_path).await.expect("create movie dir");
+
+        let temp_dir = temp.path().join("tmp_downloads");
+        fs::create_dir(&temp_dir).await.expect("create temp dir");
+
+        let file1 = temp_dir.join("10032.mp4");
+        let file2 = temp_dir.join("99887.mp4");
+        fs::write(&file1, b"trailer 1").await.expect("write file1");
+        fs::write(&file2, b"trailer 2").await.expect("write file2");
+
+        let conversions = vec![
+            ConversionResult {
+                input_path: temp_dir.join("10032.mp4"),
+                output_path: file1.clone(),
+                category: ContentCategory::Trailer,
+                season_number: None,
+                success: true,
+                error: None,
+            },
+            ConversionResult {
+                input_path: temp_dir.join("99887.mp4"),
+                output_path: file2.clone(),
+                category: ContentCategory::Trailer,
+                season_number: None,
+                success: true,
+                error: None,
+            },
+        ];
+
+        let organizer = Organizer::new(movie_path.clone());
+        organizer
+            .organize(conversions, &temp_dir)
+            .await
+            .expect("organize");
+
+        // Renamed files exist at destination
+        let trailers_dir = movie_path.join("trailers");
+        assert!(trailers_dir.join("Trailer #1.mp4").exists());
+        assert!(trailers_dir.join("Trailer #2.mp4").exists());
+
+        // Source numeric files are gone (temp dir itself is cleaned up by organize)
+        assert!(!temp_dir.exists());
     }
 }
 

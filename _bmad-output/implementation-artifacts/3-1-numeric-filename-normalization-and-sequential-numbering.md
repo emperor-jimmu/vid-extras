@@ -1,6 +1,6 @@
 # Story 3.1: Numeric Filename Normalization and Sequential Numbering
 
-Status: draft
+Status: done
 
 ## Story
 
@@ -21,42 +21,42 @@ So that my Jellyfin library has clean, meaningful filenames.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add `Copy + Hash` derives to `ContentCategory` in `src/models.rs` (prerequisite for counter HashMap)
-  - [ ] 1.1 Add `Copy` to the `#[derive(...)]` list on `ContentCategory` — it is a fieldless enum so `Copy` is safe and idiomatic
-  - [ ] 1.2 Add `Hash` to the same derive list — required for `HashMap<ContentCategory, usize>`
-  - [ ] 1.3 Run `cargo build` immediately to confirm no downstream breakage from the new derives
+- [x] Task 1: Add `Copy + Hash` derives to `ContentCategory` in `src/models.rs` (prerequisite for counter HashMap)
+  - [x] 1.1 Add `Copy` to the `#[derive(...)]` list on `ContentCategory` — it is a fieldless enum so `Copy` is safe and idiomatic
+  - [x] 1.2 Add `Hash` to the same derive list — required for `HashMap<ContentCategory, usize>`
+  - [x] 1.3 Run `cargo build` immediately to confirm no downstream breakage from the new derives
 
-- [ ] Task 2: Add `is_opaque_numeric_filename()` helper function in `src/organizer.rs` (AC: #1)
-  - [ ] 1.1 Add a private `fn is_opaque_numeric_filename(path: &Path) -> bool` that returns `true` when the file stem consists entirely of ASCII digits (use `chars().all(|c| c.is_ascii_digit())`)
-  - [ ] 1.2 Return `false` for empty stems
-  - [ ] 1.3 Add unit test `test_is_opaque_numeric_filename` covering: pure digits (`"10032"` → true), digits with extension (`"10032.mp4"` → true via stem extraction), alphabetic stem (`"trailer"` → false), mixed (`"trailer1"` → false), empty stem edge case
+- [x] Task 2: Add `is_opaque_numeric_filename()` helper function in `src/organizer.rs` (AC: #1)
+  - [x] 1.1 Add a private `fn is_opaque_numeric_filename(path: &Path) -> bool` that returns `true` when the file stem consists entirely of ASCII digits (use `chars().all(|c| c.is_ascii_digit())`)
+  - [x] 1.2 Return `false` for empty stems
+  - [x] 1.3 Add unit test `test_is_opaque_numeric_filename` covering: pure digits (`"10032"` → true), digits with extension (`"10032.mp4"` → true via stem extraction), alphabetic stem (`"trailer"` → false), mixed (`"trailer1"` → false), empty stem edge case
 
-- [ ] Task 2: Add `normalize_filename()` helper function in `src/organizer.rs` (AC: #2, #4, #5)
-  - [ ] 2.1 Add a private `fn normalize_filename(path: &Path, category: ContentCategory, counter: usize) -> String` that:
+- [x] Task 2: Add `normalize_filename()` helper function in `src/organizer.rs` (AC: #2, #4, #5)
+  - [x] 2.1 Add a private `fn normalize_filename(path: &Path, category: ContentCategory, counter: usize) -> String` that:
     - If `is_opaque_numeric_filename(path)` → returns `"{category} #{counter}.{ext}"` where `{category}` is `category.to_string()` and `{ext}` is the original extension (lowercased)
     - Otherwise → returns the original filename as-is (descriptive names preserved)
-  - [ ] 2.2 Apply `Downloader::sanitize_filename()` to the result in both branches — import or inline the same logic (see note in Dev Notes about avoiding cross-module dependency)
-  - [ ] 2.3 Add unit tests covering: opaque numeric → normalized, descriptive → preserved, extension preserved, sanitization applied to both branches
+  - [x] 2.2 Apply `Downloader::sanitize_filename()` to the result in both branches — import or inline the same logic (see note in Dev Notes about avoiding cross-module dependency)
+  - [x] 2.3 Add unit tests covering: opaque numeric → normalized, descriptive → preserved, extension preserved, sanitization applied to both branches
 
-- [ ] Task 3: Thread per-category counters through `Organizer::organize()` (AC: #3, #6)
-  - [ ] 3.1 In `Organizer::organize()`, after grouping `files_by_category`, initialize a `HashMap<ContentCategory, usize>` counter map (all starting at 0)
-  - [ ] 3.2 In the file-move loop, before calling `move_file()`, increment the counter for the current category and call `normalize_filename()` to determine the final destination filename
-  - [ ] 3.3 Update `move_file()` to accept an explicit `dest_filename: &str` parameter instead of deriving the filename from the source path — the caller now controls the final name
-  - [ ] 3.4 Update all existing call sites of `move_file()` in `Organizer` to pass the filename (for the non-normalize path, pass the original filename)
-  - [ ] 3.5 Add unit test `test_organize_normalizes_numeric_filenames` — create temp dir with two numeric `.mp4` files in the same category, call `organize()`, assert both are renamed to `Trailer #1.mp4` and `Trailer #2.mp4`
-  - [ ] 3.6 Add unit test `test_organize_preserves_descriptive_filenames` — create temp dir with a descriptive `.mp4` file, call `organize()`, assert filename is unchanged
+- [x] Task 3: Thread per-category counters through `Organizer::organize()` (AC: #3, #6)
+  - [x] 3.1 In `Organizer::organize()`, after grouping `files_by_category`, initialize a `HashMap<ContentCategory, usize>` counter map (all starting at 0)
+  - [x] 3.2 In the file-move loop, before calling `move_file()`, increment the counter for the current category and call `normalize_filename()` to determine the final destination filename
+  - [x] 3.3 Update `move_file()` to accept an explicit `dest_filename: &str` parameter instead of deriving the filename from the source path — the caller now controls the final name
+  - [x] 3.4 Update all existing call sites of `move_file()` in `Organizer` to pass the filename (for the non-normalize path, pass the original filename)
+  - [x] 3.5 Add unit test `test_organize_normalizes_numeric_filenames` — create temp dir with two numeric `.mp4` files in the same category, call `organize()`, assert both are renamed to `Trailer #1.mp4` and `Trailer #2.mp4`
+  - [x] 3.6 Add unit test `test_organize_preserves_descriptive_filenames` — create temp dir with a descriptive `.mp4` file, call `organize()`, assert filename is unchanged
 
-- [ ] Task 4: Thread per-category counters through `SeriesOrganizer::organize_extras()` (AC: #3, #6)
-  - [ ] 4.1 Apply the same counter + `normalize_filename()` pattern to `SeriesOrganizer::organize_extras()` as done in Task 3 for `Organizer::organize()`
-  - [ ] 4.2 Update `SeriesOrganizer::move_file()` to accept `dest_filename: &str` parameter (same change as Task 3.3)
-  - [ ] 4.3 Verify `SeriesOrganizer::organize_specials()` is NOT modified — it uses its own Sonarr naming and must remain unchanged
-  - [ ] 4.4 Add unit test `test_series_organizer_normalizes_numeric_filenames` mirroring Task 3.5
+- [x] Task 4: Thread per-category counters through `SeriesOrganizer::organize_extras()` (AC: #3, #6)
+  - [x] 4.1 Apply the same counter + `normalize_filename()` pattern to `SeriesOrganizer::organize_extras()` as done in Task 3 for `Organizer::organize()`
+  - [x] 4.2 Update `SeriesOrganizer::move_file()` to accept `dest_filename: &str` parameter (same change as Task 3.3)
+  - [x] 4.3 Verify `SeriesOrganizer::organize_specials()` is NOT modified — it uses its own Sonarr naming and must remain unchanged
+  - [x] 4.4 Add unit test `test_series_organizer_normalizes_numeric_filenames` mirroring Task 3.5
 
-- [ ] Task 5: Quality gate (AC: #8)
-  - [ ] 5.1 Run `cargo build` — fix any errors
-  - [ ] 5.2 Run `cargo test` — fix any failures
-  - [ ] 5.3 Run `cargo clippy -- -D warnings` — fix any warnings
-  - [ ] 5.4 Run `cargo fmt -- --check` — fix any formatting issues
+- [x] Task 5: Quality gate (AC: #8)
+  - [x] 5.1 Run `cargo build` — fix any errors
+  - [x] 5.2 Run `cargo test` — fix any failures
+  - [x] 5.3 Run `cargo clippy -- -D warnings` — fix any warnings
+  - [x] 5.4 Run `cargo fmt -- --check` — fix any formatting issues
 
 ## Dev Notes
 
@@ -209,3 +209,53 @@ These tests use real filenames (not numeric), so they exercise the "preserve des
 - [Source: src/organizer.rs — Organizer::organize(), move_file(), SeriesOrganizer::organize_extras(), organize_specials(), sanitize_filename()]
 - [Source: src/models.rs — ContentCategory Display impl, subdirectory(), ConversionResult]
 - [Source: src/downloader.rs — sanitize_filename() reference implementation]
+
+## Dev Agent Record
+
+### Implementation Plan
+
+- Task 1: `ContentCategory` already had `Copy` and `Hash` derives — no changes needed.
+- Task 2 (is_opaque_numeric): Added `is_opaque_numeric_filename()` as module-level private fn using `file_stem()` + `chars().all(is_ascii_digit)`.
+- Task 2 (normalize_filename): Added `normalize_filename()` as module-level private fn. Opaque numeric → `{Category} #{N}.{ext}` with lowercased extension. Descriptive → preserved as-is. Both branches sanitized.
+- Task 2 (sanitize_filename): Added module-level `sanitize_filename()` replicating `downloader.rs` logic (ASCII + Unicode variants). Did NOT modify `SeriesOrganizer::sanitize_filename()`.
+- Task 3: Added `HashMap<ContentCategory, usize>` counter in `Organizer::organize()`. Updated `move_file()` signature to accept `dest_filename: &str`. Updated `test_move_file_success` call site.
+- Task 4: Same counter pattern in `SeriesOrganizer::organize_extras()`. Updated `SeriesOrganizer::move_file()` signature. Verified `organize_specials()` untouched.
+- Task 5: Quality gate passed — build, test (542 total: 493 lib + 15 main integration + 34 series integration), clippy, fmt all clean.
+
+### Debug Log
+
+No issues encountered during implementation.
+
+### Completion Notes
+
+All 5 tasks complete. Added 3 helper functions (`is_opaque_numeric_filename`, `normalize_filename`, `sanitize_filename`) and 8 new unit tests. All existing tests pass without regression. `SeriesOrganizer::sanitize_filename()` Unicode inconsistency logged to `deferred-work.md`.
+
+## File List
+
+- `src/organizer.rs` — Added `is_opaque_numeric_filename()`, `normalize_filename()`, `sanitize_filename()` helpers; updated `Organizer::organize()` and `SeriesOrganizer::organize_extras()` with per-category counters; updated both `move_file()` signatures; added 8 new tests
+- `_bmad-output/implementation-artifacts/deferred-work.md` — Added `SeriesOrganizer::sanitize_filename()` Unicode gap entry
+
+## Change Log
+
+- 2026-03-24: Implemented Story 3.1 — Numeric filename normalization with `{Category} #{N}.{ext}` pattern, per-category sequential counters in both `Organizer` and `SeriesOrganizer`, descriptive filename preservation, Windows-compatible sanitization. 8 new tests added. Quality gate passed.
+- 2026-03-24: Applied code review patches — empty-filename guard in `normalize_filename` (explicit `match` with `warn!` instead of `unwrap_or_default()`), empty-filename skip guards in both `Organizer::organize()` and `SeriesOrganizer::organize_extras()` loops, added `test_normalize_filename_no_extension` and `test_organize_normalizes_numeric_filenames_source_gone`. Quality gate passed: 544 tests, clippy clean, fmt clean.
+
+## Senior Developer Review (AI)
+
+**Review Date:** 2026-03-24
+**Outcome:** Changes Requested
+**Layers:** Blind Hunter, Edge Case Hunter, Acceptance Auditor
+
+### Action Items
+
+- [x] [Review][Patch] Empty-filename fallback in `normalize_filename` — `unwrap_or_default()` returns `""` causing `move_file` to target a directory path [src/organizer.rs:30]
+- [x] [Review][Patch] No test for `normalize_filename` with extension-less numeric file (the `unwrap_or("mp4")` fallback) [src/organizer.rs:25]
+- [x] [Review][Patch] `test_organize_normalizes_numeric_filenames` does not assert source numeric files are gone after move [src/organizer.rs:1240]
+- [x] [Review][Defer] No property test covers numeric normalization behavior — deferred, pre-existing gap in property test coverage
+- [x] [Review][Defer] `sanitize_filename` removes `?` entirely — all-`?` filename produces hidden file on Unix — deferred, pre-existing design choice in downloader.rs
+
+### Review Follow-ups (AI)
+
+- [x] [AI-Review][High] Fix empty-filename fallback in `normalize_filename` — replace `unwrap_or_default()` with a proper error or a safe fallback that doesn't produce an empty destination path
+- [x] [AI-Review][Med] Add test `test_normalize_filename_no_extension` — call `normalize_filename(Path::new("12345"), ContentCategory::Trailer, 1)` and assert result is `"Trailer #1.mp4"`
+- [x] [AI-Review][Low] Strengthen `test_organize_normalizes_numeric_filenames` — assert `10032.mp4` and `99887.mp4` no longer exist after organize
