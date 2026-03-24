@@ -115,6 +115,12 @@ impl SeriesDiscoveryOrchestrator {
                                     true
                                 }
                             });
+                            source_results.push(SourceResult {
+                                source: Source::Tmdb,
+                                videos_found: before_count,
+                                error: None,
+                            });
+
                             let filtered = before_count - sources.len();
                             if filtered > 0 {
                                 info!(
@@ -123,11 +129,6 @@ impl SeriesDiscoveryOrchestrator {
                                 );
                             }
 
-                            source_results.push(SourceResult {
-                                source: Source::Tmdb,
-                                videos_found: sources.len(),
-                                error: None,
-                            });
                             all_sources.extend(sources);
                         }
                         Err(e) => {
@@ -182,6 +183,22 @@ impl SeriesDiscoveryOrchestrator {
                         error: Some(e.to_string()),
                     });
                 }
+            }
+        }
+
+        // Dailymotion, Vimeo, Bilibili stubs — discoverers not yet implemented.
+        // Log when a user-requested source is skipped so it's not silently ignored.
+        // These are NOT added to source_results as errors — they are intentionally
+        // unimplemented stubs, not runtime failures.
+        for source in &self.sources {
+            match source {
+                Source::Dailymotion | Source::Vimeo | Source::Bilibili => {
+                    warn!(
+                        "{} source requested but discoverer not yet implemented — skipping for {}",
+                        source, series
+                    );
+                }
+                _ => {} // handled above
             }
         }
 
@@ -274,6 +291,15 @@ impl SeriesDiscoveryOrchestrator {
                 "Filtered {} season-specific videos referencing unavailable seasons for {}",
                 filtered, series
             );
+        }
+
+        // Log per-source summary
+        for sr in &source_results {
+            if let Some(ref err) = sr.error {
+                warn!("  {} — failed: {}", sr.source, err);
+            } else {
+                info!("  {} — {} videos", sr.source, sr.videos_found);
+            }
         }
 
         info!(

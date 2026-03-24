@@ -1,6 +1,6 @@
 # Story 1.2: Refactor DiscoveryOrchestrator for Per-Source Error Isolation
 
-Status: approved
+Status: done
 
 ## Story
 
@@ -254,8 +254,26 @@ Re-read both files after Round 1 fixes. No new High or Medium issues found. Code
 One pre-existing item noted (out of scope for Story 1.2):
 - `discover_season_zero()` in `series_orchestrator.rs` is gated `#[cfg(test)]` but contains full production logic. This is a pre-existing issue not introduced by Story 1.2.
 
-### Final Quality Gate
+### Final Quality Gate (Round 2)
 
 - `cargo test` — 500 tests pass (451 unit + 15 main integration + 34 series integration) ✅
 - `cargo clippy -- -D warnings` — clean ✅
 - `cargo fmt -- --check` — clean ✅
+
+### Round 3 — Adversarial Three-Layer Review (Blind Hunter + Edge Case Hunter + Acceptance Auditor)
+
+17 raw findings raised across three parallel review layers, deduplicated to 14 unique issues.
+
+#### Review Findings
+
+- [x] [Review][Patch] Missing unimplemented-source stub loop in `SeriesDiscoveryOrchestrator` — AC3/AC5 require mirroring the movie orchestrator's `warn!` for Dailymotion/Vimeo/Bilibili stubs [src/discovery/series_orchestrator.rs] ✅ Fixed
+- [x] [Review][Patch] `videos_found` recorded post-season-filter in series TMDB path but pre-filter in movie path — inconsistent semantics [src/discovery/series_orchestrator.rs] ✅ Fixed
+- [x] [Review][Patch] `discover_season_extras()` missing per-source summary log loop — inconsistent with `discover_all()` [src/discovery/series_orchestrator.rs] ✅ Fixed
+- [x] [Review][Defer] Unimplemented sources invisible in `source_results` — deferred to Story 1.4 (per-source summary stats)
+- [x] [Review][Defer] Duplicate `SourceResult` push logic (~12 blocks) — valid code smell, cleanup task
+- [x] [Review][Defer] Empty sources list produces silent no-op — CLI validation prevents this in production
+- [x] [Review][Defer] `SourceResult` allows inconsistent state (`videos_found > 0` with `error`) — only constructed internally, no external risk
+- [x] [Review][Defer] `get_metadata()` failure silently swallowed — pre-existing behavior, not introduced by Story 1.2
+- [x] [Review][Defer] Tests only validate struct construction, not behavioral invariants — behavioral coverage via integration tests
+- [x] [Review][Defer] Duplicate `Source` entries cause duplicate stub warnings — CLI deduplication is Story 1.1 scope
+- [x] [Review][Defer] Single source active + fails → reported as success with 0 downloads — pre-existing, correct behavior (no extras ≠ error)
