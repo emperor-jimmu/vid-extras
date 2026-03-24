@@ -564,7 +564,10 @@ mod tests {
             format!("{}", ContentCategory::BehindTheScenes),
             "Behind the Scenes"
         );
-        assert_eq!(format!("{}", ContentCategory::DeletedScene), "Deleted Scene");
+        assert_eq!(
+            format!("{}", ContentCategory::DeletedScene),
+            "Deleted Scene"
+        );
         assert_eq!(format!("{}", ContentCategory::Interview), "Interview");
         assert_eq!(format!("{}", ContentCategory::Short), "Short");
         assert_eq!(format!("{}", ContentCategory::Clip), "Clip");

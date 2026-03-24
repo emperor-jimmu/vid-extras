@@ -255,11 +255,13 @@ impl TmdbSeriesDiscoverer {
     pub fn map_tmdb_type(tmdb_type: &str) -> Option<ContentCategory> {
         match tmdb_type {
             "Trailer" => Some(ContentCategory::Trailer),
-            "Teaser" => Some(ContentCategory::Trailer), // Teasers are short trailers
+            "Teaser" => Some(ContentCategory::Trailer),
             "Behind the Scenes" => Some(ContentCategory::BehindTheScenes),
             "Featurette" => Some(ContentCategory::Featurette),
-            "Bloopers" => Some(ContentCategory::Featurette), // Bloopers are treated as featurettes
-            "Clip" => Some(ContentCategory::Featurette),     // Clips are treated as featurettes
+            "Bloopers" => Some(ContentCategory::Featurette),
+            "Interview" => Some(ContentCategory::Interview),
+            "Short" => Some(ContentCategory::Short),
+            "Clip" => Some(ContentCategory::Clip),
             _ => {
                 debug!("Unknown TMDB video type: {}", tmdb_type);
                 None
@@ -313,6 +315,38 @@ mod tests {
     fn test_map_tmdb_type_deleted_scene() {
         // Deleted Scene is not mapped for series (only for movies)
         assert_eq!(TmdbSeriesDiscoverer::map_tmdb_type("Deleted Scene"), None);
+    }
+
+    #[test]
+    fn test_map_tmdb_type_teaser() {
+        assert_eq!(
+            TmdbSeriesDiscoverer::map_tmdb_type("Teaser"),
+            Some(ContentCategory::Trailer)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_interview() {
+        assert_eq!(
+            TmdbSeriesDiscoverer::map_tmdb_type("Interview"),
+            Some(ContentCategory::Interview)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_short() {
+        assert_eq!(
+            TmdbSeriesDiscoverer::map_tmdb_type("Short"),
+            Some(ContentCategory::Short)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_clip() {
+        assert_eq!(
+            TmdbSeriesDiscoverer::map_tmdb_type("Clip"),
+            Some(ContentCategory::Clip)
+        );
     }
 
     #[test]
@@ -379,7 +413,16 @@ mod tests {
     #[test]
     fn test_all_tmdb_types_mapped_correctly() {
         // Test that all known types map to valid categories
-        let known_types = vec!["Trailer", "Behind the Scenes", "Featurette", "Bloopers"];
+        let known_types = vec![
+            "Trailer",
+            "Teaser",
+            "Behind the Scenes",
+            "Featurette",
+            "Bloopers",
+            "Interview",
+            "Short",
+            "Clip",
+        ];
 
         for tmdb_type in known_types {
             let result = TmdbSeriesDiscoverer::map_tmdb_type(tmdb_type);
@@ -418,9 +461,13 @@ mod property_tests {
         fn prop_tmdb_video_type_mapping_completeness(
             video_type in prop_oneof![
                 Just("Trailer".to_string()),
+                Just("Teaser".to_string()),
                 Just("Behind the Scenes".to_string()),
                 Just("Featurette".to_string()),
                 Just("Bloopers".to_string()),
+                Just("Interview".to_string()),
+                Just("Short".to_string()),
+                Just("Clip".to_string()),
                 "[a-zA-Z0-9 ]{1,50}".prop_map(|s| s.to_string()),
             ]
         ) {
@@ -428,17 +475,23 @@ mod property_tests {
 
             // Known types should map to Some
             match video_type.as_str() {
-                "Trailer" => {
+                "Trailer" | "Teaser" => {
                     prop_assert_eq!(result, Some(ContentCategory::Trailer));
                 }
                 "Behind the Scenes" => {
                     prop_assert_eq!(result, Some(ContentCategory::BehindTheScenes));
                 }
-                "Featurette" => {
+                "Featurette" | "Bloopers" => {
                     prop_assert_eq!(result, Some(ContentCategory::Featurette));
                 }
-                "Bloopers" => {
-                    prop_assert_eq!(result, Some(ContentCategory::Featurette));
+                "Interview" => {
+                    prop_assert_eq!(result, Some(ContentCategory::Interview));
+                }
+                "Short" => {
+                    prop_assert_eq!(result, Some(ContentCategory::Short));
+                }
+                "Clip" => {
+                    prop_assert_eq!(result, Some(ContentCategory::Clip));
                 }
                 _ => {
                     // Unknown types should map to None

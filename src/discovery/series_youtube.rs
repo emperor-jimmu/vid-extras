@@ -215,10 +215,12 @@ impl YoutubeSeriesDiscoverer {
                             None
                         };
 
+                        let resolved_category =
+                            title_matching::infer_category_from_title(&title).unwrap_or(category);
                         sources.push(SeriesExtra {
                             series_id: series_title.to_lowercase().replace(' ', "_"),
                             season_number: final_season,
-                            category,
+                            category: resolved_category,
                             title: title.clone(),
                             url,
                             source_type: SourceType::YouTube,
@@ -613,5 +615,30 @@ mod tests {
             1080,
             1920
         ));
+    }
+
+    #[test]
+    fn test_infer_category_overrides_search_query_category() {
+        // A video titled "Cast Interview" found via a "behind the scenes" search query
+        // should be classified as Interview, not BehindTheScenes.
+        // This validates the infer_category_from_title() call added in Task 4.2.
+        use crate::discovery::title_matching::infer_category_from_title;
+
+        let title = "Breaking Bad Cast Interview Season 1";
+        let search_query_category = ContentCategory::BehindTheScenes;
+        let resolved = infer_category_from_title(title).unwrap_or(search_query_category);
+        assert_eq!(resolved, ContentCategory::Interview);
+    }
+
+    #[test]
+    fn test_infer_category_falls_back_to_search_query_category() {
+        // A video with no recognizable category keywords should fall back to the
+        // search-query category (the unwrap_or branch).
+        use crate::discovery::title_matching::infer_category_from_title;
+
+        let title = "Breaking Bad Season 2 Extra Content";
+        let search_query_category = ContentCategory::Featurette;
+        let resolved = infer_category_from_title(title).unwrap_or(search_query_category);
+        assert_eq!(resolved, ContentCategory::Featurette);
     }
 }

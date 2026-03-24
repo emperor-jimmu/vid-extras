@@ -262,11 +262,14 @@ impl TmdbDiscoverer {
     pub fn map_tmdb_type(tmdb_type: &str) -> Option<ContentCategory> {
         match tmdb_type {
             "Trailer" => Some(ContentCategory::Trailer),
-            "Teaser" => Some(ContentCategory::Trailer), // Teasers are short trailers
+            "Teaser" => Some(ContentCategory::Trailer),
             "Behind the Scenes" => Some(ContentCategory::BehindTheScenes),
             "Deleted Scene" => Some(ContentCategory::DeletedScene),
             "Featurette" => Some(ContentCategory::Featurette),
-            "Clip" => Some(ContentCategory::Featurette), // Clips are treated as featurettes
+            "Bloopers" => Some(ContentCategory::Featurette),
+            "Interview" => Some(ContentCategory::Interview),
+            "Short" => Some(ContentCategory::Short),
+            "Clip" => Some(ContentCategory::Clip),
             _ => {
                 debug!("Unknown TMDB video type: {}", tmdb_type);
                 None
@@ -373,5 +376,88 @@ impl ContentDiscoverer for TmdbDiscoverer {
 
         info!("Discovered {} TMDB sources for: {}", sources.len(), movie);
         Ok(sources)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_map_tmdb_type_trailer() {
+        assert_eq!(
+            TmdbDiscoverer::map_tmdb_type("Trailer"),
+            Some(ContentCategory::Trailer)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_teaser() {
+        assert_eq!(
+            TmdbDiscoverer::map_tmdb_type("Teaser"),
+            Some(ContentCategory::Trailer)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_behind_the_scenes() {
+        assert_eq!(
+            TmdbDiscoverer::map_tmdb_type("Behind the Scenes"),
+            Some(ContentCategory::BehindTheScenes)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_deleted_scene() {
+        assert_eq!(
+            TmdbDiscoverer::map_tmdb_type("Deleted Scene"),
+            Some(ContentCategory::DeletedScene)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_featurette() {
+        assert_eq!(
+            TmdbDiscoverer::map_tmdb_type("Featurette"),
+            Some(ContentCategory::Featurette)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_bloopers() {
+        assert_eq!(
+            TmdbDiscoverer::map_tmdb_type("Bloopers"),
+            Some(ContentCategory::Featurette)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_interview() {
+        assert_eq!(
+            TmdbDiscoverer::map_tmdb_type("Interview"),
+            Some(ContentCategory::Interview)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_short() {
+        assert_eq!(
+            TmdbDiscoverer::map_tmdb_type("Short"),
+            Some(ContentCategory::Short)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_clip() {
+        assert_eq!(
+            TmdbDiscoverer::map_tmdb_type("Clip"),
+            Some(ContentCategory::Clip)
+        );
+    }
+
+    #[test]
+    fn test_map_tmdb_type_unknown() {
+        assert_eq!(TmdbDiscoverer::map_tmdb_type("Unknown"), None);
+        assert_eq!(TmdbDiscoverer::map_tmdb_type(""), None);
     }
 }

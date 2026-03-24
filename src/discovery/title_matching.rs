@@ -132,6 +132,16 @@ pub fn infer_category_from_title(title: &str) -> Option<ContentCategory> {
         return Some(ContentCategory::Interview);
     }
 
+    // Shorts — check before Trailer since "short film trailer" should be Short
+    if lower.contains("short film")
+        || lower.contains("animated short")
+        || lower
+            .split_whitespace()
+            .any(|w| w.trim_matches(|c: char| !c.is_alphabetic()) == "short")
+    {
+        return Some(ContentCategory::Short);
+    }
+
     // Trailers — check after BTS/interview since "behind the scenes trailer" should be BTS
     if lower.contains("trailer") || lower.contains("teaser") || lower.contains("promo") {
         return Some(ContentCategory::Trailer);
@@ -146,9 +156,9 @@ pub fn infer_category_from_title(title: &str) -> Option<ContentCategory> {
         return Some(ContentCategory::Featurette);
     }
 
-    // Clips (movie scene clips) → Featurette as the closest match
+    // Clips (movie scene clips)
     if lower.contains("movie clip") || lower.contains("clip -") || lower.contains("| clip") {
-        return Some(ContentCategory::Featurette);
+        return Some(ContentCategory::Clip);
     }
 
     None
@@ -591,6 +601,60 @@ mod tests {
             None
         );
         assert_eq!(infer_category_from_title("a touch of zen (俠女)"), None);
+    }
+
+    #[test]
+    fn test_infer_category_from_title_short() {
+        // Compound phrases
+        assert_eq!(
+            infer_category_from_title("Pixar Short Film: Bao"),
+            Some(ContentCategory::Short)
+        );
+        assert_eq!(
+            infer_category_from_title("Disney Animated Short Collection"),
+            Some(ContentCategory::Short)
+        );
+        // Bare "short" as standalone word
+        assert_eq!(
+            infer_category_from_title("A Short by the Director"),
+            Some(ContentCategory::Short)
+        );
+        // "short" with trailing punctuation (e.g. "short:" or "short.")
+        assert_eq!(
+            infer_category_from_title("Pixar Short: Bao"),
+            Some(ContentCategory::Short)
+        );
+        assert_eq!(
+            infer_category_from_title("Director's Short."),
+            Some(ContentCategory::Short)
+        );
+        // False positives must NOT match
+        assert_eq!(infer_category_from_title("Shortcut to Hollywood"), None);
+        assert_eq!(
+            infer_category_from_title("Shortly after the premiere"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_infer_category_from_title_clip() {
+        assert_eq!(
+            infer_category_from_title("Inception Movie Clip - The Dream"),
+            Some(ContentCategory::Clip)
+        );
+        assert_eq!(
+            infer_category_from_title("The Matrix Clip - Bullet Time"),
+            Some(ContentCategory::Clip)
+        );
+        assert_eq!(
+            infer_category_from_title("Inception | Clip - Hallway Fight"),
+            Some(ContentCategory::Clip)
+        );
+        // "bonus clip" should still be Featurette, not Clip
+        assert_eq!(
+            infer_category_from_title("Cobra (1986) - Bonus Clip: Actor Brian Thompson"),
+            Some(ContentCategory::Featurette)
+        );
     }
 
     #[test]

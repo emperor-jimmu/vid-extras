@@ -14,3 +14,7 @@
 ## Deferred from: code review of 2-1-extend-content-category-enum-and-organizer-mappings (2026-03-24)
 
 - `Clip` and `Scene` doc comments are semantically near-identical ("Movie scene clips" vs "Full scenes from the movie") — pre-existing design ambiguity; Story 2.2 owns classification logic and should clarify the distinction when assigning these categories
+
+## Deferred from: code review of 2-2-expand-category-classification-logic (2026-03-24)
+
+- `series_tmdb.rs` and `tmdb.rs` both define their own `map_tmdb_type()` — duplicated logic that must be kept in sync manually. Pre-existing architectural smell; refactor to a shared function in a future story.
