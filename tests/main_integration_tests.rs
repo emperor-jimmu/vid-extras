@@ -380,14 +380,14 @@ async fn test_complete_execution_flow() {
 
     // Step 3: If validation succeeded, try to create orchestrator
     if let Ok(api_key) = validation_result {
-        use extras_fetcher::models::{ProcessingMode, SourceMode};
+        use extras_fetcher::models::{ProcessingMode, Source};
         use extras_fetcher::orchestrator::{Orchestrator, OrchestratorConfig};
 
         let orchestrator = Orchestrator::new(OrchestratorConfig {
             root_dir: root,
             tmdb_api_key: api_key,
             tvdb_api_key: None,
-            mode: SourceMode::YoutubeOnly,
+            sources: vec![Source::Youtube],
             force: false,
             concurrency: 1,
             single: false,

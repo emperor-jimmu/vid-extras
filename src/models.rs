@@ -131,22 +131,58 @@ impl fmt::Display for DoneMarker {
     }
 }
 
-/// Source mode configuration for content discovery
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SourceMode {
-    /// Query all sources (TMDB, Archive.org, YouTube)
-    All,
-    /// Query only YouTube
-    YoutubeOnly,
+/// Discovery source that can be queried for extras
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, clap::ValueEnum)]
+pub enum Source {
+    /// TheMovieDB API
+    Tmdb,
+    /// Internet Archive
+    Archive,
+    /// Dailymotion video platform
+    Dailymotion,
+    /// YouTube
+    Youtube,
+    /// Vimeo video platform (opt-in)
+    Vimeo,
+    /// Bilibili video platform (opt-in)
+    Bilibili,
 }
 
-impl fmt::Display for SourceMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Source {
+    /// Returns the deduplication priority tier (1 = highest)
+    pub fn tier(&self) -> u8 {
         match self {
-            SourceMode::All => write!(f, "All Sources"),
-            SourceMode::YoutubeOnly => write!(f, "YouTube Only"),
+            Source::Tmdb => 1,
+            Source::Archive => 2,
+            Source::Dailymotion => 2,
+            Source::Youtube => 3,
+            Source::Vimeo => 2,
+            Source::Bilibili => 3,
         }
     }
+}
+
+impl fmt::Display for Source {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Source::Tmdb => write!(f, "tmdb"),
+            Source::Archive => write!(f, "archive"),
+            Source::Dailymotion => write!(f, "dailymotion"),
+            Source::Youtube => write!(f, "youtube"),
+            Source::Vimeo => write!(f, "vimeo"),
+            Source::Bilibili => write!(f, "bilibili"),
+        }
+    }
+}
+
+/// Returns the default set of discovery sources
+pub fn default_sources() -> Vec<Source> {
+    vec![
+        Source::Tmdb,
+        Source::Archive,
+        Source::Dailymotion,
+        Source::Youtube,
+    ]
 }
 
 /// Type of content source
@@ -161,6 +197,14 @@ pub enum SourceType {
     YouTube,
     /// TheTVDB API
     TheTVDB,
+    /// Dailymotion video platform
+    Dailymotion,
+    /// KinoCheck (implicit TMDB fallback)
+    KinoCheck,
+    /// Vimeo video platform
+    Vimeo,
+    /// Bilibili video platform
+    Bilibili,
 }
 
 impl fmt::Display for SourceType {
@@ -170,6 +214,10 @@ impl fmt::Display for SourceType {
             SourceType::ArchiveOrg => write!(f, "Archive.org"),
             SourceType::YouTube => write!(f, "YouTube"),
             SourceType::TheTVDB => write!(f, "TheTVDB"),
+            SourceType::Dailymotion => write!(f, "Dailymotion"),
+            SourceType::KinoCheck => write!(f, "KinoCheck"),
+            SourceType::Vimeo => write!(f, "Vimeo"),
+            SourceType::Bilibili => write!(f, "Bilibili"),
         }
     }
 }
@@ -489,9 +537,33 @@ mod tests {
     }
 
     #[test]
-    fn test_source_mode_display() {
-        assert_eq!(SourceMode::All.to_string(), "All Sources");
-        assert_eq!(SourceMode::YoutubeOnly.to_string(), "YouTube Only");
+    fn test_source_tier() {
+        assert_eq!(Source::Tmdb.tier(), 1);
+        assert_eq!(Source::Archive.tier(), 2);
+        assert_eq!(Source::Dailymotion.tier(), 2);
+        assert_eq!(Source::Youtube.tier(), 3);
+        assert_eq!(Source::Vimeo.tier(), 2);
+        assert_eq!(Source::Bilibili.tier(), 3);
+    }
+
+    #[test]
+    fn test_default_sources() {
+        let sources = default_sources();
+        assert_eq!(sources.len(), 4);
+        assert!(sources.contains(&Source::Tmdb));
+        assert!(sources.contains(&Source::Archive));
+        assert!(sources.contains(&Source::Dailymotion));
+        assert!(sources.contains(&Source::Youtube));
+        assert!(!sources.contains(&Source::Vimeo));
+        assert!(!sources.contains(&Source::Bilibili));
+    }
+
+    #[test]
+    fn test_source_type_new_variants_display() {
+        assert_eq!(SourceType::Dailymotion.to_string(), "Dailymotion");
+        assert_eq!(SourceType::KinoCheck.to_string(), "KinoCheck");
+        assert_eq!(SourceType::Vimeo.to_string(), "Vimeo");
+        assert_eq!(SourceType::Bilibili.to_string(), "Bilibili");
     }
 
     #[test]

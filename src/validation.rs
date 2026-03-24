@@ -25,11 +25,13 @@ impl Validator {
         if !self.check_binary_exists("yt-dlp") {
             return Err(ValidationError::MissingBinary("yt-dlp".to_string()));
         }
+        self.check_ytdlp_version();
 
         // Check ffmpeg binary
         if !self.check_binary_exists("ffmpeg") {
             return Err(ValidationError::MissingBinary("ffmpeg".to_string()));
         }
+        self.check_ffmpeg_version();
 
         // Check ffmpeg HEVC support
         if !self.check_ffmpeg_hevc_support() {
@@ -47,6 +49,63 @@ impl Validator {
         // Try to execute the binary with --version flag
         // This works for both yt-dlp and ffmpeg
         Command::new(name).arg("--version").output().is_ok()
+    }
+
+    /// Check yt-dlp version and warn if older than 2025.01.01 (best-effort)
+    fn check_ytdlp_version(&self) {
+        let output = match Command::new("yt-dlp").arg("--version").output() {
+            Ok(o) => o,
+            Err(_) => return, // binary missing — already caught by check_binary_exists
+        };
+        let version_str = String::from_utf8_lossy(&output.stdout);
+        let version_str = version_str.trim();
+        // yt-dlp outputs YYYY.MM.DD
+        let parts: Vec<&str> = version_str.split('.').collect();
+        if let (Some(y), Some(m), Some(d)) = (parts.first(), parts.get(1), parts.get(2))
+            && let (Ok(year), Ok(month), Ok(day)) =
+                (y.parse::<u32>(), m.parse::<u32>(), d.parse::<u32>())
+        {
+            let detected_num = year * 10000 + month * 100 + day;
+            let minimum_num = 20_250_101_u32;
+            if detected_num < minimum_num {
+                log::warn!(
+                    "yt-dlp version {} is older than recommended minimum 2025.01.01. Consider upgrading.",
+                    version_str
+                );
+            }
+            return;
+        }
+        log::warn!(
+            "Could not parse yt-dlp version '{}'. Skipping version check.",
+            version_str
+        );
+    }
+
+    /// Check ffmpeg version and warn if older than 6.0 (best-effort)
+    fn check_ffmpeg_version(&self) {
+        let output = match Command::new("ffmpeg").arg("-version").output() {
+            Ok(o) => o,
+            Err(_) => return, // binary missing — already caught by check_binary_exists
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // First line: "ffmpeg version N.N ..."
+        if let Some(first_line) = stdout.lines().next() {
+            let parts: Vec<&str> = first_line.split_whitespace().collect();
+            // parts[0]="ffmpeg", parts[1]="version", parts[2]="N.N..."
+            if let Some(ver) = parts.get(2) {
+                let major_str = ver.split('.').next().unwrap_or("");
+                if let Ok(major) = major_str.parse::<u32>() {
+                    if major < 6 {
+                        log::warn!(
+                            "ffmpeg version {} is older than recommended minimum 6.0. Consider upgrading.",
+                            ver
+                        );
+                    }
+                    return;
+                }
+            }
+        }
+        log::warn!("Could not parse ffmpeg version. Skipping version check.");
     }
 
     /// Check if ffmpeg supports HEVC encoding

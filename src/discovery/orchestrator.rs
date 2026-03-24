@@ -1,6 +1,6 @@
 // Discovery orchestrator - coordinates discovery from all sources
 
-use crate::models::{ContentCategory, MovieEntry, SourceMode, SourceType, VideoSource};
+use crate::models::{ContentCategory, MovieEntry, Source, SourceType, VideoSource};
 use log::info;
 use std::collections::HashMap;
 
@@ -14,35 +14,33 @@ pub struct DiscoveryOrchestrator {
     tmdb: TmdbDiscoverer,
     archive: ArchiveOrgDiscoverer,
     youtube: YoutubeDiscoverer,
-    mode: SourceMode,
+    sources: Vec<Source>,
 }
 
 impl DiscoveryOrchestrator {
-    /// Creates a new DiscoveryOrchestrator with the specified mode
-    pub fn new(tmdb_api_key: String, mode: SourceMode) -> Self {
+    /// Creates a new DiscoveryOrchestrator with the specified sources
+    pub fn new(tmdb_api_key: String, sources: Vec<Source>) -> Self {
         Self {
             tmdb: TmdbDiscoverer::new(tmdb_api_key),
             archive: ArchiveOrgDiscoverer::new(),
             youtube: YoutubeDiscoverer::new(),
-            mode,
+            sources,
         }
     }
 
     /// Creates a new DiscoveryOrchestrator with browser cookie authentication for YouTube
-    pub fn with_cookies(tmdb_api_key: String, mode: SourceMode, browser: String) -> Self {
+    pub fn with_cookies(tmdb_api_key: String, sources: Vec<Source>, browser: String) -> Self {
         Self {
             tmdb: TmdbDiscoverer::new(tmdb_api_key),
             archive: ArchiveOrgDiscoverer::new(),
             youtube: YoutubeDiscoverer::with_cookies(browser),
-            mode,
+            sources,
         }
     }
 
-    /// Discovers video sources from all configured sources based on mode
+    /// Discovers video sources from all configured sources
     ///
-    /// In All mode: queries TMDB, Archive.org (for movies < 2010), and YouTube
-    /// In YoutubeOnly mode: queries only YouTube
-    ///
+    /// Queries each enabled source and aggregates results.
     /// Applies content limits per category:
     /// - Trailers: max 4
     /// - Deleted Scenes: max 8
@@ -57,60 +55,55 @@ impl DiscoveryOrchestrator {
         // Get metadata from TMDB (collection info for YouTube filtering)
         let metadata = self.tmdb.get_metadata(movie).await;
 
-        match self.mode {
-            SourceMode::All => {
-                // Query TMDB
-                match self.tmdb.discover(movie).await {
-                    Ok(sources) => {
-                        info!("Found {} sources from TMDB for {}", sources.len(), movie);
-                        all_sources.extend(sources);
-                    }
-                    Err(e) => {
-                        info!("TMDB discovery failed for {}: {}", movie, e);
-                    }
+        if self.sources.contains(&Source::Tmdb) {
+            match self.tmdb.discover(movie).await {
+                Ok(sources) => {
+                    info!("Found {} sources from TMDB for {}", sources.len(), movie);
+                    all_sources.extend(sources);
                 }
-
-                // Query Archive.org (general for pre-2010, DVDXtras for all years)
-                match self.archive.discover(movie).await {
-                    Ok(sources) => {
-                        info!(
-                            "Found {} sources from Archive.org for {}",
-                            sources.len(),
-                            movie
-                        );
-                        all_sources.extend(sources);
-                    }
-                    Err(e) => {
-                        info!("Archive.org discovery failed for {}: {}", movie, e);
-                    }
-                }
-
-                // Query YouTube with metadata for better filtering
-                match self.youtube.discover_with_metadata(movie, &metadata).await {
-                    Ok(sources) => {
-                        info!("Found {} sources from YouTube for {}", sources.len(), movie);
-                        all_sources.extend(sources);
-                    }
-                    Err(e) => {
-                        info!("YouTube discovery failed for {}: {}", movie, e);
-                    }
-                }
-            }
-            SourceMode::YoutubeOnly => {
-                // Query only YouTube with metadata
-                match self.youtube.discover_with_metadata(movie, &metadata).await {
-                    Ok(sources) => {
-                        info!("Found {} sources from YouTube for {}", sources.len(), movie);
-                        all_sources.extend(sources);
-                    }
-                    Err(e) => {
-                        info!("YouTube discovery failed for {}: {}", movie, e);
-                    }
-                }
+                Err(e) => info!("TMDB discovery failed for {}: {}", movie, e),
             }
         }
 
-        // Deduplicate by URL to avoid downloading the same video twice
+        if self.sources.contains(&Source::Archive) {
+            match self.archive.discover(movie).await {
+                Ok(sources) => {
+                    info!(
+                        "Found {} sources from Archive.org for {}",
+                        sources.len(),
+                        movie
+                    );
+                    all_sources.extend(sources);
+                }
+                Err(e) => info!("Archive.org discovery failed for {}: {}", movie, e),
+            }
+        }
+
+        if self.sources.contains(&Source::Youtube) {
+            match self.youtube.discover_with_metadata(movie, &metadata).await {
+                Ok(sources) => {
+                    info!("Found {} sources from YouTube for {}", sources.len(), movie);
+                    all_sources.extend(sources);
+                }
+                Err(e) => info!("YouTube discovery failed for {}: {}", movie, e),
+            }
+        }
+
+        // Dailymotion, Vimeo, Bilibili stubs — discoverers not yet implemented.
+        // Log when a user-requested source is skipped so it's not silently ignored.
+        for source in &self.sources {
+            match source {
+                Source::Dailymotion | Source::Vimeo | Source::Bilibili => {
+                    info!(
+                        "{} source requested but discoverer not yet implemented — skipping for {}",
+                        source, movie
+                    );
+                }
+                _ => {} // handled above
+            }
+        }
+
+        // Deduplicate by URL
         let initial_count = all_sources.len();
         all_sources.sort_by(|a, b| a.url.cmp(&b.url));
         all_sources.dedup_by(|a, b| a.url == b.url);
@@ -148,7 +141,6 @@ impl DiscoveryOrchestrator {
     fn apply_content_limits(sources: Vec<VideoSource>) -> Vec<VideoSource> {
         use ContentCategory::*;
 
-        // Define limits per category
         let limits: HashMap<ContentCategory, usize> = [
             (Trailer, 4),
             (DeletedScene, 8),
@@ -160,26 +152,27 @@ impl DiscoveryOrchestrator {
         .cloned()
         .collect();
 
-        // Group sources by category
         let mut by_category: HashMap<ContentCategory, Vec<VideoSource>> = HashMap::new();
         for source in sources {
             by_category.entry(source.category).or_default().push(source);
         }
 
-        // Apply limits to each category, prioritizing by source type
         let mut limited_sources = Vec::new();
         for (category, mut sources) in by_category {
             let limit = limits.get(&category).copied().unwrap_or(usize::MAX);
 
-            // Sort by source priority: TMDB (0) > Archive.org (1) > YouTube (2) > TheTVDB (3)
+            // Sort by source priority: TMDB (0) > Archive.org (1) > YouTube/others (2+)
             sources.sort_by_key(|s| match s.source_type {
-                SourceType::TMDB => 0,
+                SourceType::TMDB => 0u8,
                 SourceType::ArchiveOrg => 1,
-                SourceType::YouTube => 2,
-                SourceType::TheTVDB => 3,
+                SourceType::KinoCheck => 1,
+                SourceType::Dailymotion => 2,
+                SourceType::Vimeo => 2,
+                SourceType::YouTube => 3,
+                SourceType::Bilibili => 3,
+                SourceType::TheTVDB => 4,
             });
 
-            // Take only up to the limit
             sources.truncate(limit);
             limited_sources.extend(sources);
         }

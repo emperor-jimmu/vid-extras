@@ -47,7 +47,7 @@ async fn main() {
             api_key
         }
         Err(e) => {
-            // Fatal error: missing dependencies
+            // Fatal error: missing or broken dependencies
             // Requirements: 10.5, 11.5
             eprintln!("\n✗ Dependency validation failed");
             match &e {
@@ -128,7 +128,7 @@ async fn main() {
         root_dir: config.root_directory.clone(),
         tmdb_api_key,
         tvdb_api_key,
-        mode: config.mode.to_models_source_mode(),
+        sources: config.sources.clone(),
         force: config.force,
         concurrency: config.concurrency,
         single: config.single,

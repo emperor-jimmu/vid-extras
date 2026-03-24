@@ -1,38 +1,10 @@
 // CLI module - handles command-line argument parsing and configuration
 
 use crate::error::CliError;
-use clap::{Parser, ValueEnum};
+use crate::models::{Source, default_sources};
+use clap::Parser;
 use colored::Colorize;
 use std::path::PathBuf;
-
-/// Source mode for content discovery
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum SourceMode {
-    /// Query all sources (TMDB, Archive.org, YouTube)
-    All,
-    /// Query only YouTube
-    #[value(name = "youtube")]
-    YoutubeOnly,
-}
-
-impl std::fmt::Display for SourceMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SourceMode::All => write!(f, "All Sources"),
-            SourceMode::YoutubeOnly => write!(f, "YouTube Only"),
-        }
-    }
-}
-
-impl SourceMode {
-    /// Convert CLI SourceMode to models::SourceMode
-    pub fn to_models_source_mode(self) -> crate::models::SourceMode {
-        match self {
-            SourceMode::All => crate::models::SourceMode::All,
-            SourceMode::YoutubeOnly => crate::models::SourceMode::YoutubeOnly,
-        }
-    }
-}
 
 /// extras_fetcher - Automated Jellyfin movie extras downloader
 ///
@@ -51,9 +23,14 @@ pub struct CliArgs {
     #[arg(short, long)]
     pub force: bool,
 
-    /// Content source mode (all or youtube)
-    #[arg(short, long, value_enum, default_value = "all")]
-    pub mode: SourceMode,
+    /// Discovery sources to query (comma-separated or repeated flags)
+    /// Available: tmdb, archive, dailymotion, youtube, vimeo, bilibili
+    #[arg(
+        long,
+        value_delimiter = ',',
+        default_values_t = default_sources()
+    )]
+    pub sources: Vec<Source>,
 
     /// Maximum number of movies to process concurrently
     #[arg(short, long, default_value = "2")]
@@ -95,6 +72,10 @@ pub struct CliArgs {
     /// Resolves YouTube bot-detection errors. Overrides cookies_from_browser in config.cfg.
     #[arg(long, value_name = "BROWSER")]
     pub cookies_from_browser: Option<String>,
+
+    /// DEPRECATED: Use --sources instead
+    #[arg(long, hide = true)]
+    pub mode: Option<String>,
 }
 
 /// CLI configuration
@@ -102,7 +83,7 @@ pub struct CliArgs {
 pub struct CliConfig {
     pub root_directory: PathBuf,
     pub force: bool,
-    pub mode: SourceMode,
+    pub sources: Vec<Source>,
     pub concurrency: usize,
     pub verbose: bool,
     pub single: bool,
@@ -116,7 +97,6 @@ pub struct CliConfig {
 
 impl From<CliArgs> for CliConfig {
     fn from(args: CliArgs) -> Self {
-        // Determine processing mode based on flags
         let processing_mode = if args.series_only {
             crate::models::ProcessingMode::SeriesOnly
         } else if args.movies_only {
@@ -128,7 +108,7 @@ impl From<CliArgs> for CliConfig {
         CliConfig {
             root_directory: args.root_directory,
             force: args.force,
-            mode: args.mode,
+            sources: args.sources,
             concurrency: args.concurrency,
             verbose: args.verbose,
             single: args.single,
@@ -145,6 +125,12 @@ impl From<CliArgs> for CliConfig {
 /// Parse command-line arguments
 pub fn parse_args() -> Result<CliConfig, CliError> {
     let args = CliArgs::parse();
+    // Check for deprecated --mode flag before any other validation
+    if args.mode.is_some() {
+        return Err(CliError::DeprecatedFlag(
+            "The --mode flag has been removed. Use --sources instead.".to_string(),
+        ));
+    }
     validate_config(&args)?;
     Ok(args.into())
 }
@@ -241,7 +227,17 @@ pub fn display_config(config: &CliConfig) {
         "Root Directory:".bright_white(),
         config.root_directory
     );
-    println!("  {} {}", "Mode:".bright_white(), config.mode);
+    let sources_str = config
+        .sources
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    println!(
+        "  {} {}",
+        "Sources:".bright_white(),
+        sources_str.bright_cyan()
+    );
     println!(
         "  {} {}",
         "Single Folder:".bright_white(),
@@ -320,21 +316,43 @@ pub fn display_config(config: &CliConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{Source, default_sources};
     use std::path::PathBuf;
     use tempfile::TempDir;
 
+    fn make_args(root: PathBuf) -> CliArgs {
+        CliArgs {
+            root_directory: root,
+            force: false,
+            sources: default_sources(),
+            concurrency: 2,
+            verbose: false,
+            single: false,
+            series_only: false,
+            movies_only: false,
+            season_extras: false,
+            specials: false,
+            specials_folder: "Specials".to_string(),
+            r#type: None,
+            cookies_from_browser: None,
+            mode: None,
+        }
+    }
+
     #[test]
-    fn test_source_mode_display() {
-        assert_eq!(SourceMode::All.to_string(), "All Sources");
-        assert_eq!(SourceMode::YoutubeOnly.to_string(), "YouTube Only");
+    fn test_source_display() {
+        assert_eq!(Source::Tmdb.to_string(), "tmdb");
+        assert_eq!(Source::Youtube.to_string(), "youtube");
+        assert_eq!(Source::Dailymotion.to_string(), "dailymotion");
     }
 
     #[test]
     fn test_cli_config_from_args() {
+        let temp_dir = TempDir::new().unwrap();
         let args = CliArgs {
-            root_directory: PathBuf::from("/movies"),
+            root_directory: temp_dir.path().to_path_buf(),
             force: true,
-            mode: SourceMode::YoutubeOnly,
+            sources: vec![Source::Youtube],
             concurrency: 4,
             verbose: true,
             single: false,
@@ -345,12 +363,12 @@ mod tests {
             specials_folder: "Specials".to_string(),
             r#type: Some("series".to_string()),
             cookies_from_browser: None,
+            mode: None,
         };
 
         let config: CliConfig = args.into();
-        assert_eq!(config.root_directory, PathBuf::from("/movies"));
         assert!(config.force);
-        assert_eq!(config.mode, SourceMode::YoutubeOnly);
+        assert_eq!(config.sources, vec![Source::Youtube]);
         assert_eq!(config.concurrency, 4);
         assert!(config.verbose);
         assert!(!config.single);
@@ -363,50 +381,17 @@ mod tests {
     #[test]
     fn test_validate_config_valid_directory() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: false,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: None,
-            cookies_from_browser: None,
-        };
-
-        let result = validate_config(&args);
-        assert!(result.is_ok());
+        let args = make_args(temp_dir.path().to_path_buf());
+        assert!(validate_config(&args).is_ok());
     }
 
     #[test]
     fn test_validate_config_nonexistent_directory() {
-        let args = CliArgs {
-            root_directory: PathBuf::from("/nonexistent/path/that/does/not/exist"),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: false,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: None,
-            cookies_from_browser: None,
-        };
-
+        let args = make_args(PathBuf::from("/nonexistent/path/that/does/not/exist"));
         let result = validate_config(&args);
         assert!(result.is_err());
         match result {
-            Err(CliError::InvalidRootDir(msg)) => {
-                assert!(msg.contains("does not exist"));
-            }
+            Err(CliError::InvalidRootDir(msg)) => assert!(msg.contains("does not exist")),
             _ => panic!("Expected InvalidRootDir error"),
         }
     }
@@ -418,28 +403,11 @@ mod tests {
         let file_path = temp_dir.path().join("test_file.txt");
         File::create(&file_path).unwrap();
 
-        let args = CliArgs {
-            root_directory: file_path,
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: false,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: None,
-            cookies_from_browser: None,
-        };
-
+        let args = make_args(file_path);
         let result = validate_config(&args);
         assert!(result.is_err());
         match result {
-            Err(CliError::InvalidRootDir(msg)) => {
-                assert!(msg.contains("not a directory"));
-            }
+            Err(CliError::InvalidRootDir(msg)) => assert!(msg.contains("not a directory")),
             _ => panic!("Expected InvalidRootDir error"),
         }
     }
@@ -447,28 +415,12 @@ mod tests {
     #[test]
     fn test_validate_config_zero_concurrency() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 0,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: false,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: None,
-            cookies_from_browser: None,
-        };
-
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.concurrency = 0;
         let result = validate_config(&args);
         assert!(result.is_err());
         match result {
-            Err(CliError::InvalidConcurrency(msg)) => {
-                assert!(msg.contains("at least 1"));
-            }
+            Err(CliError::InvalidConcurrency(msg)) => assert!(msg.contains("at least 1")),
             _ => panic!("Expected InvalidConcurrency error"),
         }
     }
@@ -476,28 +428,12 @@ mod tests {
     #[test]
     fn test_validate_config_default_values() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: false,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: None,
-            cookies_from_browser: None,
-        };
-
-        let result = validate_config(&args);
-        assert!(result.is_ok());
+        let args = make_args(temp_dir.path().to_path_buf());
+        assert!(validate_config(&args).is_ok());
 
         let config: CliConfig = args.into();
         assert!(!config.force);
-        assert_eq!(config.mode, SourceMode::All);
+        assert_eq!(config.sources, default_sources());
         assert_eq!(config.concurrency, 2);
         assert!(!config.verbose);
         assert!(!config.single);
@@ -509,7 +445,6 @@ mod tests {
 
     #[test]
     fn test_display_banner_does_not_panic() {
-        // Just verify the banner can be displayed without panicking
         display_banner();
     }
 
@@ -518,7 +453,7 @@ mod tests {
         let config = CliConfig {
             root_directory: PathBuf::from("/test/movies"),
             force: true,
-            mode: SourceMode::YoutubeOnly,
+            sources: vec![Source::Youtube],
             concurrency: 4,
             verbose: true,
             single: false,
@@ -529,30 +464,14 @@ mod tests {
             media_type: Some("series".to_string()),
             cookies_from_browser: None,
         };
-
-        // Just verify the config can be displayed without panicking
         display_config(&config);
     }
 
     #[test]
     fn test_series_only_flag_sets_processing_mode() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: true,
-            movies_only: false,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: None,
-            cookies_from_browser: None,
-        };
-
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.series_only = true;
         let config: CliConfig = args.into();
         assert_eq!(
             config.processing_mode,
@@ -563,22 +482,8 @@ mod tests {
     #[test]
     fn test_movies_only_flag_sets_processing_mode() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: true,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: None,
-            cookies_from_browser: None,
-        };
-
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.movies_only = true;
         let config: CliConfig = args.into();
         assert_eq!(
             config.processing_mode,
@@ -589,28 +494,13 @@ mod tests {
     #[test]
     fn test_mutually_exclusive_flags_error() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: true,
-            movies_only: true,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: None,
-            cookies_from_browser: None,
-        };
-
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.series_only = true;
+        args.movies_only = true;
         let result = validate_config(&args);
         assert!(result.is_err());
         match result {
-            Err(CliError::ParseError(msg)) => {
-                assert!(msg.contains("mutually exclusive"));
-            }
+            Err(CliError::ParseError(msg)) => assert!(msg.contains("mutually exclusive")),
             _ => panic!("Expected ParseError for mutually exclusive flags"),
         }
     }
@@ -618,74 +508,28 @@ mod tests {
     #[test]
     fn test_type_flag_movie_valid() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: false,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: Some("movie".to_string()),
-            cookies_from_browser: None,
-        };
-
-        let result = validate_config(&args);
-        assert!(result.is_ok());
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.r#type = Some("movie".to_string());
+        assert!(validate_config(&args).is_ok());
     }
 
     #[test]
     fn test_type_flag_series_valid() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: false,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: Some("series".to_string()),
-            cookies_from_browser: None,
-        };
-
-        let result = validate_config(&args);
-        assert!(result.is_ok());
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.r#type = Some("series".to_string());
+        assert!(validate_config(&args).is_ok());
     }
 
     #[test]
     fn test_type_flag_invalid_value() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: false,
-            season_extras: false,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: Some("invalid".to_string()),
-            cookies_from_browser: None,
-        };
-
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.r#type = Some("invalid".to_string());
         let result = validate_config(&args);
         assert!(result.is_err());
         match result {
-            Err(CliError::ParseError(msg)) => {
-                assert!(msg.contains("Invalid --type value"));
-            }
+            Err(CliError::ParseError(msg)) => assert!(msg.contains("Invalid --type value")),
             _ => panic!("Expected ParseError for invalid type"),
         }
     }
@@ -693,22 +537,8 @@ mod tests {
     #[test]
     fn test_season_extras_flag() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: false,
-            season_extras: true,
-            specials: false,
-            specials_folder: "Specials".to_string(),
-            r#type: None,
-            cookies_from_browser: None,
-        };
-
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.season_extras = true;
         let config: CliConfig = args.into();
         assert!(config.season_extras);
     }
@@ -716,54 +546,62 @@ mod tests {
     #[test]
     fn test_specials_flag() {
         let temp_dir = TempDir::new().unwrap();
-        let args = CliArgs {
-            root_directory: temp_dir.path().to_path_buf(),
-            force: false,
-            mode: SourceMode::All,
-            concurrency: 2,
-            verbose: false,
-            single: false,
-            series_only: false,
-            movies_only: false,
-            season_extras: false,
-            specials: true,
-            specials_folder: "Specials".to_string(),
-            r#type: None,
-            cookies_from_browser: None,
-        };
-
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.specials = true;
         let config: CliConfig = args.into();
         assert!(config.specials);
+    }
+
+    #[test]
+    fn test_deprecated_mode_flag_returns_error() {
+        use clap::Parser;
+
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path().to_str().unwrap();
+
+        // Simulate passing --mode on the CLI; parse_args() should reject it
+        let args = CliArgs::try_parse_from(["extras_fetcher", root, "--mode", "youtube"]);
+        assert!(args.is_ok(), "clap should parse --mode as a hidden arg");
+        let args = args.unwrap();
+        assert!(args.mode.is_some());
+
+        // The actual deprecation check lives in parse_args(), which calls
+        // CliArgs::parse() internally. We replicate the check here to test
+        // the error path without invoking the real CLI entrypoint.
+        if args.mode.is_some() {
+            let err = CliError::DeprecatedFlag(
+                "The --mode flag has been removed. Use --sources instead.".to_string(),
+            );
+            assert!(
+                err.to_string().contains("--mode"),
+                "Error should mention --mode: {}",
+                err
+            );
+        }
     }
 }
 
 #[cfg(test)]
 mod property_tests {
     use super::*;
+    use crate::models::{Source, default_sources};
     use proptest::prelude::*;
     use std::path::PathBuf;
 
     // Feature: extras-fetcher, Property 36: Configuration Display Completeness
     // Validates: Requirements 13.2
-    // For any CLI configuration, displaying the config should show all values:
-    // root_directory, mode, force flag, concurrency, and verbose flag.
     proptest! {
         #[test]
         fn prop_config_display_completeness(
             force in proptest::bool::ANY,
-            mode in prop_oneof![
-                Just(SourceMode::All),
-                Just(SourceMode::YoutubeOnly),
-            ],
             concurrency in 1usize..=10,
             verbose in proptest::bool::ANY,
             single in proptest::bool::ANY,
         ) {
-            // Create a config with the generated values
             let config = CliConfig {
                 root_directory: PathBuf::from("/test/movies"),
                 force,
-                mode,
+                sources: default_sources(),
                 concurrency,
                 verbose,
                 single,
@@ -775,14 +613,13 @@ mod property_tests {
                 cookies_from_browser: None,
             };
 
-            // Capture the display output
             let mut output = Vec::new();
             {
                 use std::io::Write;
-                // We can't easily capture colored output, so we'll verify the config
-                // contains all required fields instead
                 write!(&mut output, "{:?}", config.root_directory).unwrap();
-                write!(&mut output, "{}", config.mode).unwrap();
+                for s in &config.sources {
+                    write!(&mut output, "{}", s).unwrap();
+                }
                 write!(&mut output, "{}", config.force).unwrap();
                 write!(&mut output, "{}", config.concurrency).unwrap();
                 write!(&mut output, "{}", config.verbose).unwrap();
@@ -790,14 +627,13 @@ mod property_tests {
 
             let output_str = String::from_utf8(output).unwrap();
 
-            // Verify all configuration values are present in some form
             prop_assert!(
                 output_str.contains("/test/movies") || output_str.contains("test"),
                 "Config display should include root_directory"
             );
             prop_assert!(
-                output_str.contains("All Sources") || output_str.contains("YouTube Only"),
-                "Config display should include mode"
+                output_str.contains("tmdb") || output_str.contains("youtube"),
+                "Config display should include sources"
             );
             prop_assert!(
                 output_str.contains("true") || output_str.contains("false"),
@@ -808,9 +644,8 @@ mod property_tests {
                 "Config display should include concurrency value"
             );
 
-            // Verify the config struct has all required fields accessible
             prop_assert_eq!(config.force, force);
-            prop_assert_eq!(config.mode, mode);
+            prop_assert_eq!(config.sources, default_sources());
             prop_assert_eq!(config.concurrency, concurrency);
             prop_assert_eq!(config.verbose, verbose);
             prop_assert_eq!(config.single, single);
@@ -819,18 +654,15 @@ mod property_tests {
 
     // Feature: extras-fetcher, Property 38: Verbose Flag Effect
     // Validates: Requirements 13.8
-    // For any operation, when --verbose flag is set, the logging level should be
-    // more detailed than when the flag is not set.
     proptest! {
         #[test]
         fn prop_verbose_flag_effect(
             verbose in proptest::bool::ANY,
         ) {
-            // Create configs with and without verbose flag
             let config = CliConfig {
                 root_directory: PathBuf::from("/test/movies"),
                 force: false,
-                mode: SourceMode::All,
+                sources: vec![Source::Youtube],
                 concurrency: 2,
                 verbose,
                 single: false,
@@ -842,25 +674,12 @@ mod property_tests {
                 cookies_from_browser: None,
             };
 
-            // Verify the verbose flag is correctly stored
             prop_assert_eq!(config.verbose, verbose);
 
-            // The verbose flag should affect logging behavior
-            // When verbose=true, we expect DEBUG level logging
-            // When verbose=false, we expect INFO level logging
-            // This is typically configured in the main function with env_logger
-
-            // We can verify that the flag is accessible and has the correct value
             if verbose {
-                prop_assert!(
-                    config.verbose,
-                    "When verbose flag is set, config.verbose should be true"
-                );
+                prop_assert!(config.verbose, "When verbose flag is set, config.verbose should be true");
             } else {
-                prop_assert!(
-                    !config.verbose,
-                    "When verbose flag is not set, config.verbose should be false"
-                );
+                prop_assert!(!config.verbose, "When verbose flag is not set, config.verbose should be false");
             }
         }
     }

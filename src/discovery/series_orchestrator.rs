@@ -1,6 +1,6 @@
 // Series discovery orchestrator - coordinates discovery from all sources for TV series
 
-use crate::models::{ContentCategory, SeriesEntry, SeriesExtra, SourceMode, SourceType};
+use crate::models::{ContentCategory, SeriesEntry, SeriesExtra, Source, SourceType};
 use log::{debug, info, warn};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -17,19 +17,19 @@ use super::tvdb::TvdbClient;
 pub struct SeriesDiscoveryOrchestrator {
     tmdb: TmdbSeriesDiscoverer,
     youtube: YoutubeSeriesDiscoverer,
-    mode: SourceMode,
+    sources: Vec<Source>,
     tvdb_client: Option<Arc<TvdbClient>>,
     id_bridge: Option<Arc<IdBridge>>,
     pub(crate) cookies_from_browser: Option<String>,
 }
 
 impl SeriesDiscoveryOrchestrator {
-    /// Creates a new SeriesDiscoveryOrchestrator with the specified mode
-    pub fn new(tmdb_api_key: String, mode: SourceMode) -> Self {
+    /// Creates a new SeriesDiscoveryOrchestrator with the specified sources
+    pub fn new(tmdb_api_key: String, sources: Vec<Source>) -> Self {
         Self {
             tmdb: TmdbSeriesDiscoverer::new(tmdb_api_key),
             youtube: YoutubeSeriesDiscoverer::new(),
-            mode,
+            sources,
             tvdb_client: None,
             id_bridge: None,
             cookies_from_browser: None,
@@ -40,7 +40,7 @@ impl SeriesDiscoveryOrchestrator {
     pub fn new_with_tvdb(
         tmdb_api_key: String,
         tvdb_api_key: String,
-        mode: SourceMode,
+        sources: Vec<Source>,
         cache_dir: PathBuf,
     ) -> Self {
         let tvdb_client = Arc::new(TvdbClient::new(tvdb_api_key));
@@ -53,7 +53,7 @@ impl SeriesDiscoveryOrchestrator {
         Self {
             tmdb: TmdbSeriesDiscoverer::new(tmdb_api_key),
             youtube: YoutubeSeriesDiscoverer::new(),
-            mode,
+            sources,
             tvdb_client: Some(tvdb_client),
             id_bridge: Some(id_bridge),
             cookies_from_browser: None,
@@ -80,91 +80,72 @@ impl SeriesDiscoveryOrchestrator {
         })
     }
 
-    /// Discovers video sources from all configured sources based on mode
+    /// Discovers video sources from all configured sources
     ///
-    /// In All mode: queries TMDB and YouTube
-    /// In YoutubeOnly mode: queries only YouTube
+    /// Queries each enabled source (TMDB, YouTube, etc.) based on the sources list.
     ///
     /// Errors from individual sources are logged but don't stop the overall discovery process.
     /// This ensures graceful degradation if one source fails.
     pub async fn discover_all(&self, series: &SeriesEntry) -> Vec<SeriesExtra> {
         let mut all_sources = Vec::new();
 
-        match self.mode {
-            SourceMode::All => {
-                // Query TMDB for series ID and extras
-                match self.tmdb.search_series(&series.title, series.year).await {
-                    Ok(Some(series_id)) => {
-                        // Discover series-level extras from TMDB
-                        match self.tmdb.discover_series_extras(series_id).await {
-                            Ok(mut sources) => {
-                                info!("Found {} sources from TMDB for {}", sources.len(), series);
+        if self.sources.contains(&Source::Tmdb) {
+            // Query TMDB for series ID and extras
+            match self.tmdb.search_series(&series.title, series.year).await {
+                Ok(Some(series_id)) => {
+                    match self.tmdb.discover_series_extras(series_id).await {
+                        Ok(mut sources) => {
+                            info!("Found {} sources from TMDB for {}", sources.len(), series);
 
-                                // Filter out videos that reference seasons not available on disk
-                                let before_count = sources.len();
-                                sources.retain(|extra| {
-                                    if title_matching::references_unavailable_season(&extra.title, &series.seasons) {
-                                        debug!(
-                                            "Excluding TMDB '{}' - references season not on disk (available: {:?})",
-                                            extra.title, series.seasons
-                                        );
-                                        false
-                                    } else {
-                                        true
-                                    }
-                                });
-                                let filtered = before_count - sources.len();
-                                if filtered > 0 {
-                                    info!(
-                                        "Filtered {} TMDB videos referencing unavailable seasons for {}",
-                                        filtered, series
+                            // Filter out videos that reference seasons not available on disk
+                            let before_count = sources.len();
+                            sources.retain(|extra| {
+                                if title_matching::references_unavailable_season(&extra.title, &series.seasons) {
+                                    debug!(
+                                        "Excluding TMDB '{}' - references season not on disk (available: {:?})",
+                                        extra.title, series.seasons
                                     );
+                                    false
+                                } else {
+                                    true
                                 }
+                            });
+                            let filtered = before_count - sources.len();
+                            if filtered > 0 {
+                                info!(
+                                    "Filtered {} TMDB videos referencing unavailable seasons for {}",
+                                    filtered, series
+                                );
+                            }
 
-                                all_sources.extend(sources);
-                            }
-                            Err(e) => {
-                                info!("TMDB series extras discovery failed for {}: {}", series, e);
-                            }
+                            all_sources.extend(sources);
+                        }
+                        Err(e) => {
+                            info!("TMDB series extras discovery failed for {}: {}", series, e);
                         }
                     }
-                    Ok(None) => {
-                        info!("Series not found on TMDB: {}", series);
-                    }
-                    Err(e) => {
-                        info!("TMDB series search failed for {}: {}", series, e);
-                    }
                 }
-
-                // Query YouTube for series-level extras
-                match self.youtube.discover_series_extras(series).await {
-                    Ok(sources) => {
-                        info!(
-                            "Found {} sources from YouTube for {}",
-                            sources.len(),
-                            series
-                        );
-                        all_sources.extend(sources);
-                    }
-                    Err(e) => {
-                        info!("YouTube discovery failed for {}: {}", series, e);
-                    }
+                Ok(None) => {
+                    info!("Series not found on TMDB: {}", series);
+                }
+                Err(e) => {
+                    info!("TMDB series search failed for {}: {}", series, e);
                 }
             }
-            SourceMode::YoutubeOnly => {
-                // Query only YouTube for series-level extras
-                match self.youtube.discover_series_extras(series).await {
-                    Ok(sources) => {
-                        info!(
-                            "Found {} sources from YouTube for {}",
-                            sources.len(),
-                            series
-                        );
-                        all_sources.extend(sources);
-                    }
-                    Err(e) => {
-                        info!("YouTube discovery failed for {}: {}", series, e);
-                    }
+        }
+
+        if self.sources.contains(&Source::Youtube) {
+            match self.youtube.discover_series_extras(series).await {
+                Ok(sources) => {
+                    info!(
+                        "Found {} sources from YouTube for {}",
+                        sources.len(),
+                        series
+                    );
+                    all_sources.extend(sources);
+                }
+                Err(e) => {
+                    info!("YouTube discovery failed for {}: {}", series, e);
                 }
             }
         }
@@ -179,8 +160,7 @@ impl SeriesDiscoveryOrchestrator {
 
     /// Discovers season-specific extras for a given season
     ///
-    /// In All mode: queries TMDB and YouTube
-    /// In YoutubeOnly mode: queries only YouTube
+    /// Queries each enabled source based on the sources list.
     ///
     /// Errors from individual sources are logged but don't stop the overall discovery process.
     pub async fn discover_season_extras(
@@ -199,45 +179,22 @@ impl SeriesDiscoveryOrchestrator {
 
         let mut all_sources = Vec::new();
 
-        match self.mode {
-            SourceMode::All => {
-                // Query YouTube for season-specific extras
-                match self.youtube.discover_season_extras(series, season).await {
-                    Ok(sources) => {
-                        info!(
-                            "Found {} season-specific sources from YouTube for {} Season {}",
-                            sources.len(),
-                            series,
-                            season
-                        );
-                        all_sources.extend(sources);
-                    }
-                    Err(e) => {
-                        info!(
-                            "YouTube season-specific discovery failed for {} Season {}: {}",
-                            series, season, e
-                        );
-                    }
+        if self.sources.contains(&Source::Youtube) {
+            match self.youtube.discover_season_extras(series, season).await {
+                Ok(sources) => {
+                    info!(
+                        "Found {} season-specific sources from YouTube for {} Season {}",
+                        sources.len(),
+                        series,
+                        season
+                    );
+                    all_sources.extend(sources);
                 }
-            }
-            SourceMode::YoutubeOnly => {
-                // Query only YouTube for season-specific extras
-                match self.youtube.discover_season_extras(series, season).await {
-                    Ok(sources) => {
-                        info!(
-                            "Found {} season-specific sources from YouTube for {} Season {}",
-                            sources.len(),
-                            series,
-                            season
-                        );
-                        all_sources.extend(sources);
-                    }
-                    Err(e) => {
-                        info!(
-                            "YouTube season-specific discovery failed for {} Season {}: {}",
-                            series, season, e
-                        );
-                    }
+                Err(e) => {
+                    info!(
+                        "YouTube season-specific discovery failed for {} Season {}: {}",
+                        series, season, e
+                    );
                 }
             }
         }
@@ -614,17 +571,20 @@ mod tests {
 
     #[test]
     fn test_series_discovery_orchestrator_creation_all_mode() {
-        let orchestrator =
-            SeriesDiscoveryOrchestrator::new("test_api_key".to_string(), SourceMode::All);
+        let orchestrator = SeriesDiscoveryOrchestrator::new(
+            "test_api_key".to_string(),
+            vec![Source::Tmdb, Source::Youtube],
+        );
         // Just verify it was created without panicking
-        assert_eq!(orchestrator.mode, SourceMode::All);
+        assert!(orchestrator.sources.contains(&Source::Tmdb));
+        assert!(orchestrator.sources.contains(&Source::Youtube));
     }
 
     #[test]
     fn test_series_discovery_orchestrator_creation_youtube_only_mode() {
         let orchestrator =
-            SeriesDiscoveryOrchestrator::new("test_api_key".to_string(), SourceMode::YoutubeOnly);
-        assert_eq!(orchestrator.mode, SourceMode::YoutubeOnly);
+            SeriesDiscoveryOrchestrator::new("test_api_key".to_string(), vec![Source::Youtube]);
+        assert_eq!(orchestrator.sources, vec![Source::Youtube]);
     }
 
     #[test]
@@ -635,10 +595,10 @@ mod tests {
         let orchestrator = SeriesDiscoveryOrchestrator::new_with_tvdb(
             "tmdb_key".to_string(),
             "tvdb_key".to_string(),
-            SourceMode::All,
+            vec![Source::Tmdb, Source::Youtube],
             temp_dir.path().to_path_buf(),
         );
-        assert_eq!(orchestrator.mode, SourceMode::All);
+        assert!(orchestrator.sources.contains(&Source::Tmdb));
         assert!(orchestrator.tvdb_client.is_some());
         assert!(orchestrator.id_bridge.is_some());
     }
@@ -707,7 +667,6 @@ mod property_tests {
         #[test]
         fn prop_series_error_isolation(
             series_count in 1usize..10usize,
-            mode in prop_oneof![Just(SourceMode::All), Just(SourceMode::YoutubeOnly)]
         ) {
             // Create multiple series
             let series_list: Vec<SeriesEntry> = (0..series_count)
@@ -726,9 +685,6 @@ mod property_tests {
                 prop_assert!(series.year.is_some());
                 prop_assert!(!series.seasons.is_empty());
             }
-
-            // Verify mode is preserved
-            prop_assert_eq!(mode, mode);
         }
     }
 }

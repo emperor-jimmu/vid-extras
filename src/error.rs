@@ -11,6 +11,8 @@ pub enum CliError {
     ParseError(String),
     #[error("Invalid concurrency: {0}")]
     InvalidConcurrency(String),
+    #[error("Deprecated flag: {0}")]
+    DeprecatedFlag(String),
 }
 
 /// Scanner-related errors

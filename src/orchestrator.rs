@@ -5,7 +5,7 @@ use crate::discovery::{DiscoveryOrchestrator, SeriesDiscoveryOrchestrator};
 use crate::downloader::Downloader;
 use crate::error::OrchestratorError;
 use crate::models::{
-    ConversionResult, MovieEntry, ProcessingMode, SeriesEntry, SeriesExtra, SourceMode, VideoSource,
+    ConversionResult, MovieEntry, ProcessingMode, SeriesEntry, SeriesExtra, Source, VideoSource,
 };
 use crate::organizer::{Organizer, SeriesOrganizer};
 use crate::output;
@@ -150,8 +150,8 @@ pub struct OrchestratorConfig {
     pub tmdb_api_key: String,
     /// Optional TheTVDB API key for Season 0 specials discovery
     pub tvdb_api_key: Option<String>,
-    /// Content source mode (All or YoutubeOnly)
-    pub mode: SourceMode,
+    /// Discovery sources to query
+    pub sources: Vec<Source>,
     /// Ignore done markers and reprocess all media
     pub force: bool,
     /// Maximum number of media items to process concurrently
@@ -206,7 +206,7 @@ impl Orchestrator {
 
         info!("Initializing Orchestrator");
         info!("  Root directory: {:?}", config.root_dir);
-        info!("  Mode: {}", config.mode);
+        info!("  Sources: {:?}", config.sources);
         info!("  Force: {}", config.force);
         info!("  Concurrency: {}", config.concurrency);
         info!("  Single folder mode: {}", config.single);
@@ -228,7 +228,7 @@ impl Orchestrator {
                 let mut orch = SeriesDiscoveryOrchestrator::new_with_tvdb(
                     config.tmdb_api_key.clone(),
                     tvdb_key,
-                    config.mode,
+                    config.sources.clone(),
                     cache_dir,
                 );
                 if let Some(ref browser) = config.cookies_from_browser {
@@ -236,8 +236,10 @@ impl Orchestrator {
                 }
                 Arc::new(orch)
             } else {
-                let mut orch =
-                    SeriesDiscoveryOrchestrator::new(config.tmdb_api_key.clone(), config.mode);
+                let mut orch = SeriesDiscoveryOrchestrator::new(
+                    config.tmdb_api_key.clone(),
+                    config.sources.clone(),
+                );
                 if let Some(ref browser) = config.cookies_from_browser {
                     orch = orch.with_cookies(browser.clone());
                 }
@@ -248,10 +250,10 @@ impl Orchestrator {
         let discovery = match &config.cookies_from_browser {
             Some(browser) => DiscoveryOrchestrator::with_cookies(
                 config.tmdb_api_key.clone(),
-                config.mode,
+                config.sources.clone(),
                 browser.clone(),
             ),
-            None => DiscoveryOrchestrator::new(config.tmdb_api_key, config.mode),
+            None => DiscoveryOrchestrator::new(config.tmdb_api_key, config.sources),
         };
 
         // Build downloader — consumes cookies_from_browser
@@ -1029,11 +1031,12 @@ mod tests {
 
     /// Helper to build an OrchestratorConfig with common test defaults
     fn test_config(root_dir: PathBuf) -> OrchestratorConfig {
+        use crate::models::default_sources;
         OrchestratorConfig {
             root_dir,
             tmdb_api_key: "fake_api_key".to_string(),
             tvdb_api_key: None,
-            mode: SourceMode::All,
+            sources: default_sources(),
             force: false,
             concurrency: 1,
             single: false,
@@ -1219,7 +1222,7 @@ mod tests {
         // Test sequential processing (concurrency = 1)
         let orchestrator_seq = Orchestrator::new(OrchestratorConfig {
             root_dir: root_dir.clone(),
-            mode: SourceMode::YoutubeOnly,
+            sources: vec![crate::models::Source::Youtube],
             ..test_config(PathBuf::new())
         })
         .expect("orchestrator build should succeed");
@@ -1227,7 +1230,7 @@ mod tests {
         // Test parallel processing (concurrency = 2)
         let orchestrator_par = Orchestrator::new(OrchestratorConfig {
             root_dir,
-            mode: SourceMode::YoutubeOnly,
+            sources: vec![crate::models::Source::Youtube],
             concurrency: 2,
             ..test_config(PathBuf::new())
         })
@@ -1366,7 +1369,7 @@ mod tests {
         // Without force flag - should skip movie2
         let orchestrator = Orchestrator::new(OrchestratorConfig {
             root_dir: root_dir.clone(),
-            mode: SourceMode::YoutubeOnly,
+            sources: vec![crate::models::Source::Youtube],
             ..test_config(PathBuf::new())
         })
         .expect("orchestrator build should succeed");
@@ -1377,7 +1380,7 @@ mod tests {
         // With force flag - should process both
         let orchestrator_force = Orchestrator::new(OrchestratorConfig {
             root_dir,
-            mode: SourceMode::YoutubeOnly,
+            sources: vec![crate::models::Source::Youtube],
             force: true,
             ..test_config(PathBuf::new())
         })
@@ -1546,7 +1549,7 @@ mod tests {
         // Test with Both mode - should find both
         let orchestrator = Orchestrator::new(OrchestratorConfig {
             root_dir: root_dir.clone(),
-            mode: SourceMode::YoutubeOnly,
+            sources: vec![crate::models::Source::Youtube],
             ..test_config(PathBuf::new())
         })
         .expect("orchestrator build should succeed");
@@ -1561,7 +1564,7 @@ mod tests {
         // Test with MoviesOnly mode - should only find movies
         let orchestrator_movies = Orchestrator::new(OrchestratorConfig {
             root_dir: root_dir.clone(),
-            mode: SourceMode::YoutubeOnly,
+            sources: vec![crate::models::Source::Youtube],
             processing_mode: ProcessingMode::MoviesOnly,
             ..test_config(PathBuf::new())
         })
@@ -1581,7 +1584,7 @@ mod tests {
         // Test with SeriesOnly mode - should only find series
         let orchestrator_series = Orchestrator::new(OrchestratorConfig {
             root_dir,
-            mode: SourceMode::YoutubeOnly,
+            sources: vec![crate::models::Source::Youtube],
             processing_mode: ProcessingMode::SeriesOnly,
             ..test_config(PathBuf::new())
         })
