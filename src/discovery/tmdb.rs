@@ -4,8 +4,13 @@ use crate::error::DiscoveryError;
 use crate::models::{ContentCategory, MovieEntry, SourceType, VideoSource};
 use log::{debug, error, info};
 use serde::Deserialize;
+use std::collections::HashSet;
 
 use super::ContentDiscoverer;
+
+/// TMDB video types allowed from collection siblings (FR17).
+/// Only cross-promotional content is included — trailers/teasers promote the sibling, not the library movie.
+const SIBLING_ALLOWED_TYPES: [&str; 2] = ["Featurette", "Behind the Scenes"];
 
 /// Discovery metadata including collection information
 #[derive(Debug, Clone, Default)]
@@ -51,15 +56,15 @@ struct TmdbCollection {
 struct TmdbCollectionResponse {
     id: u64,
     name: String,
+    #[serde(default)]
     parts: Vec<TmdbCollectionPart>,
 }
 
 /// TMDB collection part (movie in collection)
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct TmdbCollectionPart {
-    id: u64,
-    title: String,
+pub(crate) struct TmdbCollectionPart {
+    pub id: u64,
+    pub title: String,
 }
 
 /// TMDB API response for videos
@@ -188,8 +193,11 @@ impl TmdbDiscoverer {
         Ok(movie_details.belongs_to_collection)
     }
 
-    /// Fetch collection details including all movie titles
-    async fn fetch_collection(&self, collection_id: u64) -> Result<Vec<String>, DiscoveryError> {
+    /// Fetch collection details including all movies in the collection
+    async fn fetch_collection(
+        &self,
+        collection_id: u64,
+    ) -> Result<Vec<TmdbCollectionPart>, DiscoveryError> {
         let url = format!(
             "https://api.themoviedb.org/3/collection/{}?api_key={}",
             collection_id, self.api_key
@@ -216,14 +224,14 @@ impl TmdbDiscoverer {
             DiscoveryError::NetworkError(e)
         })?;
 
-        let titles: Vec<String> = collection.parts.iter().map(|p| p.title.clone()).collect();
+        let part_titles: Vec<&str> = collection.parts.iter().map(|p| p.title.as_str()).collect();
         info!(
             "Found {} movies in collection '{}': {:?}",
-            titles.len(),
+            collection.parts.len(),
             collection.name,
-            titles
+            part_titles
         );
-        Ok(titles)
+        Ok(collection.parts)
     }
 
     /// Fetch videos for a movie by ID
@@ -258,6 +266,39 @@ impl TmdbDiscoverer {
         Ok(videos_result.results)
     }
 
+    /// Fetch videos from a sibling movie in the same collection, filtered to
+    /// cross-promotional types only (Featurette, Behind the Scenes).
+    /// Skips the library movie itself.
+    async fn fetch_sibling_videos(
+        &self,
+        sibling: &TmdbCollectionPart,
+        library_movie_id: u64,
+    ) -> Result<Vec<VideoSource>, DiscoveryError> {
+        if sibling.id == library_movie_id {
+            return Ok(Vec::new());
+        }
+
+        let videos = self.fetch_videos(sibling.id).await?;
+
+        let sources = videos
+            .into_iter()
+            .filter(|v| {
+                v.site == "YouTube" && SIBLING_ALLOWED_TYPES.contains(&v.video_type.as_str())
+            })
+            .filter_map(|v| {
+                Self::map_tmdb_type(&v.video_type).map(|category| VideoSource {
+                    url: format!("https://www.youtube.com/watch?v={}", v.key),
+                    source_type: SourceType::TMDB,
+                    category,
+                    title: format!("{} - {}", sibling.title, v.name),
+                    season_number: None,
+                })
+            })
+            .collect();
+
+        Ok(sources)
+    }
+
     /// Map TMDB video type to content category
     pub fn map_tmdb_type(tmdb_type: &str) -> Option<ContentCategory> {
         match tmdb_type {
@@ -290,11 +331,12 @@ impl TmdbDiscoverer {
                 );
                 // Fetch collection details
                 match self.fetch_collection(collection.id).await {
-                    Ok(titles) => {
+                    Ok(parts) => {
                         // Exclude the current movie title from the list
-                        metadata.collection_movie_titles = titles
+                        metadata.collection_movie_titles = parts
                             .into_iter()
-                            .filter(|t| !t.eq_ignore_ascii_case(&movie.title))
+                            .filter(|p| !p.title.eq_ignore_ascii_case(&movie.title))
+                            .map(|p| p.title)
                             .collect();
 
                         if metadata.collection_movie_titles.is_empty() {
@@ -338,7 +380,7 @@ impl ContentDiscoverer for TmdbDiscoverer {
         info!("Discovering TMDB content for: {}", movie);
 
         // Search for the movie
-        let (movie_id, _collection) = match self.search_movie(&movie.title, movie.year).await {
+        let (movie_id, collection_opt) = match self.search_movie(&movie.title, movie.year).await {
             Ok(Some(result)) => result,
             Ok(None) => {
                 info!("No TMDB match found for: {}", movie);
@@ -360,7 +402,7 @@ impl ContentDiscoverer for TmdbDiscoverer {
         };
 
         // Convert TMDB videos to VideoSource
-        let sources: Vec<VideoSource> = videos
+        let mut sources: Vec<VideoSource> = videos
             .into_iter()
             .filter(|v| v.site == "YouTube") // Only YouTube videos are downloadable
             .filter_map(|v| {
@@ -375,6 +417,66 @@ impl ContentDiscoverer for TmdbDiscoverer {
             .collect();
 
         info!("Discovered {} TMDB sources for: {}", sources.len(), movie);
+
+        // Fetch collection sibling videos if movie belongs to a collection.
+        // Requests are staggered by 100ms to avoid TMDB rate limits, then awaited concurrently.
+        if let Some(coll) = collection_opt {
+            let parts = match self.fetch_collection(coll.id).await {
+                Ok(p) => p,
+                Err(e) => {
+                    info!("TMDB collection fetch failed for {}: {}", movie, e);
+                    vec![]
+                }
+            };
+
+            // Collect existing URLs to deduplicate against primary movie's own videos
+            let mut seen_urls: HashSet<String> = sources.iter().map(|s| s.url.clone()).collect();
+
+            // Spawn staggered tasks — one per sibling, 100ms apart
+            let mut handles = Vec::with_capacity(parts.len());
+            for (i, part) in parts.into_iter().enumerate() {
+                let discoverer = TmdbDiscoverer::new(self.api_key.clone());
+                let delay = tokio::time::Duration::from_millis(100 * i as u64);
+                handles.push(tokio::spawn(async move {
+                    tokio::time::sleep(delay).await;
+                    (
+                        part.title.clone(),
+                        discoverer.fetch_sibling_videos(&part, movie_id).await,
+                    )
+                }));
+            }
+
+            let mut collection_count = 0;
+            for handle in handles {
+                match handle.await {
+                    Ok((_sibling_title, Ok(extras))) => {
+                        for extra in extras {
+                            if seen_urls.insert(extra.url.clone()) {
+                                collection_count += 1;
+                                sources.push(extra);
+                            }
+                        }
+                    }
+                    Ok((sibling_title, Err(e))) => {
+                        info!(
+                            "TMDB sibling video fetch failed for '{}': {}",
+                            sibling_title, e
+                        );
+                    }
+                    Err(e) => {
+                        info!("TMDB sibling task panicked: {}", e);
+                    }
+                }
+            }
+
+            if collection_count > 0 {
+                info!(
+                    "Discovered {} collection extras for: {}",
+                    collection_count, movie
+                );
+            }
+        }
+
         Ok(sources)
     }
 }
@@ -459,5 +561,83 @@ mod tests {
     fn test_map_tmdb_type_unknown() {
         assert_eq!(TmdbDiscoverer::map_tmdb_type("Unknown"), None);
         assert_eq!(TmdbDiscoverer::map_tmdb_type(""), None);
+    }
+
+    #[test]
+    fn test_collection_video_type_filter_allows_featurette() {
+        assert!(SIBLING_ALLOWED_TYPES.contains(&"Featurette"));
+    }
+
+    #[test]
+    fn test_collection_video_type_filter_allows_behind_the_scenes() {
+        assert!(SIBLING_ALLOWED_TYPES.contains(&"Behind the Scenes"));
+    }
+
+    #[test]
+    fn test_collection_video_type_filter_rejects_trailer() {
+        assert!(!SIBLING_ALLOWED_TYPES.contains(&"Trailer"));
+    }
+
+    #[test]
+    fn test_collection_video_type_filter_rejects_teaser() {
+        assert!(!SIBLING_ALLOWED_TYPES.contains(&"Teaser"));
+    }
+
+    #[test]
+    fn test_collection_video_type_filter_rejects_clip() {
+        assert!(!SIBLING_ALLOWED_TYPES.contains(&"Clip"));
+    }
+
+    #[test]
+    fn test_collection_video_type_filter_rejects_bloopers() {
+        assert!(!SIBLING_ALLOWED_TYPES.contains(&"Bloopers"));
+    }
+
+    #[test]
+    fn test_collection_video_title_prefix() {
+        let sibling_title = "Iron Man 3";
+        let video_name = "Making of the Trilogy";
+        let result = format!("{} - {}", sibling_title, video_name);
+        assert_eq!(result, "Iron Man 3 - Making of the Trilogy");
+    }
+
+    #[test]
+    fn test_collection_video_title_prefix_special_chars() {
+        let sibling_title = "Spider-Man: No Way Home";
+        let video_name = "Behind the Scenes Featurette";
+        let result = format!("{} - {}", sibling_title, video_name);
+        assert_eq!(
+            result,
+            "Spider-Man: No Way Home - Behind the Scenes Featurette"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_sibling_videos_skips_library_movie() {
+        let discoverer = TmdbDiscoverer::new("fake_key".to_string());
+        let sibling = TmdbCollectionPart {
+            id: 12345,
+            title: "Same Movie".to_string(),
+        };
+        // When sibling.id == library_movie_id, should return empty without API call
+        let result = discoverer.fetch_sibling_videos(&sibling, 12345).await;
+        assert!(result.is_ok());
+        assert!(result.expect("should succeed").is_empty());
+    }
+
+    #[test]
+    fn test_sibling_allowed_types_covers_all_fr17_types() {
+        // FR17: only Featurette and Behind the Scenes pass from siblings
+        assert_eq!(SIBLING_ALLOWED_TYPES.len(), 2);
+        assert!(SIBLING_ALLOWED_TYPES.contains(&"Featurette"));
+        assert!(SIBLING_ALLOWED_TYPES.contains(&"Behind the Scenes"));
+        // Verify map_tmdb_type agrees — no allowed type should return None
+        for t in SIBLING_ALLOWED_TYPES {
+            assert!(
+                TmdbDiscoverer::map_tmdb_type(t).is_some(),
+                "SIBLING_ALLOWED_TYPES contains '{}' but map_tmdb_type returns None for it",
+                t
+            );
+        }
     }
 }

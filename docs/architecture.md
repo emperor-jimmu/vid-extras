@@ -96,7 +96,7 @@ The most complex subsystem. Organized into 16 focused modules:
 
 ```
 DiscoveryOrchestrator
-├── TmdbDiscoverer          (TMDB API: search + video list)
+├── TmdbDiscoverer          (TMDB API: search + video list + collection sibling videos)
 ├── ArchiveOrgDiscoverer    (Archive.org: all movies — general, making-of, DVDXtras queries)
 └── YoutubeDiscoverer       (yt-dlp ytsearch5: always queried)
 ```
@@ -254,8 +254,9 @@ ProcessingSummary → terminal output
 - **Auth:** `api_key` query parameter
 - **Movie search:** `GET /3/search/movie?query={title}&year={year}`
 - **Movie videos:** `GET /3/movie/{id}/videos`
-- **Movie details:** `GET /3/movie/{id}` (for collection membership)
-- **Collection:** `GET /3/collection/{id}` (for related movie titles)
+- **Movie details:** `GET /3/movie/{id}` (for collection membership detection)
+- **Collection:** `GET /3/collection/{id}` (for sibling movie IDs and titles)
+- **Sibling videos:** `GET /3/movie/{sibling_id}/videos` (for collection cross-promotional extras)
 - **TV search:** `GET /3/search/tv?query={title}`
 - **TV details:** `GET /3/tv/{id}`
 - **TV videos:** `GET /3/tv/{id}/videos`
