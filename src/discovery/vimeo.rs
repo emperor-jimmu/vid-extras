@@ -4,7 +4,7 @@
 
 use crate::error::DiscoveryError;
 use crate::models::{ContentCategory, SourceType, VideoSource};
-use log::{info, warn};
+use log::{debug, info, warn};
 use serde::Deserialize;
 
 use super::title_matching;
@@ -83,8 +83,36 @@ impl VimeoDiscoverer {
     }
 
     /// Filters a Vimeo video and maps it to a `VideoSource`.
-    /// Returns `None` if the video fails duration or keyword filters.
-    fn map_video_to_source(video: &VimeoVideo) -> Option<VideoSource> {
+    /// Returns `None` if the video fails title relevance, duration, or keyword filters.
+    fn map_video_to_source(
+        video: &VimeoVideo,
+        movie_title: &str,
+        year: u16,
+    ) -> Option<VideoSource> {
+        // Title relevance: video must mention the movie title
+        if !title_matching::contains_movie_title(&video.name, movie_title) {
+            debug!(
+                "Vimeo: excluding '{}' - does not contain movie title '{}'",
+                video.name, movie_title
+            );
+            return None;
+        }
+        // Reject videos that reference a sequel/different numbered entry
+        if title_matching::mentions_sequel_number(&video.name, movie_title) {
+            debug!(
+                "Vimeo: excluding '{}' - mentions sequel number",
+                video.name
+            );
+            return None;
+        }
+        // Reject videos that mention a different year (likely a different film)
+        if year > 0 && title_matching::mentions_different_year(&video.name, year) {
+            debug!(
+                "Vimeo: excluding '{}' - mentions different year (expected {})",
+                video.name, year
+            );
+            return None;
+        }
         // Duration filter: 30s–2400s (40 minutes), same as DailymotionDiscoverer
         if !(30..=2400).contains(&video.duration) {
             return None;
@@ -121,7 +149,7 @@ impl VimeoDiscoverer {
             match self.fetch_page(&query, page).await {
                 Ok(response) => {
                     for video in &response.data {
-                        if let Some(source) = Self::map_video_to_source(video) {
+                        if let Some(source) = Self::map_video_to_source(video, title, year) {
                             all_sources.push(source);
                         }
                     }
@@ -254,21 +282,21 @@ mod tests {
     #[test]
     fn test_map_video_duration_too_short_filtered() {
         let video = make_video("Inception Trailer", 20, "https://vimeo.com/111");
-        assert!(VimeoDiscoverer::map_video_to_source(&video).is_none());
+        assert!(VimeoDiscoverer::map_video_to_source(&video, "Inception", 2010).is_none());
     }
 
     // --- Task 2.3: duration too long ---
     #[test]
     fn test_map_video_duration_too_long_filtered() {
         let video = make_video("Inception Full Movie", 2401, "https://vimeo.com/222");
-        assert!(VimeoDiscoverer::map_video_to_source(&video).is_none());
+        assert!(VimeoDiscoverer::map_video_to_source(&video, "Inception", 2010).is_none());
     }
 
     // --- Task 2.4: valid duration included ---
     #[test]
     fn test_map_video_duration_valid_included() {
         let video = make_video("Inception Behind the Scenes", 120, "https://vimeo.com/333");
-        let source = VimeoDiscoverer::map_video_to_source(&video);
+        let source = VimeoDiscoverer::map_video_to_source(&video, "Inception", 2010);
         assert!(source.is_some());
         let source = source.expect("should be Some");
         assert_eq!(source.source_type, SourceType::Vimeo);
@@ -279,14 +307,15 @@ mod tests {
     #[test]
     fn test_map_video_excluded_keyword_filtered() {
         let video = make_video("Inception Movie Review", 300, "https://vimeo.com/444");
-        assert!(VimeoDiscoverer::map_video_to_source(&video).is_none());
+        assert!(VimeoDiscoverer::map_video_to_source(&video, "Inception", 2010).is_none());
     }
 
     // --- Task 2.6: category inferred ---
     #[test]
     fn test_map_video_category_inferred_from_title() {
         let video = make_video("Inception Official Trailer", 148, "https://vimeo.com/555");
-        let source = VimeoDiscoverer::map_video_to_source(&video).expect("should be Some");
+        let source = VimeoDiscoverer::map_video_to_source(&video, "Inception", 2010)
+            .expect("should be Some");
         assert_eq!(source.category, ContentCategory::Trailer);
     }
 
@@ -294,7 +323,8 @@ mod tests {
     #[test]
     fn test_map_video_category_fallback_to_extras() {
         let video = make_video("Inception Cast at Premiere", 200, "https://vimeo.com/666");
-        let source = VimeoDiscoverer::map_video_to_source(&video).expect("should be Some");
+        let source = VimeoDiscoverer::map_video_to_source(&video, "Inception", 2010)
+            .expect("should be Some");
         assert_eq!(source.category, ContentCategory::Extras);
     }
 
@@ -303,33 +333,44 @@ mod tests {
     fn test_map_video_url_uses_link_not_uri() {
         let video = VimeoVideo {
             uri: "/videos/999".to_string(),
-            name: "Some Trailer".to_string(),
+            name: "Inception Trailer".to_string(),
             duration: 120,
             link: "https://vimeo.com/999".to_string(),
         };
-        let source = VimeoDiscoverer::map_video_to_source(&video).expect("should be Some");
+        let source = VimeoDiscoverer::map_video_to_source(&video, "Inception", 2010)
+            .expect("should be Some");
         assert_eq!(source.url, video.link);
         assert_ne!(source.url, video.uri);
+    }
+
+    // --- Task 2.8b: unrelated video is filtered by title relevance ---
+    #[test]
+    fn test_map_video_unrelated_title_filtered() {
+        let video = make_video("Ben Wilkins Showreel", 120, "https://vimeo.com/unrelated");
+        assert!(
+            VimeoDiscoverer::map_video_to_source(&video, "2 Fast 2 Furious", 2003).is_none()
+        );
     }
 
     // --- Boundary: duration filter inclusive bounds ---
     #[test]
     fn test_map_video_duration_boundary_min() {
         let video = make_video("Inception Clip", 30, "https://vimeo.com/min");
-        assert!(VimeoDiscoverer::map_video_to_source(&video).is_some());
+        assert!(VimeoDiscoverer::map_video_to_source(&video, "Inception", 2010).is_some());
     }
 
     #[test]
     fn test_map_video_duration_boundary_max() {
         let video = make_video("Inception Documentary", 2400, "https://vimeo.com/max");
-        assert!(VimeoDiscoverer::map_video_to_source(&video).is_some());
+        assert!(VimeoDiscoverer::map_video_to_source(&video, "Inception", 2400).is_some());
     }
 
     // --- Task 2.9: duration_secs populated ---
     #[test]
     fn test_map_video_duration_secs_populated() {
         let video = make_video("Inception Featurette", 360, "https://vimeo.com/777");
-        let source = VimeoDiscoverer::map_video_to_source(&video).expect("should be Some");
+        let source = VimeoDiscoverer::map_video_to_source(&video, "Inception", 2010)
+            .expect("should be Some");
         assert_eq!(source.duration_secs, Some(360));
     }
 
@@ -367,7 +408,8 @@ mod tests {
         assert_eq!(first.link, "https://vimeo.com/123456");
 
         // Verify map_video_to_source produces correct VideoSource
-        let source = VimeoDiscoverer::map_video_to_source(first).expect("should be Some");
+        let source = VimeoDiscoverer::map_video_to_source(first, "Inception", 2010)
+            .expect("should be Some");
         assert_eq!(source.source_type, SourceType::Vimeo);
         assert_eq!(source.category, ContentCategory::Trailer);
         assert_eq!(source.title, "Inception - Official Trailer");
