@@ -93,12 +93,20 @@ impl KinoCheckDiscoverer {
 
         let sources = match movie.trailer {
             Some(trailer) => {
+                // Validate the YouTube video ID: must be non-empty and exactly 11 chars
+                // (YouTube's standard ID format). An invalid ID would produce a broken URL
+                // that yt-dlp would fail on at download time.
+                let id = trailer.youtube_video_id.trim();
+                if id.is_empty() || id.len() != 11 {
+                    warn!(
+                        "KinoCheck returned invalid youtube_video_id {:?} for tmdb_id={} — skipping",
+                        id, tmdb_id
+                    );
+                    return Ok(Vec::new());
+                }
                 let category = Self::map_category(&trailer.categories);
                 vec![VideoSource {
-                    url: format!(
-                        "https://www.youtube.com/watch?v={}",
-                        trailer.youtube_video_id
-                    ),
+                    url: format!("https://www.youtube.com/watch?v={}", id),
                     source_type: SourceType::KinoCheck,
                     category,
                     title: trailer.title,
@@ -133,6 +141,16 @@ impl KinoCheckDiscoverer {
         if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
             warn!("KinoCheck rate limited (429), retrying after 1s");
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            // Count the retry as a separate request against the daily limit
+            let retry_count = self.request_count.fetch_add(1, Ordering::Relaxed) + 1;
+            if retry_count == KINOCHECK_WARN_THRESHOLD {
+                warn!(
+                    "KinoCheck request count at {}/{} ({}% of daily limit)",
+                    retry_count,
+                    KINOCHECK_DAILY_LIMIT,
+                    retry_count * 100 / KINOCHECK_DAILY_LIMIT
+                );
+            }
             let retry = match self.client.get(&url).send().await {
                 Ok(r) => r,
                 Err(e) => {

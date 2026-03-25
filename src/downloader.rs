@@ -222,16 +222,26 @@ impl Downloader {
                                         };
 
                                         if confirmed {
-                                            let base_name = local_path
+                                            // Skip subtitle download if we can't derive a
+                                            // valid stem — a fallback name would orphan the
+                                            // subtitle files (stem mismatch in organizer).
+                                            if let Some(base_name) = local_path
                                                 .file_stem()
                                                 .and_then(|s| s.to_str())
-                                                .unwrap_or("subtitle");
-                                            self.download_subtitles(
-                                                &source.url,
-                                                dest_dir,
-                                                base_name,
-                                            )
-                                            .await
+                                            {
+                                                self.download_subtitles(
+                                                    &source.url,
+                                                    dest_dir,
+                                                    base_name,
+                                                )
+                                                .await
+                                            } else {
+                                                debug!(
+                                                    "Cannot derive file stem from {:?}, skipping subtitle download",
+                                                    local_path
+                                                );
+                                                vec![]
+                                            }
                                         } else {
                                             vec![]
                                         }

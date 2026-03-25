@@ -16,6 +16,27 @@ use super::title_matching;
 use super::tvdb::TvdbClient;
 use super::vimeo::VimeoDiscoverer;
 
+/// Convert a `VideoSource` into a `SeriesExtra` for the series pipeline.
+///
+/// `season_number` is always `None` here — series-level extras are not
+/// season-specific. Season-specific extras are handled by `discover_season_extras`.
+fn video_source_to_series_extra(vs: crate::models::VideoSource, series: &SeriesEntry) -> SeriesExtra {
+    SeriesExtra {
+        series_id: format!(
+            "{}_{}",
+            series.title.replace(' ', "_"),
+            series.year.unwrap_or(0)
+        ),
+        season_number: None,
+        category: vs.category,
+        title: vs.title,
+        url: vs.url,
+        source_type: vs.source_type,
+        local_path: None,
+        duration_secs: vs.duration_secs,
+    }
+}
+
 /// Orchestrates series discovery from all sources
 pub struct SeriesDiscoveryOrchestrator {
     tmdb: TmdbSeriesDiscoverer,
@@ -207,20 +228,7 @@ impl SeriesDiscoveryOrchestrator {
                     // Convert VideoSource to SeriesExtra for the series pipeline
                     let extras: Vec<SeriesExtra> = sources
                         .into_iter()
-                        .map(|vs| SeriesExtra {
-                            series_id: format!(
-                                "{}_{}",
-                                series.title.replace(' ', "_"),
-                                series.year.unwrap_or(0)
-                            ),
-                            season_number: None,
-                            category: vs.category,
-                            title: vs.title,
-                            url: vs.url,
-                            source_type: vs.source_type,
-                            local_path: None,
-                            duration_secs: vs.duration_secs,
-                        })
+                        .map(|vs| video_source_to_series_extra(vs, series))
                         .collect();
                     info!(
                         "Found {} sources from Dailymotion for {}",
@@ -251,20 +259,7 @@ impl SeriesDiscoveryOrchestrator {
                 Ok(sources) => {
                     let extras: Vec<SeriesExtra> = sources
                         .into_iter()
-                        .map(|vs| SeriesExtra {
-                            series_id: format!(
-                                "{}_{}",
-                                series.title.replace(' ', "_"),
-                                series.year.unwrap_or(0)
-                            ),
-                            season_number: None,
-                            category: vs.category,
-                            title: vs.title,
-                            url: vs.url,
-                            source_type: vs.source_type,
-                            local_path: None,
-                            duration_secs: vs.duration_secs,
-                        })
+                        .map(|vs| video_source_to_series_extra(vs, series))
                         .collect();
                     info!("Found {} sources from Vimeo for {}", extras.len(), series);
                     source_results.push(SourceResult {

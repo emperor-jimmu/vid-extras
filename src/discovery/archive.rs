@@ -152,29 +152,32 @@ impl ArchiveOrgDiscoverer {
 
     /// Build Archive.org search query for general movie content
     fn build_general_query(title: &str, year: u16) -> String {
+        let escaped = title.replace('"', "\\\"");
         format!(
             "title:\"{}\" AND year:{} AND mediatype:movies AND (subject:trailer OR subject:featurette OR subject:\"behind the scenes\" OR subject:\"deleted scene\" OR subject:clip)",
-            title, year
+            escaped, year
         )
     }
 
     /// Build Archive.org search query for DVDXtras collection
     /// This collection contains EPK content from DVD releases
     fn build_dvdxtras_query(title: &str) -> String {
+        let escaped = title.replace('"', "\\\"");
         // Search the DVDXtras collection for the movie title
         // The collection contains behind-the-scenes, deleted scenes, featurettes, etc.
         format!(
             "collection:DVDXtras AND (title:\"{}\" OR description:\"{}\")",
-            title, title
+            escaped, escaped
         )
     }
 
     /// Build Archive.org search query for making-of content
     /// Searches for items with `subject:"making of"` for all movies regardless of year
     fn build_making_of_query(title: &str) -> String {
+        let escaped = title.replace('"', "\\\"");
         format!(
             "title:\"{}\" AND subject:\"making of\" AND mediatype:movies",
-            title
+            escaped
         )
     }
 
