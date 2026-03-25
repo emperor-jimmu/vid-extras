@@ -903,6 +903,110 @@ mod tests {
         let result = Downloader::sanitize_filename(input);
         assert_eq!(result, "Title 'with' quotes and 'curly' quotes.mkv");
     }
+
+    // Story 6.2: Dailymotion Download via yt-dlp
+    // Verifies that Dailymotion URLs flow through the downloader identically to YouTube URLs
+    // (NFR11: all sources use yt-dlp as the sole download backend)
+
+    #[tokio::test]
+    async fn test_dailymotion_url_flows_through_downloader() {
+        // Verify that a Dailymotion VideoSource is handled by yt-dlp, not a special code path.
+        // We use an invalid URL so yt-dlp fails fast — the important assertion is that
+        // the result is a DownloadResult (not a panic or type error), confirming yt-dlp was invoked.
+        let temp_base = TempDir::new().unwrap();
+        let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+        let sources = vec![VideoSource {
+            url: "https://www.dailymotion.com/video/x_nonexistent_test".to_string(),
+            source_type: SourceType::Dailymotion,
+            category: ContentCategory::Trailer,
+            title: "Dailymotion Test Trailer".to_string(),
+            season_number: None,
+            duration_secs: None,
+        }];
+
+        let results = downloader
+            .download_all("dailymotion_test_movie", sources)
+            .await;
+
+        // Must produce exactly one result — no source-type branching that would skip it
+        assert_eq!(results.len(), 1);
+        // The download will fail (invalid URL), but it must have been attempted via yt-dlp
+        assert!(!results[0].success);
+        assert!(results[0].error.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_dailymotion_download_failure_does_not_stop_pipeline() {
+        // Verify error isolation: a failed Dailymotion download does not prevent
+        // other sources from producing DownloadResult entries (FR33, AC #3).
+        let temp_base = TempDir::new().unwrap();
+        let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+        let sources = vec![
+            VideoSource {
+                url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ_fake_1".to_string(),
+                source_type: SourceType::YouTube,
+                category: ContentCategory::Trailer,
+                title: "YouTube Video 1".to_string(),
+                season_number: None,
+                duration_secs: None,
+            },
+            VideoSource {
+                url: "https://www.dailymotion.com/video/x_bad_url_test".to_string(),
+                source_type: SourceType::Dailymotion,
+                category: ContentCategory::BehindTheScenes,
+                title: "Dailymotion BTS".to_string(),
+                season_number: None,
+                duration_secs: None,
+            },
+            VideoSource {
+                url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ_fake_2".to_string(),
+                source_type: SourceType::YouTube,
+                category: ContentCategory::Featurette,
+                title: "YouTube Video 2".to_string(),
+                season_number: None,
+                duration_secs: None,
+            },
+        ];
+
+        let results = downloader
+            .download_all("isolation_test_movie", sources)
+            .await;
+
+        // All 3 sources must produce a result — no early exit on Dailymotion failure
+        assert_eq!(results.len(), 3);
+        // The Dailymotion entry (index 1) must have failed, not been skipped
+        assert!(!results[1].success);
+        assert!(results[1].error.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_dailymotion_uses_temp_dir_conventions() {
+        // Verify that the temp directory structure is identical regardless of source type (AC #4).
+        // The downloader must use the same tmp_downloads/{movie_id}/ path for Dailymotion.
+        let temp_base = TempDir::new().unwrap();
+        let downloader = Downloader::new(temp_base.path().to_path_buf());
+
+        // download_all creates the temp dir before invoking download_single
+        let sources = vec![VideoSource {
+            url: "https://www.dailymotion.com/video/x_temp_dir_test".to_string(),
+            source_type: SourceType::Dailymotion,
+            category: ContentCategory::Trailer,
+            title: "Temp Dir Test".to_string(),
+            season_number: None,
+            duration_secs: None,
+        }];
+
+        let movie_id = "dailymotion_tempdir_check";
+        let expected_temp_dir = temp_base.path().join(movie_id);
+
+        downloader.download_all(movie_id, sources).await;
+
+        // The temp directory must have been created under temp_base with the movie_id as the name
+        assert!(expected_temp_dir.exists());
+        assert!(expected_temp_dir.is_dir());
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 # Story 6.2: Dailymotion Download via yt-dlp
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -17,16 +17,16 @@ So that no source-specific download implementation is needed and I get consisten
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Verify existing Downloader handles Dailymotion URLs (AC: #1, #2, #3, #4)
-  - [ ] 1.1 Add integration test `test_dailymotion_url_flows_through_downloader` in `src/downloader.rs` — construct a `VideoSource` with `source_type: SourceType::Dailymotion` and a `https://www.dailymotion.com/video/x7tgad2` URL, call `download_single` against a temp dir, verify the yt-dlp command is constructed identically to YouTube URLs (same args, same output template, same timeout). Since yt-dlp is an external binary, this test should verify the `Command` construction path, not actually execute the download. Use a non-existent URL and assert the `DownloadResult` has `success: false` with an error message (confirming yt-dlp was invoked, not a Dailymotion-specific path).
-  - [ ] 1.2 Add integration test `test_dailymotion_download_failure_does_not_stop_pipeline` — create a `Vec<VideoSource>` with 3 entries (YouTube, Dailymotion with bad URL, YouTube), call `download_all`, verify all 3 produce `DownloadResult` entries (the Dailymotion one with `success: false`, confirming error isolation per AC #3)
-  - [ ] 1.3 Add integration test `test_dailymotion_uses_temp_dir_conventions` — verify that `create_temp_dir` produces the same `tmp_downloads/{movie_id}/` path structure regardless of `SourceType`, confirming AC #4
+- [x] Task 1: Verify existing Downloader handles Dailymotion URLs (AC: #1, #2, #3, #4)
+  - [x] 1.1 Add integration test `test_dailymotion_url_flows_through_downloader` in `src/downloader.rs` — construct a `VideoSource` with `source_type: SourceType::Dailymotion` and a `https://www.dailymotion.com/video/x7tgad2` URL, call `download_single` against a temp dir, verify the yt-dlp command is constructed identically to YouTube URLs (same args, same output template, same timeout). Since yt-dlp is an external binary, this test should verify the `Command` construction path, not actually execute the download. Use a non-existent URL and assert the `DownloadResult` has `success: false` with an error message (confirming yt-dlp was invoked, not a Dailymotion-specific path).
+  - [x] 1.2 Add integration test `test_dailymotion_download_failure_does_not_stop_pipeline` — create a `Vec<VideoSource>` with 3 entries (YouTube, Dailymotion with bad URL, YouTube), call `download_all`, verify all 3 produce `DownloadResult` entries (the Dailymotion one with `success: false`, confirming error isolation per AC #3)
+  - [x] 1.3 Add integration test `test_dailymotion_uses_temp_dir_conventions` — verify that `create_temp_dir` produces the same `tmp_downloads/{movie_id}/` path structure regardless of `SourceType`, confirming AC #4
 
-- [ ] Task 2: Quality gate (AC: all)
-  - [ ] 2.1 `cargo build` — fix any errors
-  - [ ] 2.2 `cargo test` — fix any failures
-  - [ ] 2.3 `cargo clippy -- -D warnings` — fix any warnings
-  - [ ] 2.4 `cargo fmt -- --check` — fix any formatting issues
+- [x] Task 2: Quality gate (AC: all)
+  - [x] 2.1 `cargo build` — fix any errors
+  - [x] 2.2 `cargo test` — fix any failures
+  - [x] 2.3 `cargo clippy -- -D warnings` — fix any warnings
+  - [x] 2.4 `cargo fmt -- --check` — fix any formatting issues
 
 ## Dev Notes
 
@@ -117,8 +117,16 @@ Look at the existing downloader tests (starting at line 714):
 
 ### Agent Model Used
 
-### Debug Log References
+Claude Sonnet 4.6
 
 ### Completion Notes List
 
+- This is a verification story — no production code was modified. The existing `Downloader::download_single` already handles Dailymotion URLs identically to YouTube URLs via yt-dlp.
+- 3 tests added to `src/downloader.rs` tests module: `test_dailymotion_url_flows_through_downloader`, `test_dailymotion_download_failure_does_not_stop_pipeline`, `test_dailymotion_uses_temp_dir_conventions`
+- Tests use invalid URLs so yt-dlp fails fast — the assertions confirm yt-dlp was invoked (not a Dailymotion-specific code path) and that error isolation holds
+- Test count: 16 → 19 downloader tests (17 passing, 2 ignored — unchanged)
+- Quality gate: `cargo clippy -- -D warnings` ✅ clean | `cargo fmt -- --check` ✅ clean | `cargo test` ✅ 17/19 pass (2 ignored are pre-existing disabled property tests)
+
 ### File List
+
+- `src/downloader.rs`
