@@ -247,16 +247,52 @@ impl Converter {
 
     /// Check if ffmpeg supports a specific encoder
     fn check_encoder_support(encoder: &str) -> bool {
-        let output = std::process::Command::new("ffmpeg")
+        // First check if the encoder is compiled into ffmpeg at all
+        let list_output = std::process::Command::new("ffmpeg")
             .arg("-hide_banner")
             .arg("-encoders")
             .output();
 
-        match output {
+        let compiled_in = match list_output {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 stdout.contains(encoder)
             }
+            Err(_) => return false,
+        };
+
+        if !compiled_in {
+            return false;
+        }
+
+        // Actually probe the encoder with a tiny synthetic video to confirm
+        // the hardware is functional (e.g. NVENC may be compiled in but GPU unavailable)
+        let (input_args, encoder_args): (&[&str], &[&str]) = match encoder {
+            "hevc_nvenc" => (
+                &["-hwaccel", "cuda"],
+                &["-c:v", "hevc_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "25"],
+            ),
+            "hevc_qsv" => (
+                &["-hwaccel", "qsv"],
+                &["-c:v", "hevc_qsv", "-global_quality", "25"],
+            ),
+            "hevc_videotoolbox" => (
+                &[],
+                &["-c:v", "hevc_videotoolbox"],
+            ),
+            _ => return compiled_in,
+        };
+
+        let mut cmd = std::process::Command::new("ffmpeg");
+        cmd.arg("-hide_banner").arg("-loglevel").arg("error");
+        cmd.args(input_args);
+        // Generate a tiny 1-frame synthetic video as input
+        cmd.args(["-f", "lavfi", "-i", "color=black:s=64x64:r=1:d=0.1"]);
+        cmd.args(encoder_args);
+        cmd.args(["-frames:v", "1", "-an", "-f", "null", "-"]);
+
+        match cmd.output() {
+            Ok(output) => output.status.success(),
             Err(_) => false,
         }
     }
