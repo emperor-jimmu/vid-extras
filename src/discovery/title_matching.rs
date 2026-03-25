@@ -56,27 +56,6 @@ pub fn contains_movie_title(video_title: &str, movie_title: &str) -> bool {
     normalized_video.contains(&normalized_movie)
 }
 
-/// Check if video title mentions other movies from the collection (with normalization)
-pub fn mentions_collection_movies(video_title: &str, collection_titles: &[String]) -> bool {
-    if collection_titles.is_empty() {
-        return false;
-    }
-
-    let normalized_video = normalize_title(video_title);
-    let normalized_video_no_spaces = normalized_video.replace(' ', "");
-
-    // Check if any normalized collection movie title appears in the normalized video title
-    // We check both with and without spaces to handle cases like "[Rec]3" vs "REC 3"
-    collection_titles.iter().any(|title| {
-        let normalized_collection = normalize_title(title);
-        let normalized_collection_no_spaces = normalized_collection.replace(' ', "");
-
-        // Check both versions to handle spacing variations
-        normalized_video.contains(&normalized_collection)
-            || normalized_video_no_spaces.contains(&normalized_collection_no_spaces)
-    })
-}
-
 /// Check if a video title contains excluded keywords
 pub fn contains_excluded_keywords(title: &str) -> bool {
     let excluded_keywords = [
@@ -154,11 +133,6 @@ pub fn infer_category_from_title(title: &str) -> Option<ContentCategory> {
         || lower.contains("why we love")
     {
         return Some(ContentCategory::Featurette);
-    }
-
-    // Clips (movie scene clips)
-    if lower.contains("movie clip") || lower.contains("clip -") || lower.contains("| clip") {
-        return Some(ContentCategory::Clip);
     }
 
     None
@@ -443,19 +417,6 @@ mod tests {
     }
 
     #[test]
-    fn test_mentions_collection_movies() {
-        let collection = vec!["The Matrix Reloaded".to_string()];
-        assert!(mentions_collection_movies(
-            "The Matrix Reloaded Trailer",
-            &collection
-        ));
-        assert!(!mentions_collection_movies(
-            "The Matrix Original Trailer",
-            &collection
-        ));
-    }
-
-    #[test]
     fn test_extract_season_numbers() {
         // "Season N" format
         assert_eq!(
@@ -633,27 +594,6 @@ mod tests {
         assert_eq!(
             infer_category_from_title("Shortly after the premiere"),
             None
-        );
-    }
-
-    #[test]
-    fn test_infer_category_from_title_clip() {
-        assert_eq!(
-            infer_category_from_title("Inception Movie Clip - The Dream"),
-            Some(ContentCategory::Clip)
-        );
-        assert_eq!(
-            infer_category_from_title("The Matrix Clip - Bullet Time"),
-            Some(ContentCategory::Clip)
-        );
-        assert_eq!(
-            infer_category_from_title("Inception | Clip - Hallway Fight"),
-            Some(ContentCategory::Clip)
-        );
-        // "bonus clip" should still be Featurette, not Clip
-        assert_eq!(
-            infer_category_from_title("Cobra (1986) - Bonus Clip: Actor Brian Thompson"),
-            Some(ContentCategory::Featurette)
         );
     }
 

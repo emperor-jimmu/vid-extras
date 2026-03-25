@@ -225,9 +225,8 @@ impl Downloader {
                                             // Skip subtitle download if we can't derive a
                                             // valid stem — a fallback name would orphan the
                                             // subtitle files (stem mismatch in organizer).
-                                            if let Some(base_name) = local_path
-                                                .file_stem()
-                                                .and_then(|s| s.to_str())
+                                            if let Some(base_name) =
+                                                local_path.file_stem().and_then(|s| s.to_str())
                                             {
                                                 self.download_subtitles(
                                                     &source.url,

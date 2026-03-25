@@ -114,7 +114,11 @@ impl From<CliArgs> for CliConfig {
             crate::models::ProcessingMode::Both
         };
 
-        let sources = if args.all { all_sources() } else { args.sources };
+        let sources = if args.all {
+            all_sources()
+        } else {
+            args.sources
+        };
 
         CliConfig {
             root_directory: args.root_directory,

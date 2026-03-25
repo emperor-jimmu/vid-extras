@@ -85,32 +85,17 @@ impl DiscoveryOrchestrator {
     /// - Behind the Scenes: max 10
     ///
     /// When limits are exceeded, prioritizes TMDB > Archive.org > YouTube
-    ///
-    /// `library` is the full scanned movie list. TMDB collection siblings already present
-    /// in the library are skipped — they will fetch their own extras when processed.
     pub async fn discover_all(
         &self,
         movie: &MovieEntry,
-        library: &[MovieEntry],
+        _library: &[MovieEntry],
     ) -> (Vec<VideoSource>, Vec<SourceResult>, usize) {
         let mut all_sources = Vec::new();
         let mut source_results = Vec::new();
         let mut tmdb_movie_id: Option<u64> = None;
 
-        // Fetch TMDB collection metadata only when at least one source that uses it is active.
-        // YouTube filtering uses collection titles to exclude trailers for other films in the same
-        // franchise; TMDB discovery uses it implicitly via search. Skip the extra network call
-        // when neither source is requested.
-        let needs_metadata =
-            self.sources.contains(&Source::Tmdb) || self.sources.contains(&Source::Youtube);
-        let metadata = if needs_metadata {
-            self.tmdb.get_metadata(movie).await
-        } else {
-            Default::default()
-        };
-
         if self.sources.contains(&Source::Tmdb) {
-            match self.tmdb.discover_with_library(movie, library).await {
+            match self.tmdb.discover_for_movie(movie).await {
                 Ok((sources, movie_id)) => {
                     tmdb_movie_id = movie_id;
                     info!("Found {} sources from TMDB for {}", sources.len(), movie);
@@ -186,7 +171,7 @@ impl DiscoveryOrchestrator {
         }
 
         if self.sources.contains(&Source::Youtube) {
-            match self.youtube.discover_with_metadata(movie, &metadata).await {
+            match self.youtube.discover(movie).await {
                 Ok(sources) => {
                     info!("Found {} sources from YouTube for {}", sources.len(), movie);
                     source_results.push(SourceResult {

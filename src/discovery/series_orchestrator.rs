@@ -20,7 +20,10 @@ use super::vimeo::VimeoDiscoverer;
 ///
 /// `season_number` is always `None` here — series-level extras are not
 /// season-specific. Season-specific extras are handled by `discover_season_extras`.
-fn video_source_to_series_extra(vs: crate::models::VideoSource, series: &SeriesEntry) -> SeriesExtra {
+fn video_source_to_series_extra(
+    vs: crate::models::VideoSource,
+    series: &SeriesEntry,
+) -> SeriesExtra {
     SeriesExtra {
         series_id: format!(
             "{}_{}",

@@ -99,10 +99,7 @@ impl VimeoDiscoverer {
         }
         // Reject videos that reference a sequel/different numbered entry
         if title_matching::mentions_sequel_number(&video.name, movie_title) {
-            debug!(
-                "Vimeo: excluding '{}' - mentions sequel number",
-                video.name
-            );
+            debug!("Vimeo: excluding '{}' - mentions sequel number", video.name);
             return None;
         }
         // Reject videos that mention a different year (likely a different film)
@@ -347,9 +344,7 @@ mod tests {
     #[test]
     fn test_map_video_unrelated_title_filtered() {
         let video = make_video("Ben Wilkins Showreel", 120, "https://vimeo.com/unrelated");
-        assert!(
-            VimeoDiscoverer::map_video_to_source(&video, "2 Fast 2 Furious", 2003).is_none()
-        );
+        assert!(VimeoDiscoverer::map_video_to_source(&video, "2 Fast 2 Furious", 2003).is_none());
     }
 
     // --- Boundary: duration filter inclusive bounds ---
@@ -408,8 +403,8 @@ mod tests {
         assert_eq!(first.link, "https://vimeo.com/123456");
 
         // Verify map_video_to_source produces correct VideoSource
-        let source = VimeoDiscoverer::map_video_to_source(first, "Inception", 2010)
-            .expect("should be Some");
+        let source =
+            VimeoDiscoverer::map_video_to_source(first, "Inception", 2010).expect("should be Some");
         assert_eq!(source.source_type, SourceType::Vimeo);
         assert_eq!(source.category, ContentCategory::Trailer);
         assert_eq!(source.title, "Inception - Official Trailer");

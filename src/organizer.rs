@@ -1593,7 +1593,6 @@ mod property_tests {
                 Just(ContentCategory::DeletedScene),
                 Just(ContentCategory::Interview),
                 Just(ContentCategory::Short),
-                Just(ContentCategory::Clip),
                 Just(ContentCategory::Scene),
                 Just(ContentCategory::Extras),
             ]
@@ -1605,7 +1604,6 @@ mod property_tests {
                 ContentCategory::DeletedScene => "deleted scenes",
                 ContentCategory::Interview => "interviews",
                 ContentCategory::Short => "shorts",
-                ContentCategory::Clip => "clips",
                 ContentCategory::Scene => "scenes",
                 ContentCategory::Extras => "extras",
             };
@@ -1626,7 +1624,6 @@ mod property_tests {
                 Just(ContentCategory::DeletedScene),
                 Just(ContentCategory::Interview),
                 Just(ContentCategory::Short),
-                Just(ContentCategory::Clip),
                 Just(ContentCategory::Scene),
                 Just(ContentCategory::Extras),
             ]
@@ -1720,7 +1717,6 @@ mod property_tests {
                 Just(ContentCategory::DeletedScene),
                 Just(ContentCategory::Interview),
                 Just(ContentCategory::Short),
-                Just(ContentCategory::Clip),
                 Just(ContentCategory::Scene),
                 Just(ContentCategory::Extras),
             ],

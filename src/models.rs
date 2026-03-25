@@ -273,8 +273,6 @@ pub enum ContentCategory {
     Interview,
     /// Short films and animated shorts
     Short,
-    /// Movie scene clips
-    Clip,
     /// Full scenes from the movie
     Scene,
     /// Catch-all for uncategorized extras that don't fit other categories
@@ -290,7 +288,6 @@ impl fmt::Display for ContentCategory {
             ContentCategory::DeletedScene => write!(f, "Deleted Scene"),
             ContentCategory::Interview => write!(f, "Interview"),
             ContentCategory::Short => write!(f, "Short"),
-            ContentCategory::Clip => write!(f, "Clip"),
             ContentCategory::Scene => write!(f, "Scene"),
             ContentCategory::Extras => write!(f, "Extras"),
         }
@@ -307,7 +304,6 @@ impl ContentCategory {
             ContentCategory::DeletedScene => "deleted scenes",
             ContentCategory::Interview => "interviews",
             ContentCategory::Short => "shorts",
-            ContentCategory::Clip => "clips",
             ContentCategory::Scene => "scenes",
             ContentCategory::Extras => "extras",
         }
@@ -592,7 +588,6 @@ mod tests {
         );
         assert_eq!(ContentCategory::Interview.subdirectory(), "interviews");
         assert_eq!(ContentCategory::Short.subdirectory(), "shorts");
-        assert_eq!(ContentCategory::Clip.subdirectory(), "clips");
         assert_eq!(ContentCategory::Scene.subdirectory(), "scenes");
         assert_eq!(ContentCategory::Extras.subdirectory(), "extras");
     }
@@ -611,7 +606,6 @@ mod tests {
         );
         assert_eq!(format!("{}", ContentCategory::Interview), "Interview");
         assert_eq!(format!("{}", ContentCategory::Short), "Short");
-        assert_eq!(format!("{}", ContentCategory::Clip), "Clip");
         assert_eq!(format!("{}", ContentCategory::Scene), "Scene");
         assert_eq!(format!("{}", ContentCategory::Extras), "Extras");
     }

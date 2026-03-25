@@ -73,17 +73,27 @@ impl Converter {
         let input_path = &download.local_path;
 
         // Generate temporary output path to avoid overwriting input during conversion
-        // Use a .tmp.mp4 extension during conversion, then rename to final .mp4
         let temp_output_path = input_path.with_extension("tmp.mp4");
         let final_output_path = input_path.with_extension("mp4");
 
+        // Use a higher CRF for 1080p+ content to achieve better compression.
+        // Sub-1080p content keeps the default CRF.
+        let effective_crf = if Self::probe_height(input_path).await >= 1080 {
+            self.crf + 3
+        } else {
+            self.crf
+        };
+
         info!(
-            "Converting {} using {}",
-            download.source.title, self.hw_accel
+            "Converting {} using {} (CRF {})",
+            download.source.title, self.hw_accel, effective_crf
         );
 
         // Build and execute ffmpeg command to temporary output
-        match self.execute_conversion(input_path, &temp_output_path).await {
+        match self
+            .execute_conversion(input_path, &temp_output_path, effective_crf)
+            .await
+        {
             Ok(_) => {
                 // Conversion succeeded - rename temp to final output
                 if let Err(e) = fs::rename(&temp_output_path, &final_output_path).await {
@@ -148,8 +158,13 @@ impl Converter {
     }
 
     /// Execute ffmpeg conversion command
-    async fn execute_conversion(&self, input: &Path, output: &Path) -> Result<(), ConversionError> {
-        let mut cmd = self.build_ffmpeg_command(input, output);
+    async fn execute_conversion(
+        &self,
+        input: &Path,
+        output: &Path,
+        crf: u8,
+    ) -> Result<(), ConversionError> {
+        let mut cmd = self.build_ffmpeg_command(input, output, crf);
 
         debug!("Executing ffmpeg command: {:?}", cmd);
 
@@ -173,7 +188,7 @@ impl Converter {
     }
 
     /// Build ffmpeg command based on hardware acceleration type
-    fn build_ffmpeg_command(&self, input: &Path, output: &Path) -> Command {
+    fn build_ffmpeg_command(&self, input: &Path, output: &Path, crf: u8) -> Command {
         let mut cmd = Command::new("ffmpeg");
 
         // Overwrite output files without asking
@@ -181,40 +196,35 @@ impl Converter {
 
         match self.hw_accel {
             HardwareAccel::Nvenc => {
-                // NVIDIA NVENC hardware acceleration
                 cmd.arg("-hwaccel").arg("cuda");
                 cmd.arg("-i").arg(input);
                 cmd.arg("-c:v").arg("hevc_nvenc");
-                cmd.arg("-preset").arg("p3"); // Faster preset for faster speed
+                cmd.arg("-preset").arg("p3");
                 cmd.arg("-rc").arg("vbr");
-                cmd.arg("-cq").arg(self.crf.to_string());
+                cmd.arg("-cq").arg(crf.to_string());
                 cmd.arg("-c:a").arg("copy");
                 cmd.arg(output);
             }
             HardwareAccel::Qsv => {
-                // Intel Quick Sync Video hardware acceleration
                 cmd.arg("-hwaccel").arg("qsv");
                 cmd.arg("-i").arg(input);
                 cmd.arg("-c:v").arg("hevc_qsv");
-                cmd.arg("-global_quality").arg(self.crf.to_string());
+                cmd.arg("-global_quality").arg(crf.to_string());
                 cmd.arg("-c:a").arg("copy");
                 cmd.arg(output);
             }
             HardwareAccel::VideoToolbox => {
-                // Apple VideoToolbox hardware acceleration (M-series chips)
-                // Note: We don't use -hwaccel for decoding to avoid AV1 compatibility issues
-                // Only use hardware acceleration for encoding
+                // Only use hardware acceleration for encoding to avoid AV1 decode issues
                 cmd.arg("-i").arg(input);
                 cmd.arg("-c:v").arg("hevc_videotoolbox");
-                cmd.arg("-q:v").arg(self.crf.to_string());
+                cmd.arg("-q:v").arg(crf.to_string());
                 cmd.arg("-c:a").arg("copy");
                 cmd.arg(output);
             }
             HardwareAccel::Software => {
-                // Software encoding with libx265
                 cmd.arg("-i").arg(input);
                 cmd.arg("-c:v").arg("libx265");
-                cmd.arg("-crf").arg(self.crf.to_string());
+                cmd.arg("-crf").arg(crf.to_string());
                 cmd.arg("-preset").arg("medium");
                 cmd.arg("-c:a").arg("copy");
                 cmd.arg(output);
@@ -222,6 +232,31 @@ impl Converter {
         }
 
         cmd
+    }
+
+    /// Probe the video height using ffprobe. Returns 0 on any error (treated as sub-1080p).
+    async fn probe_height(input: &Path) -> u32 {
+        let output = std::process::Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=height",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(input)
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                let s = String::from_utf8_lossy(&out.stdout);
+                s.trim().parse::<u32>().unwrap_or(0)
+            }
+            _ => 0,
+        }
     }
 
     /// Detect available hardware acceleration
@@ -270,16 +305,22 @@ impl Converter {
         let (input_args, encoder_args): (&[&str], &[&str]) = match encoder {
             "hevc_nvenc" => (
                 &["-hwaccel", "cuda"],
-                &["-c:v", "hevc_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "25"],
+                &[
+                    "-c:v",
+                    "hevc_nvenc",
+                    "-preset",
+                    "p4",
+                    "-rc",
+                    "vbr",
+                    "-cq",
+                    "25",
+                ],
             ),
             "hevc_qsv" => (
                 &["-hwaccel", "qsv"],
                 &["-c:v", "hevc_qsv", "-global_quality", "25"],
             ),
-            "hevc_videotoolbox" => (
-                &[],
-                &["-c:v", "hevc_videotoolbox"],
-            ),
+            "hevc_videotoolbox" => (&[], &["-c:v", "hevc_videotoolbox"]),
             _ => return compiled_in,
         };
 
@@ -381,7 +422,8 @@ mod tests {
     #[test]
     fn test_build_ffmpeg_command_software() {
         let converter = Converter::with_config(HardwareAccel::Software, 25);
-        let cmd = converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
+        let cmd =
+            converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"), 25);
 
         let cmd_str = format!("{:?}", cmd);
         assert!(cmd_str.contains("libx265"));
@@ -392,7 +434,8 @@ mod tests {
     #[test]
     fn test_build_ffmpeg_command_nvenc() {
         let converter = Converter::with_config(HardwareAccel::Nvenc, 25);
-        let cmd = converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
+        let cmd =
+            converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"), 25);
 
         let cmd_str = format!("{:?}", cmd);
         assert!(cmd_str.contains("hevc_nvenc"));
@@ -403,7 +446,8 @@ mod tests {
     #[test]
     fn test_build_ffmpeg_command_qsv() {
         let converter = Converter::with_config(HardwareAccel::Qsv, 25);
-        let cmd = converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
+        let cmd =
+            converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"), 25);
 
         let cmd_str = format!("{:?}", cmd);
         assert!(cmd_str.contains("hevc_qsv"));
@@ -415,11 +459,11 @@ mod tests {
     #[test]
     fn test_build_ffmpeg_command_videotoolbox() {
         let converter = Converter::with_config(HardwareAccel::VideoToolbox, 25);
-        let cmd = converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
+        let cmd =
+            converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"), 25);
 
         let cmd_str = format!("{:?}", cmd);
         assert!(cmd_str.contains("hevc_videotoolbox"));
-        // No -hwaccel flag — only encoding uses VideoToolbox to avoid AV1 decode issues
         assert!(!cmd_str.contains("-hwaccel"));
         assert!(cmd_str.contains("-q:v"));
     }
@@ -469,7 +513,8 @@ mod tests {
     #[test]
     fn test_ffmpeg_command_includes_overwrite_flag() {
         let converter = Converter::with_config(HardwareAccel::Software, 25);
-        let cmd = converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
+        let cmd =
+            converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"), 25);
 
         let cmd_str = format!("{:?}", cmd);
         assert!(
@@ -480,7 +525,6 @@ mod tests {
 
     #[test]
     fn test_ffmpeg_command_copies_audio() {
-        // All hardware acceleration types should copy audio
         for hw_accel in [
             HardwareAccel::Nvenc,
             HardwareAccel::Qsv,
@@ -489,7 +533,7 @@ mod tests {
         ] {
             let converter = Converter::with_config(hw_accel, 25);
             let cmd =
-                converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"));
+                converter.build_ffmpeg_command(Path::new("input.mp4"), Path::new("output.mp4"), 25);
 
             let cmd_str = format!("{:?}", cmd);
             assert!(
@@ -621,6 +665,7 @@ mod property_tests {
             let cmd = converter.build_ffmpeg_command(
                 Path::new("input.mp4"),
                 Path::new("output.mp4"),
+                crf,
             );
 
             let cmd_str = format!("{:?}", cmd);
@@ -681,6 +726,7 @@ mod property_tests {
             let cmd = converter.build_ffmpeg_command(
                 Path::new("input.mp4"),
                 Path::new("output.mp4"),
+                crf,
             );
             let cmd_str = format!("{:?}", cmd);
 
@@ -748,6 +794,7 @@ mod property_tests {
             let cmd = converter.build_ffmpeg_command(
                 Path::new("input.mp4"),
                 Path::new("output.mp4"),
+                25,
             );
             let cmd_str = format!("{:?}", cmd);
 

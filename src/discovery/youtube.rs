@@ -6,7 +6,6 @@ use log::{debug, error, info};
 
 use super::ContentDiscoverer;
 use super::title_matching;
-use super::tmdb::DiscoveryMetadata;
 
 /// YouTube content discoverer
 pub struct YoutubeDiscoverer {
@@ -78,7 +77,6 @@ impl YoutubeDiscoverer {
         width: u32,
         height: u32,
         expected_year: u16,
-        collection_titles: &[String],
     ) -> bool {
         // Check if movie title is in video title (with normalization)
         if !title_matching::contains_movie_title(video_title, movie_title) {
@@ -88,16 +86,6 @@ impl YoutubeDiscoverer {
             );
             return false;
         }
-
-        // Check if video mentions other movies from the collection (with normalization)
-        if title_matching::mentions_collection_movies(video_title, collection_titles) {
-            debug!(
-                "Excluding '{}' - mentions other collection movies (collection: {:?})",
-                video_title, collection_titles
-            );
-            return false;
-        }
-
         // Fallback: Check for sequel numbers even if no collection info available
         if title_matching::mentions_sequel_number(video_title, movie_title) {
             debug!(
@@ -148,7 +136,6 @@ impl YoutubeDiscoverer {
         movie_title: &str,
         category: ContentCategory,
         expected_year: u16,
-        collection_titles: &[String],
     ) -> Result<Vec<VideoSource>, DiscoveryError> {
         // Use yt-dlp with ytsearch5 to get top 10 results
         let search_query = format!("ytsearch5:{}", query);
@@ -209,7 +196,6 @@ impl YoutubeDiscoverer {
                         width,
                         height,
                         expected_year,
-                        collection_titles,
                     ) {
                         // Infer category from the video's actual title rather than
                         // blindly trusting the search query category.
@@ -237,11 +223,10 @@ impl YoutubeDiscoverer {
         Ok(sources)
     }
 
-    /// Discover YouTube content with metadata for filtering
-    pub async fn discover_with_metadata(
+    /// Discover YouTube content for a movie
+    async fn discover_youtube(
         &self,
         movie: &MovieEntry,
-        metadata: &DiscoveryMetadata,
     ) -> Result<Vec<VideoSource>, DiscoveryError> {
         info!("Discovering YouTube content for: {}", movie);
 
@@ -250,13 +235,7 @@ impl YoutubeDiscoverer {
 
         for (query, category) in queries {
             match self
-                .search_youtube(
-                    &query,
-                    &movie.title,
-                    category,
-                    movie.year,
-                    &metadata.collection_movie_titles,
-                )
+                .search_youtube(&query, &movie.title, category, movie.year)
                 .await
             {
                 Ok(mut sources) => {
@@ -269,7 +248,6 @@ impl YoutubeDiscoverer {
                 }
                 Err(e) => {
                     error!("YouTube search failed for query '{}': {}", query, e);
-                    // Continue with other queries even if one fails
                 }
             }
         }
@@ -285,8 +263,6 @@ impl YoutubeDiscoverer {
 
 impl ContentDiscoverer for YoutubeDiscoverer {
     async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
-        // Use empty metadata when called through trait
-        let metadata = DiscoveryMetadata::default();
-        self.discover_with_metadata(movie, &metadata).await
+        self.discover_youtube(movie).await
     }
 }

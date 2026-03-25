@@ -262,7 +262,6 @@ impl TmdbSeriesDiscoverer {
             "Bloopers" => Some(ContentCategory::Featurette),
             "Interview" => Some(ContentCategory::Interview),
             "Short" => Some(ContentCategory::Short),
-            "Clip" => Some(ContentCategory::Clip),
             _ => {
                 debug!("Unknown TMDB video type: {}", tmdb_type);
                 None
@@ -339,14 +338,6 @@ mod tests {
         assert_eq!(
             TmdbSeriesDiscoverer::map_tmdb_type("Short"),
             Some(ContentCategory::Short)
-        );
-    }
-
-    #[test]
-    fn test_map_tmdb_type_clip() {
-        assert_eq!(
-            TmdbSeriesDiscoverer::map_tmdb_type("Clip"),
-            Some(ContentCategory::Clip)
         );
     }
 
@@ -491,9 +482,6 @@ mod property_tests {
                 }
                 "Short" => {
                     prop_assert_eq!(result, Some(ContentCategory::Short));
-                }
-                "Clip" => {
-                    prop_assert_eq!(result, Some(ContentCategory::Clip));
                 }
                 _ => {
                     // Unknown types should map to None
