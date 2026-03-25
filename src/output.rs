@@ -240,49 +240,53 @@ pub fn display_summary(summary: &ProcessingSummary) {
     println!("{}", "Processing Summary".bright_cyan().bold());
     println!("{}", "═".repeat(60).bright_cyan());
 
-    println!(
-        "  {} {}",
-        "Total Movies:".bright_white(),
-        summary.total_movies.to_string().bright_yellow()
-    );
+    if summary.total_movies > 0 {
+        println!(
+            "  {} {}",
+            "Total Movies:".bright_white(),
+            summary.total_movies.to_string().bright_yellow()
+        );
 
-    println!(
-        "  {} {}",
-        "Successful Movies:".bright_white(),
-        summary.successful_movies.to_string().green()
-    );
+        println!(
+            "  {} {}",
+            "Successful Movies:".bright_white(),
+            summary.successful_movies.to_string().green()
+        );
 
-    println!(
-        "  {} {}",
-        "Failed Movies:".bright_white(),
-        if summary.failed_movies > 0 {
-            summary.failed_movies.to_string().red()
-        } else {
-            summary.failed_movies.to_string().bright_white()
-        }
-    );
+        println!(
+            "  {} {}",
+            "Failed Movies:".bright_white(),
+            if summary.failed_movies > 0 {
+                summary.failed_movies.to_string().red()
+            } else {
+                summary.failed_movies.to_string().bright_white()
+            }
+        );
+    }
 
-    println!(
-        "  {} {}",
-        "Total Series:".bright_white(),
-        summary.total_series.to_string().bright_yellow()
-    );
+    if summary.total_series > 0 {
+        println!(
+            "  {} {}",
+            "Total Series:".bright_white(),
+            summary.total_series.to_string().bright_yellow()
+        );
 
-    println!(
-        "  {} {}",
-        "Successful Series:".bright_white(),
-        summary.successful_series.to_string().green()
-    );
+        println!(
+            "  {} {}",
+            "Successful Series:".bright_white(),
+            summary.successful_series.to_string().green()
+        );
 
-    println!(
-        "  {} {}",
-        "Failed Series:".bright_white(),
-        if summary.failed_series > 0 {
-            summary.failed_series.to_string().red()
-        } else {
-            summary.failed_series.to_string().bright_white()
-        }
-    );
+        println!(
+            "  {} {}",
+            "Failed Series:".bright_white(),
+            if summary.failed_series > 0 {
+                summary.failed_series.to_string().red()
+            } else {
+                summary.failed_series.to_string().bright_white()
+            }
+        );
+    }
 
     println!(
         "  {} {}",
@@ -296,9 +300,7 @@ pub fn display_summary(summary: &ProcessingSummary) {
         summary.total_conversions.to_string().bright_cyan()
     );
 
-    // Per-source discovery section — show whenever sources reported results,
-    // even if all counts are zero, so operators can distinguish "found nothing"
-    // from "discovery was never called".
+    // Per-source discovery section
     if !summary.source_totals.is_empty() {
         let mut entries: Vec<(&Source, &usize)> = summary.source_totals.iter().collect();
         entries.sort_by_key(|(s, _)| (s.tier(), s.to_string()));
@@ -326,6 +328,15 @@ pub fn display_summary(summary: &ProcessingSummary) {
                 "removed (tier dedup)".bright_white()
             );
         }
+        let after_dedup = summary
+            .total_videos_discovered
+            .saturating_sub(summary.duplicates_removed);
+        println!(
+            "  {} {} {}",
+            "Total Downloaded:".bright_white().bold(),
+            after_dedup.to_string().green(),
+            "videos".bright_white()
+        );
     }
 
     println!("{}", "═".repeat(60).bright_cyan());

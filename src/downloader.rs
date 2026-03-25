@@ -9,6 +9,11 @@ use tokio::fs;
 use tokio::process::Command;
 use tokio::time::timeout;
 
+/// Truncate a string to at most `max` characters, appending "…" if trimmed.
+fn truncate_str(s: &str, max: usize) -> &str {
+    if s.len() <= max { s } else { &s[..max] }
+}
+
 /// Downloader handles video acquisition using yt-dlp
 pub struct Downloader {
     /// Base directory for temporary downloads
@@ -102,12 +107,14 @@ impl Downloader {
             if result.success {
                 info!("✓ Downloaded [{}/{}]: {}", progress, total, source.title);
             } else {
-                warn!(
-                    "✗ Failed [{}/{}]: {} - {}",
+                // Friendly message is already logged by download_single;
+                // just emit a compact progress line here.
+                info!(
+                    "⊘ Skipped [{}/{}]: {} — {}",
                     progress,
                     total,
                     source.title,
-                    result.error.as_deref().unwrap_or("Unknown error")
+                    result.error.as_deref().unwrap_or("unknown error")
                 );
             }
 
@@ -287,12 +294,17 @@ impl Downloader {
                 } else {
                     // yt-dlp failed
                     let stderr = String::from_utf8_lossy(&output.stderr);
+                    let stderr_trimmed = stderr.trim();
+                    let friendly = Self::classify_ytdlp_error(stderr_trimmed);
                     let error_msg = format!(
                         "yt-dlp failed with exit code: {:?}: {}",
-                        output.status,
-                        stderr.trim()
+                        output.status, stderr_trimmed
                     );
-                    error!("{} for URL: {}", error_msg, source.url);
+
+                    // Log the full technical error at debug level, friendly
+                    // summary at warn so normal runs stay readable.
+                    debug!("{} for URL: {}", error_msg, source.url);
+                    warn!("⊘ {}: {} — {}", source.title, friendly, source.url);
 
                     // Clean up any partial files for this specific download
                     self.cleanup_partial_files(dest_dir, url_hash).await;
@@ -301,7 +313,7 @@ impl Downloader {
                         source: source.clone(),
                         local_path: PathBuf::new(),
                         success: false,
-                        error: Some(error_msg),
+                        error: Some(friendly),
                         subtitle_paths: vec![],
                     }
                 }
@@ -510,6 +522,40 @@ impl Downloader {
         }
 
         Ok(path.to_path_buf())
+    }
+
+    /// Turn raw yt-dlp stderr into a short, human-readable reason.
+    fn classify_ytdlp_error(stderr: &str) -> String {
+        let lower = stderr.to_lowercase();
+
+        if lower.contains("video is private") {
+            "video is private".into()
+        } else if lower.contains("video unavailable") {
+            "video is unavailable".into()
+        } else if lower.contains("this video has been removed") {
+            "video has been removed".into()
+        } else if lower.contains("copyright") {
+            "video removed due to copyright".into()
+        } else if lower.contains("geo") || lower.contains("not available in your country") {
+            "video is geo-restricted".into()
+        } else if lower.contains("age") && lower.contains("verify") {
+            "video requires age verification".into()
+        } else if lower.contains("sign in") || lower.contains("login") {
+            "video requires sign-in".into()
+        } else if lower.contains("429") || lower.contains("too many requests") {
+            "rate-limited by server".into()
+        } else if lower.contains("403") || lower.contains("forbidden") {
+            "access forbidden by server".into()
+        } else if lower.contains("404") || lower.contains("not found") {
+            "video not found (404)".into()
+        } else {
+            // Fall back to the first ERROR line, trimmed for readability
+            stderr
+                .lines()
+                .find(|l| l.contains("ERROR"))
+                .map(|l| l.trim().to_string())
+                .unwrap_or_else(|| format!("yt-dlp error: {}", truncate_str(stderr, 120)))
+        }
     }
 
     /// Sanitize filename for Windows compatibility

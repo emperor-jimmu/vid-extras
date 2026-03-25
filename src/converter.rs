@@ -339,7 +339,8 @@ impl Converter {
         cmd.arg("-hide_banner").arg("-loglevel").arg("error");
         cmd.args(input_args);
         // Generate a tiny 1-frame synthetic video as input
-        cmd.args(["-f", "lavfi", "-i", "color=black:s=64x64:r=1:d=0.1"]);
+        // Use 256x256 because NVENC requires at least ~128x128 minimum resolution
+        cmd.args(["-f", "lavfi", "-i", "color=black:s=256x256:r=1:d=0.1"]);
         cmd.args(encoder_args);
         cmd.args(["-frames:v", "1", "-an", "-f", "null", "-"]);
 
