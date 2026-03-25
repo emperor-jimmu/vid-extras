@@ -78,15 +78,26 @@ impl Converter {
 
         // Use a higher CRF for 1080p+ content to achieve better compression.
         // Sub-1080p content keeps the default CRF.
-        let effective_crf = if Self::probe_height(input_path).await >= 1080 {
+        let height = Self::probe_height(input_path).await;
+        let effective_crf = if height >= 1080 {
             self.crf + 3
         } else {
             self.crf
         };
 
+        let resolution_label = match height {
+            0 => "unknown".to_string(),
+            h if h >= 2160 => "4K".to_string(),
+            h if h >= 1440 => "1440p".to_string(),
+            h if h >= 1080 => "1080p".to_string(),
+            h if h >= 720 => "720p".to_string(),
+            h if h >= 480 => "480p".to_string(),
+            h => format!("{}p", h),
+        };
+
         info!(
-            "Converting {} using {} (CRF {})",
-            download.source.title, self.hw_accel, effective_crf
+            "Converting {} using {} ({})",
+            download.source.title, self.hw_accel, resolution_label
         );
 
         // Build and execute ffmpeg command to temporary output
