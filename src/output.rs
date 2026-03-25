@@ -328,13 +328,10 @@ pub fn display_summary(summary: &ProcessingSummary) {
                 "removed (tier dedup)".bright_white()
             );
         }
-        let after_dedup = summary
-            .total_videos_discovered
-            .saturating_sub(summary.duplicates_removed);
         println!(
             "  {} {} {}",
             "Total Downloaded:".bright_white().bold(),
-            after_dedup.to_string().green(),
+            summary.total_downloads.to_string().green(),
             "videos".bright_white()
         );
     }
