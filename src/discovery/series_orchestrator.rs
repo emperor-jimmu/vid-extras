@@ -14,12 +14,14 @@ use super::series_youtube::YoutubeSeriesDiscoverer;
 use super::special_searcher::SpecialSearcher;
 use super::title_matching;
 use super::tvdb::TvdbClient;
+use super::vimeo::VimeoDiscoverer;
 
 /// Orchestrates series discovery from all sources
 pub struct SeriesDiscoveryOrchestrator {
     tmdb: TmdbSeriesDiscoverer,
     youtube: YoutubeSeriesDiscoverer,
     dailymotion: DailymotionDiscoverer,
+    vimeo: VimeoDiscoverer,
     sources: Vec<Source>,
     tvdb_client: Option<Arc<TvdbClient>>,
     id_bridge: Option<Arc<IdBridge>>,
@@ -28,11 +30,12 @@ pub struct SeriesDiscoveryOrchestrator {
 
 impl SeriesDiscoveryOrchestrator {
     /// Creates a new SeriesDiscoveryOrchestrator with the specified sources
-    pub fn new(tmdb_api_key: String, sources: Vec<Source>) -> Self {
+    pub fn new(tmdb_api_key: String, sources: Vec<Source>, vimeo_access_token: String) -> Self {
         Self {
             tmdb: TmdbSeriesDiscoverer::new(tmdb_api_key),
             youtube: YoutubeSeriesDiscoverer::new(),
             dailymotion: DailymotionDiscoverer::new(),
+            vimeo: VimeoDiscoverer::new(vimeo_access_token),
             sources,
             tvdb_client: None,
             id_bridge: None,
@@ -46,6 +49,7 @@ impl SeriesDiscoveryOrchestrator {
         tvdb_api_key: String,
         sources: Vec<Source>,
         cache_dir: PathBuf,
+        vimeo_access_token: String,
     ) -> Self {
         let tvdb_client = Arc::new(TvdbClient::new(tvdb_api_key));
         let id_bridge = Arc::new(IdBridge::new(
@@ -58,6 +62,7 @@ impl SeriesDiscoveryOrchestrator {
             tmdb: TmdbSeriesDiscoverer::new(tmdb_api_key),
             youtube: YoutubeSeriesDiscoverer::new(),
             dailymotion: DailymotionDiscoverer::new(),
+            vimeo: VimeoDiscoverer::new(vimeo_access_token),
             sources,
             tvdb_client: Some(tvdb_client),
             id_bridge: Some(id_bridge),
@@ -240,20 +245,53 @@ impl SeriesDiscoveryOrchestrator {
             }
         }
 
-        // Vimeo, Bilibili stubs — discoverers not yet implemented.
-        // Log when a user-requested source is skipped so it's not silently ignored.
-        // These are NOT added to source_results as errors — they are intentionally
-        // unimplemented stubs, not runtime failures.
-        for source in &self.sources {
-            match source {
-                Source::Vimeo | Source::Bilibili => {
-                    warn!(
-                        "{} source requested but discoverer not yet implemented — skipping for {}",
-                        source, series
-                    );
+        if self.sources.contains(&Source::Vimeo) {
+            let year = series.year.unwrap_or(0);
+            match self.vimeo.discover(&series.title, year).await {
+                Ok(sources) => {
+                    let extras: Vec<SeriesExtra> = sources
+                        .into_iter()
+                        .map(|vs| SeriesExtra {
+                            series_id: format!(
+                                "{}_{}",
+                                series.title.replace(' ', "_"),
+                                series.year.unwrap_or(0)
+                            ),
+                            season_number: None,
+                            category: vs.category,
+                            title: vs.title,
+                            url: vs.url,
+                            source_type: vs.source_type,
+                            local_path: None,
+                            duration_secs: vs.duration_secs,
+                        })
+                        .collect();
+                    info!("Found {} sources from Vimeo for {}", extras.len(), series);
+                    source_results.push(SourceResult {
+                        source: Source::Vimeo,
+                        videos_found: extras.len(),
+                        error: None,
+                    });
+                    all_sources.extend(extras);
                 }
-                _ => {} // handled above
+                Err(e) => {
+                    warn!("Vimeo discovery failed for {}: {}", series, e);
+                    source_results.push(SourceResult {
+                        source: Source::Vimeo,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
+                }
             }
+        }
+
+        // Bilibili stub — discoverer not yet implemented.
+        if self.sources.contains(&Source::Bilibili) {
+            warn!(
+                "{} source requested but discoverer not yet implemented — skipping for {}",
+                Source::Bilibili,
+                series
+            );
         }
 
         // Log per-source summary
@@ -717,6 +755,7 @@ mod tests {
         let orchestrator = SeriesDiscoveryOrchestrator::new(
             "test_api_key".to_string(),
             vec![Source::Tmdb, Source::Youtube],
+            String::new(),
         );
         // Just verify it was created without panicking
         assert!(orchestrator.sources.contains(&Source::Tmdb));
@@ -725,8 +764,11 @@ mod tests {
 
     #[test]
     fn test_series_discovery_orchestrator_creation_youtube_only_mode() {
-        let orchestrator =
-            SeriesDiscoveryOrchestrator::new("test_api_key".to_string(), vec![Source::Youtube]);
+        let orchestrator = SeriesDiscoveryOrchestrator::new(
+            "test_api_key".to_string(),
+            vec![Source::Youtube],
+            String::new(),
+        );
         assert_eq!(orchestrator.sources, vec![Source::Youtube]);
     }
 
@@ -740,6 +782,7 @@ mod tests {
             "tvdb_key".to_string(),
             vec![Source::Tmdb, Source::Youtube],
             temp_dir.path().to_path_buf(),
+            String::new(),
         );
         assert!(orchestrator.sources.contains(&Source::Tmdb));
         assert!(orchestrator.tvdb_client.is_some());

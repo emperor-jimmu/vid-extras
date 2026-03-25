@@ -1,6 +1,7 @@
 use extras_fetcher::cli::{display_banner, display_config, parse_args};
 use extras_fetcher::config::Config;
 use extras_fetcher::error::ValidationError;
+use extras_fetcher::models::Source;
 use extras_fetcher::orchestrator::{
     DiscoveryConfig, Orchestrator, OrchestratorConfig, SeriesConfig,
 };
@@ -120,6 +121,28 @@ async fn main() {
         log::info!("Cookie authentication: {} browser", browser);
     }
 
+    // Load Vimeo token if --sources vimeo is active
+    let vimeo_access_token = if config.sources.contains(&Source::Vimeo) {
+        match Config::load_or_create_with_vimeo(true) {
+            Ok(cfg) => cfg.vimeo_access_token.unwrap_or_default(),
+            Err(e) => {
+                eprintln!("\n✗ Failed to load Vimeo Personal Access Token");
+                eprintln!("  Error: {}", e);
+                eprintln!("\nPlease ensure:");
+                eprintln!("  • A Vimeo Personal Access Token is configured in config.cfg");
+                eprintln!("    (You will be prompted to enter it)");
+                eprintln!("\nHow to get a Vimeo Personal Access Token:");
+                eprintln!("  1. Visit: https://developer.vimeo.com/apps");
+                eprintln!("  2. Create or select an app");
+                eprintln!("  3. Under 'Authentication', generate a Personal Access Token");
+                eprintln!("  4. Select the 'public' scope");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        String::new()
+    };
+
     // Display configuration now that cookies are fully resolved
     let mut display = config.clone();
     display.cookies_from_browser = cookies_from_browser.clone();
@@ -143,6 +166,7 @@ async fn main() {
             sources: config.sources.clone(),
             cookies_from_browser,
             dry_run: config.dry_run,
+            vimeo_access_token,
         },
     }) {
         Ok(orch) => orch,

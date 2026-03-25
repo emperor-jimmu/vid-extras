@@ -51,7 +51,7 @@ This document provides the complete epic and story breakdown for vid-extras, dec
 - FR34: System logs a warning with the source name and error details when a source is unavailable
 - FR35: System writes the done marker when at least one source completes successfully, even if others fail
 - FR36: System displays per-source video counts in the processing summary
-- FR37: System prompts for Vimeo credentials on first use of `--sources vimeo` and caches them in `config.cfg`
+- FR37: System prompts for a Vimeo Personal Access Token on first use of `--sources vimeo` and caches it in `config.cfg`
 - FR38: All new discovery sources apply to both movie and TV series processing pipelines
 - FR39: System places content that cannot be mapped to any of the 8 defined categories into an `/extras` catch-all subfolder
 
@@ -69,7 +69,7 @@ This document provides the complete epic and story breakdown for vid-extras, dec
 - NFR10: The system handles API rate-limit responses (HTTP 429) by backing off and retrying once before skipping the source
 - NFR11: All new discovery sources use yt-dlp as the download backend — no source-specific download implementations
 - NFR12: The system works with yt-dlp versions 2025.01+ and ffmpeg versions 6.0+
-- NFR13: Vimeo OAuth tokens are cached in `config.cfg` and refreshed automatically when expired
+- NFR13: ~~Vimeo OAuth tokens are cached in `config.cfg` and refreshed automatically when expired~~ — superseded by PAT-based auth (no token refresh needed)
 - NFR14: All REST API integrations use HTTPS exclusively
 - NFR15: The system degrades gracefully when an external API changes its response format — parsing errors are logged with the raw response snippet for debugging
 - NFR16: API keys and OAuth tokens stored in `config.cfg` are readable only by the file owner (file permissions 600 on Unix systems)
@@ -87,7 +87,7 @@ From Architecture:
 - New error variants needed in `error.rs` for Dailymotion, KinoCheck, and deduplication errors
 - Organizer subdirectory mapping table must be extended for 4 new content categories plus `/extras` catch-all
 - `output.rs` summary display must include per-source statistics and deduplication count
-- `config.rs` must support new optional fields: `vimeo_client_id`, `vimeo_client_secret`
+- `config.rs` must support a new optional field: `vimeo_access_token`
 - Existing `--mode` CLI arg must be removed from `clap` derive with a migration error pointing to `--sources`
 
 ### UX Design Requirements
@@ -173,9 +173,9 @@ User gets clean results with no duplicate extras. When the same content appears 
 **NFRs addressed:** NFR4
 
 ### Epic 8: Vimeo Discovery (Growth — Post-MVP)
-User can opt in to Vimeo as a source. OAuth credentials are prompted on first use and cached. Token refresh is automatic. Works for both movie and series pipelines.
+User can opt in to Vimeo as a source. A Personal Access Token is prompted on first use and cached in `config.cfg`. No OAuth flow or token refresh required. Works for both movie and series pipelines.
 **FRs covered:** FR37, FR38 (partial — Vimeo)
-**NFRs addressed:** NFR13, NFR14
+**NFRs addressed:** NFR14, NFR16, NFR17
 
 **Note:** Bilibili (FR3 partial) is deferred to Phase 2. The `Source::Bilibili` enum variant is shipped in MVP (Epic 1) so the CLI accepts `--sources bilibili`, but no discoverer implementation exists yet — the orchestrator logs a warning and skips it. A dedicated Bilibili epic will be added in Phase 2 planning.
 
@@ -491,24 +491,23 @@ So that I understand the value of multi-source discovery and tier-based resoluti
 
 ## Epic 8: Vimeo Discovery (Growth — Post-MVP)
 
-User can opt in to Vimeo as a source. OAuth credentials are prompted on first use and cached. Token refresh is automatic. Works for both movie and series pipelines.
+User can opt in to Vimeo as a source. A Personal Access Token (PAT) is prompted on first use and cached in `config.cfg`. No OAuth flow, client credentials, or token refresh required — the PAT is used directly as a bearer token. Works for both movie and series pipelines.
 
-### Story 8.1: Vimeo OAuth Credential Management
+### Story 8.1: Vimeo Personal Access Token Management
 
 As a user,
-I want to be prompted for Vimeo credentials on first use and have them cached,
-So that I don't need to re-enter credentials on every run.
+I want to be prompted for my Vimeo Personal Access Token on first use and have it cached,
+So that I don't need to re-enter it on every run.
 
 **Acceptance Criteria:**
 
 **Given** the user runs with `--sources vimeo` for the first time
-**When** no Vimeo credentials exist in `config.cfg`
-**Then** the system prompts for `vimeo_client_id` and `vimeo_client_secret` interactively (FR37)
-**And** credentials are saved to `config.cfg` with file permissions 600 on Unix systems (NFR16)
-**And** on subsequent runs, credentials are loaded from `config.cfg` without prompting
-**And** OAuth tokens are obtained via the client_credentials flow and cached in `config.cfg` (NFR13)
-**And** expired tokens are refreshed automatically before making API calls (NFR13)
-**And** credentials and tokens are never logged to stdout or stderr, even in verbose mode (NFR17)
+**When** no Vimeo token exists in `config.cfg`
+**Then** the system prompts the user to generate a PAT at `https://developer.vimeo.com/apps` with `public` scope and enter it interactively (FR37)
+**And** the token is saved to `config.cfg` as `vimeo_access_token` with file permissions 600 on Unix systems (NFR16)
+**And** on subsequent runs, the token is loaded from `config.cfg` without prompting
+**And** no client_id, client_secret, or token refresh logic is required — the PAT does not expire unless revoked
+**And** the token is never logged to stdout or stderr, even in verbose mode (NFR17)
 **And** all Vimeo API requests use HTTPS (NFR14)
 
 ### Story 8.2: Vimeo REST API Discoverer
@@ -519,9 +518,9 @@ So that I get high-quality official content from filmmakers and studios who publ
 
 **Acceptance Criteria:**
 
-**Given** Vimeo is in the active source list and valid credentials are available
+**Given** Vimeo is in the active source list and a valid PAT is available in `config.cfg`
 **When** discovery runs for a movie or series title
-**Then** the system searches Vimeo's REST API (`https://api.vimeo.com/videos?query={title}&fields=uri,name,duration,link`) using the OAuth bearer token
+**Then** the system searches Vimeo's REST API (`https://api.vimeo.com/videos?query={title}&fields=uri,name,duration,link`) using `Authorization: bearer {token}`
 **And** the same duration validation and keyword exclusion filters from `title_matching.rs` are applied to Vimeo results
 **And** network timeouts are capped at 30 seconds per API call (NFR9)
 **And** the system handles HTTP 429 rate-limit responses by backing off and retrying once before skipping (NFR10)

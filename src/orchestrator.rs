@@ -270,6 +270,9 @@ pub struct DiscoveryConfig {
     pub cookies_from_browser: Option<String>,
     /// Discovery-only mode: skip download, conversion, and organization
     pub dry_run: bool,
+    /// Vimeo Personal Access Token — empty string when Vimeo is not active.
+    /// SECURITY: Must never be logged, printed, or interpolated into log messages.
+    pub vimeo_access_token: String,
 }
 
 impl DiscoveryConfig {
@@ -278,6 +281,7 @@ impl DiscoveryConfig {
             sources,
             cookies_from_browser: None,
             dry_run: false,
+            vimeo_access_token: String::new(),
         }
     }
 }
@@ -373,6 +377,7 @@ impl Orchestrator {
                     tvdb_key,
                     config.discovery.sources.clone(),
                     cache_dir,
+                    config.discovery.vimeo_access_token.clone(),
                 );
                 if let Some(ref browser) = config.discovery.cookies_from_browser {
                     orch = orch.with_cookies(browser.clone());
@@ -382,6 +387,7 @@ impl Orchestrator {
                 let mut orch = SeriesDiscoveryOrchestrator::new(
                     config.tmdb_api_key.clone(),
                     config.discovery.sources.clone(),
+                    config.discovery.vimeo_access_token.clone(),
                 );
                 if let Some(ref browser) = config.discovery.cookies_from_browser {
                     orch = orch.with_cookies(browser.clone());
@@ -396,11 +402,13 @@ impl Orchestrator {
                 config.discovery.sources.clone(),
                 browser.clone(),
                 kinocheck_counter.clone(),
+                config.discovery.vimeo_access_token.clone(),
             ),
             None => DiscoveryOrchestrator::new(
                 config.tmdb_api_key,
                 config.discovery.sources.clone(),
                 kinocheck_counter,
+                config.discovery.vimeo_access_token,
             ),
         };
 
@@ -1904,6 +1912,7 @@ mod tests {
                 sources: vec![crate::models::Source::Youtube],
                 dry_run: true,
                 cookies_from_browser: None,
+                vimeo_access_token: String::new(),
             },
             ..test_config(PathBuf::new())
         })
@@ -1940,6 +1949,7 @@ mod tests {
                 sources: vec![crate::models::Source::Youtube],
                 dry_run: true,
                 cookies_from_browser: None,
+                vimeo_access_token: String::new(),
             },
             ..test_config(PathBuf::new())
         })

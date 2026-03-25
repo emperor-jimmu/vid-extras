@@ -20,6 +20,10 @@ pub struct Config {
     /// Resolves YouTube bot-detection errors when set
     #[serde(default)]
     pub cookies_from_browser: Option<String>,
+    /// Vimeo Personal Access Token for opt-in Vimeo discovery.
+    /// SECURITY: Must never be logged, printed, or interpolated into log messages.
+    #[serde(default)]
+    pub vimeo_access_token: Option<String>,
 }
 
 impl Config {
@@ -167,6 +171,7 @@ impl Config {
                     tmdb_api_key: api_key,
                     tvdb_api_key: None,
                     cookies_from_browser: None,
+                    vimeo_access_token: None,
                 };
 
                 // Save the new config
@@ -205,6 +210,64 @@ impl Config {
 
         Ok(config)
     }
+
+    /// Prompt user for Vimeo Personal Access Token via CLI
+    ///
+    /// Displays instructions and prompts the user to enter their token.
+    /// Returns the entered token or an error if input fails.
+    pub fn prompt_for_vimeo_token() -> Result<String, ConfigError> {
+        println!(
+            "\n{}",
+            "Vimeo Personal Access Token Required".to_uppercase()
+        );
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!("To discover extras from Vimeo, you need a Personal Access Token.");
+        println!("\nHow to get your token:");
+        println!("  1. Visit: https://developer.vimeo.com/apps");
+        println!("  2. Create or select an app");
+        println!("  3. Under 'Authentication', generate a Personal Access Token");
+        println!("  4. Select the 'public' scope");
+        println!("  5. Copy the generated token");
+        println!("\nYour token will be saved to config.cfg for future use.");
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+        print!("Enter your Vimeo Personal Access Token: ");
+        io::stdout().flush().map_err(ConfigError::IoError)?;
+
+        let mut token = String::new();
+        io::stdin()
+            .read_line(&mut token)
+            .map_err(ConfigError::IoError)?;
+
+        let token = token.trim().to_string();
+
+        if token.is_empty() {
+            return Err(ConfigError::EmptyApiKey);
+        }
+
+        Ok(token)
+    }
+
+    /// Load or create configuration, optionally prompting for Vimeo token
+    ///
+    /// Attempts to load config from file. If `require_vimeo_token` is true
+    /// and the loaded config doesn't have a Vimeo token, prompts the user
+    /// to enter one and saves it.
+    pub fn load_or_create_with_vimeo(require_vimeo_token: bool) -> Result<Self, ConfigError> {
+        let config_path = Self::default_path();
+        let mut config = Self::load_or_create()?;
+
+        if require_vimeo_token && config.vimeo_access_token.is_none() {
+            log::info!("Vimeo token required but not found in config");
+            let token = Self::prompt_for_vimeo_token()?;
+            config.vimeo_access_token = Some(token);
+
+            config.save(&config_path)?;
+            println!("\n✓ Configuration updated and saved to {:?}", config_path);
+        }
+
+        Ok(config)
+    }
 }
 
 #[cfg(test)]
@@ -221,6 +284,7 @@ mod tests {
             tmdb_api_key: "test_key_12345".to_string(),
             tvdb_api_key: None,
             cookies_from_browser: None,
+            vimeo_access_token: None,
         };
 
         // Save config
@@ -230,6 +294,7 @@ mod tests {
         let loaded = Config::load(&config_path).unwrap();
         assert_eq!(loaded.tmdb_api_key, "test_key_12345");
         assert_eq!(loaded.tvdb_api_key, None);
+        assert_eq!(loaded.vimeo_access_token, None);
     }
 
     #[test]
@@ -262,6 +327,7 @@ mod tests {
             tmdb_api_key: "test_key".to_string(),
             tvdb_api_key: None,
             cookies_from_browser: None,
+            vimeo_access_token: None,
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -283,6 +349,7 @@ mod tests {
             tmdb_api_key: "tmdb_key".to_string(),
             tvdb_api_key: Some("tvdb_key".to_string()),
             cookies_from_browser: None,
+            vimeo_access_token: None,
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -312,6 +379,7 @@ mod tests {
             tmdb_api_key: "test_key".to_string(),
             tvdb_api_key: None,
             cookies_from_browser: None,
+            vimeo_access_token: None,
         };
 
         config
@@ -324,6 +392,51 @@ mod tests {
             mode, 0o600,
             "Config file should have 600 permissions on Unix"
         );
+    }
+
+    #[test]
+    fn test_config_vimeo_token_serialization() {
+        let config = Config {
+            tmdb_api_key: "tmdb_key".to_string(),
+            tvdb_api_key: None,
+            cookies_from_browser: None,
+            vimeo_access_token: Some("pat_abc123".to_string()),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("vimeo_access_token"));
+        assert!(json.contains("pat_abc123"));
+    }
+
+    #[test]
+    fn test_config_vimeo_token_deserialization() {
+        let json = r#"{"tmdb_api_key":"key","vimeo_access_token":"pat_abc123"}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.vimeo_access_token, Some("pat_abc123".to_string()));
+    }
+
+    #[test]
+    fn test_config_vimeo_token_default_none() {
+        let json = r#"{"tmdb_api_key":"key"}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.vimeo_access_token, None);
+    }
+
+    #[test]
+    fn test_config_save_and_load_with_vimeo_token() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.cfg");
+
+        let config = Config {
+            tmdb_api_key: "tmdb_key".to_string(),
+            tvdb_api_key: None,
+            cookies_from_browser: None,
+            vimeo_access_token: Some("pat_xyz".to_string()),
+        };
+
+        config.save(&config_path).unwrap();
+        let loaded = Config::load(&config_path).unwrap();
+        assert_eq!(loaded.vimeo_access_token, Some("pat_xyz".to_string()));
     }
 }
 
@@ -338,12 +451,14 @@ mod property_tests {
         #[test]
         fn prop_config_serialization_round_trip(
             tmdb_key in "[a-zA-Z0-9]{10,50}",
-            tvdb_key in proptest::option::of("[a-zA-Z0-9]{10,50}")
+            tvdb_key in proptest::option::of("[a-zA-Z0-9]{10,50}"),
+            vimeo_key in proptest::option::of("[a-zA-Z0-9]{10,50}")
         ) {
             let config = Config {
                 tmdb_api_key: tmdb_key.clone(),
                 tvdb_api_key: tvdb_key.clone(),
                 cookies_from_browser: None,
+                vimeo_access_token: vimeo_key.clone(),
             };
 
             // Serialize to JSON
@@ -352,9 +467,10 @@ mod property_tests {
             // Deserialize from JSON
             let deserialized: Config = serde_json::from_str(&json).unwrap();
 
-            // Verify round-trip preserves both fields
+            // Verify round-trip preserves all key fields
             prop_assert_eq!(&config.tmdb_api_key, &deserialized.tmdb_api_key);
             prop_assert_eq!(&config.tvdb_api_key, &deserialized.tvdb_api_key);
+            prop_assert_eq!(&config.vimeo_access_token, &deserialized.vimeo_access_token);
         }
     }
 }

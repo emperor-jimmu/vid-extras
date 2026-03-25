@@ -25,3 +25,10 @@
 ## Deferred from: code review of 7-1-duplicate-detection-engine (2026-03-25)
 
 - `sources` field on `Orchestrator` duplicates data already held inside `DiscoveryOrchestrator` — added to pass active source list to `SeriesProcessingContext` for dedup. Pre-existing architectural pattern: the series pipeline doesn't have access to `DiscoveryOrchestrator`'s internals. Could be resolved by exposing a `sources()` accessor on `DiscoveryOrchestrator` or passing the list through the series discovery orchestrator.
+
+## Deferred from: code review of 8-1-vimeo-personal-access-token-management (2026-03-25)
+
+- Config loaded multiple times in `main.rs` when multiple optional sources active (TVDB + Vimeo) — pre-existing architectural pattern; fixing requires consolidating all optional-key config loads into a single call.
+- `reqwest::Client` allocated unconditionally in `VimeoDiscoverer::new` even when Vimeo is not in the active source list — pre-existing pattern (DailymotionDiscoverer does the same); fixing requires lazy init or `Option<reqwest::Client>`.
+- `vimeo_access_token` on public `DiscoveryConfig` is a security-sensitive field exposed as `pub` — pre-existing pattern (all `DiscoveryConfig` fields are `pub`); fixing requires a visibility audit of the entire struct.
+- `unwrap_or_default()` on vimeo token in `main.rs` silently passes empty string to `VimeoDiscoverer` if `vimeo_access_token` is somehow `None` after a successful `load_or_create_with_vimeo(true)` call — theoretical only; the prompt function guards against empty input.

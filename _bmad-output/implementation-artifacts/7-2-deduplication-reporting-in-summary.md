@@ -1,6 +1,6 @@
 # Story 7.2: Deduplication Reporting in Summary
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -160,8 +160,19 @@ From Story 7.1 completion notes:
 
 ### Agent Model Used
 
+Claude Sonnet 4.6
+
 ### Debug Log References
+
+None — story was already fully implemented.
 
 ### Completion Notes List
 
+- All display logic was already in place from a prior session (duplicates_removed param on both dry-run functions, dedup line in display_summary Discovery section, both orchestrator call sites updated)
+- 598 tests passing (549 lib + 15 main integration + 34 series integration)
+- cargo fmt clean, cargo clippy -D warnings clean
+
 ### File List
+
+- src/output.rs (already complete)
+- src/orchestrator.rs (already complete)

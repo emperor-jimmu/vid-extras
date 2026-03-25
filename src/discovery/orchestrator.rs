@@ -11,6 +11,7 @@ use super::archive::ArchiveOrgDiscoverer;
 use super::dailymotion::DailymotionDiscoverer;
 use super::kinocheck::KinoCheckDiscoverer;
 use super::tmdb::TmdbDiscoverer;
+use super::vimeo::VimeoDiscoverer;
 use super::youtube::YoutubeDiscoverer;
 
 /// Result of querying a single discovery source
@@ -31,6 +32,7 @@ pub struct DiscoveryOrchestrator {
     youtube: YoutubeDiscoverer,
     kinocheck: KinoCheckDiscoverer,
     dailymotion: DailymotionDiscoverer,
+    vimeo: VimeoDiscoverer,
     sources: Vec<Source>,
 }
 
@@ -40,6 +42,7 @@ impl DiscoveryOrchestrator {
         tmdb_api_key: String,
         sources: Vec<Source>,
         kinocheck_request_count: Arc<AtomicU32>,
+        vimeo_access_token: String,
     ) -> Self {
         Self {
             tmdb: TmdbDiscoverer::new(tmdb_api_key),
@@ -47,6 +50,7 @@ impl DiscoveryOrchestrator {
             youtube: YoutubeDiscoverer::new(),
             kinocheck: KinoCheckDiscoverer::new(kinocheck_request_count),
             dailymotion: DailymotionDiscoverer::new(),
+            vimeo: VimeoDiscoverer::new(vimeo_access_token),
             sources,
         }
     }
@@ -57,6 +61,7 @@ impl DiscoveryOrchestrator {
         sources: Vec<Source>,
         browser: String,
         kinocheck_request_count: Arc<AtomicU32>,
+        vimeo_access_token: String,
     ) -> Self {
         Self {
             tmdb: TmdbDiscoverer::new(tmdb_api_key),
@@ -64,6 +69,7 @@ impl DiscoveryOrchestrator {
             youtube: YoutubeDiscoverer::with_cookies(browser),
             kinocheck: KinoCheckDiscoverer::new(kinocheck_request_count),
             dailymotion: DailymotionDiscoverer::new(),
+            vimeo: VimeoDiscoverer::new(vimeo_access_token),
             sources,
         }
     }
@@ -227,20 +233,35 @@ impl DiscoveryOrchestrator {
             }
         }
 
-        // Vimeo, Bilibili stubs — discoverers not yet implemented.
-        // Log when a user-requested source is skipped so it's not silently ignored.
-        // These are NOT added to source_results as errors — they are intentionally
-        // unimplemented stubs, not runtime failures.
-        for source in &self.sources {
-            match source {
-                Source::Vimeo | Source::Bilibili => {
-                    warn!(
-                        "{} source requested but discoverer not yet implemented — skipping for {}",
-                        source, movie
-                    );
+        if self.sources.contains(&Source::Vimeo) {
+            match self.vimeo.discover(&movie.title, movie.year).await {
+                Ok(sources) => {
+                    info!("Found {} sources from Vimeo for {}", sources.len(), movie);
+                    source_results.push(SourceResult {
+                        source: Source::Vimeo,
+                        videos_found: sources.len(),
+                        error: None,
+                    });
+                    all_sources.extend(sources);
                 }
-                _ => {} // handled above
+                Err(e) => {
+                    warn!("Vimeo discovery failed for {}: {}", movie, e);
+                    source_results.push(SourceResult {
+                        source: Source::Vimeo,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
+                }
             }
+        }
+
+        // Bilibili stub — discoverer not yet implemented.
+        if self.sources.contains(&Source::Bilibili) {
+            warn!(
+                "{} source requested but discoverer not yet implemented — skipping for {}",
+                Source::Bilibili,
+                movie
+            );
         }
 
         // Title+duration deduplication — runs before URL dedup and content limits.

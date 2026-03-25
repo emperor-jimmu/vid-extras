@@ -18,6 +18,7 @@ mod special_validator;
 mod title_matching;
 mod tmdb;
 mod tvdb;
+mod vimeo;
 mod youtube;
 
 // Re-export public API
