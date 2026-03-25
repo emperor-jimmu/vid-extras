@@ -32,3 +32,10 @@
 - `reqwest::Client` allocated unconditionally in `VimeoDiscoverer::new` even when Vimeo is not in the active source list — pre-existing pattern (DailymotionDiscoverer does the same); fixing requires lazy init or `Option<reqwest::Client>`.
 - `vimeo_access_token` on public `DiscoveryConfig` is a security-sensitive field exposed as `pub` — pre-existing pattern (all `DiscoveryConfig` fields are `pub`); fixing requires a visibility audit of the entire struct.
 - `unwrap_or_default()` on vimeo token in `main.rs` silently passes empty string to `VimeoDiscoverer` if `vimeo_access_token` is somehow `None` after a successful `load_or_create_with_vimeo(true)` call — theoretical only; the prompt function guards against empty input.
+
+## Deferred from: code review of 8-2-vimeo-rest-api-discoverer (2026-03-25)
+
+- Page 1 failure → `Err`; page 2+ failure → `Ok(partial)` behavioral asymmetry in `discover()` — pre-existing pattern from `DailymotionDiscoverer`, consistent with project conventions.
+- `test_vimeo_discoverer_new_compiles` comment says "Verify the discoverer is functional" but the test only verifies the error path returns `Ok` — cosmetic, test is functionally correct.
+- `make_video` test helper uses `duration` as the numeric suffix in `uri` — confusing if two test videos share the same duration value; test helper only, no production impact.
+- Vimeo API `Accept: application/vnd.vimeo.*+json;version=3.4` version header not sent — best practice for API version stability, not required by any AC.
