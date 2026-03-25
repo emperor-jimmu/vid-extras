@@ -102,6 +102,18 @@ pub fn contains_excluded_keywords(title: &str) -> bool {
         return true;
     }
 
+    // Exclude "FULL-Original" patterns (e.g. "FULL-Original - HD") — pirated full-film uploads
+    if title_lower.contains("full-original") {
+        return true;
+    }
+
+    // Exclude "FILM - Title (Year)" patterns — full-movie upload labeling convention
+    static FILM_LABEL_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)\bFILM\s*-\s*.+\(\d{4}\)").unwrap());
+    if FILM_LABEL_RE.is_match(title) {
+        return true;
+    }
+
     false
 }
 /// Infer the content category from a video title based on keyword analysis.
@@ -438,6 +450,18 @@ mod tests {
         // Should not be excluded
         assert!(!contains_excluded_keywords("The Making of Inception"));
         assert!(!contains_excluded_keywords("Deleted Scenes Collection"));
+
+        // FULL-Original patterns
+        assert!(contains_excluded_keywords("The Matrix FULL-Original - HD"));
+        assert!(contains_excluded_keywords("full-original hd 1080p"));
+
+        // FILM - Title (Year) patterns
+        assert!(contains_excluded_keywords("FILM - The Matrix (1999)"));
+        assert!(contains_excluded_keywords("film - Inception (2010)"));
+
+        // Should not be excluded — "film" alone or without year is fine
+        assert!(!contains_excluded_keywords("Behind the Scenes Film Making"));
+        assert!(!contains_excluded_keywords("Short Film Documentary"));
     }
 
     #[test]
