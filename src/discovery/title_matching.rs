@@ -58,6 +58,9 @@ pub fn contains_movie_title(video_title: &str, movie_title: &str) -> bool {
 
 /// Check if a video title contains excluded keywords
 pub fn contains_excluded_keywords(title: &str) -> bool {
+    use regex::Regex;
+    use std::sync::LazyLock;
+
     let excluded_keywords = [
         "Review",
         "Reaction",
@@ -71,9 +74,35 @@ pub fn contains_excluded_keywords(title: &str) -> bool {
     ];
 
     let title_lower = title.to_lowercase();
-    excluded_keywords
+
+    if excluded_keywords
         .iter()
         .any(|keyword| title_lower.contains(&keyword.to_lowercase()))
+    {
+        return true;
+    }
+
+    // Exclude "full movie" (whole phrase, case-insensitive)
+    if title_lower.contains("full movie") {
+        return true;
+    }
+
+    // Exclude dotted-letter spam patterns like "F.U.L.L H.D", "F.U.L.L English Subtitle", etc.
+    // These are typically pirated full-movie uploads with obfuscated titles.
+    static DOTTED_FULL_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)\bF\.U\.L\.L\b").unwrap());
+    if DOTTED_FULL_RE.is_match(title) {
+        return true;
+    }
+
+    // Exclude "Part X of Y" patterns (e.g. "Part 1 of 3", "Part 2 of 5")
+    static PART_OF_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)\bpart\s+\d+\s+of\s+\d+\b").unwrap());
+    if PART_OF_RE.is_match(title) {
+        return true;
+    }
+
+    false
 }
 /// Infer the content category from a video title based on keyword analysis.
 /// Returns `None` if no strong signal is found, in which case the caller
@@ -390,6 +419,25 @@ mod tests {
         assert!(contains_excluded_keywords("Reaction Video"));
         assert!(contains_excluded_keywords("Analysis"));
         assert!(!contains_excluded_keywords("Official Trailer"));
+
+        // Full movie patterns
+        assert!(contains_excluded_keywords("The Matrix Full Movie HD"));
+        assert!(contains_excluded_keywords("full movie 2024"));
+        assert!(contains_excluded_keywords("FULL MOVIE English"));
+
+        // Dotted-letter obfuscation patterns
+        assert!(contains_excluded_keywords("The Matrix F.U.L.L H.D"));
+        assert!(contains_excluded_keywords("F.U.L.L English Subtitle"));
+        assert!(contains_excluded_keywords("Movie f.u.l.l hd 1080p"));
+
+        // Part X of Y patterns
+        assert!(contains_excluded_keywords("Behind the Scenes Part 1 of 3"));
+        assert!(contains_excluded_keywords("Interview Part 2 of 5"));
+        assert!(contains_excluded_keywords("PART 1 OF 2 making of"));
+
+        // Should not be excluded
+        assert!(!contains_excluded_keywords("The Making of Inception"));
+        assert!(!contains_excluded_keywords("Deleted Scenes Collection"));
     }
 
     #[test]
