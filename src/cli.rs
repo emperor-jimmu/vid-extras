@@ -1,7 +1,7 @@
 // CLI module - handles command-line argument parsing and configuration
 
 use crate::error::CliError;
-use crate::models::{Source, default_sources};
+use crate::models::{Source, all_sources, default_sources};
 use clap::Parser;
 use colored::Colorize;
 use std::path::PathBuf;
@@ -31,6 +31,10 @@ pub struct CliArgs {
         default_values_t = default_sources()
     )]
     pub sources: Vec<Source>,
+
+    /// Use all available discovery sources (equivalent to --sources tmdb,archive,dailymotion,youtube,vimeo)
+    #[arg(long, conflicts_with = "sources")]
+    pub all: bool,
 
     /// Maximum number of movies to process concurrently
     #[arg(short, long, default_value = "2")]
@@ -110,10 +114,12 @@ impl From<CliArgs> for CliConfig {
             crate::models::ProcessingMode::Both
         };
 
+        let sources = if args.all { all_sources() } else { args.sources };
+
         CliConfig {
             root_directory: args.root_directory,
             force: args.force,
-            sources: args.sources,
+            sources,
             concurrency: args.concurrency,
             verbose: args.verbose,
             single: args.single,
@@ -338,6 +344,7 @@ mod tests {
             root_directory: root,
             force: false,
             sources: default_sources(),
+            all: false,
             concurrency: 2,
             verbose: false,
             single: false,
@@ -367,6 +374,7 @@ mod tests {
             root_directory: temp_dir.path().to_path_buf(),
             force: true,
             sources: vec![Source::Youtube],
+            all: false,
             concurrency: 4,
             verbose: true,
             single: false,
@@ -456,6 +464,29 @@ mod tests {
         assert!(!config.season_extras);
         assert!(!config.specials);
         assert_eq!(config.media_type, None);
+    }
+
+    #[test]
+    fn test_all_flag_sets_all_sources() {
+        use crate::models::all_sources;
+        let temp_dir = TempDir::new().unwrap();
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.all = true;
+        let config: CliConfig = args.into();
+        assert_eq!(config.sources, all_sources());
+        assert!(config.sources.contains(&Source::Vimeo));
+    }
+
+    #[test]
+    fn test_all_flag_overrides_sources() {
+        use crate::models::all_sources;
+        let temp_dir = TempDir::new().unwrap();
+        // Even if sources is set to just Youtube, --all should expand to all_sources()
+        let mut args = make_args(temp_dir.path().to_path_buf());
+        args.all = true;
+        args.sources = vec![Source::Youtube];
+        let config: CliConfig = args.into();
+        assert_eq!(config.sources, all_sources());
     }
 
     #[test]

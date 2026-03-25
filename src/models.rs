@@ -193,6 +193,17 @@ pub fn default_sources() -> Vec<Source> {
     ]
 }
 
+/// Returns all available discovery sources (used by --all flag)
+pub fn all_sources() -> Vec<Source> {
+    vec![
+        Source::Tmdb,
+        Source::Archive,
+        Source::Dailymotion,
+        Source::Youtube,
+        Source::Vimeo,
+    ]
+}
+
 /// Type of content source
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
