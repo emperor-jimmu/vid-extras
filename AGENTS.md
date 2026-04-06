@@ -21,6 +21,7 @@ cargo fmt                      # Format
 ## Configuration
 
 Create `config.cfg` in project root:
+
 ```json
 { "tmdb_api_key": "your_key_here" }
 ```
@@ -42,6 +43,7 @@ Or set `TMDB_API_KEY` environment variable. On first run, tool prompts for key a
 ## Directory Structure
 
 Input folders must match Jellyfin naming:
+
 - Movies: `Movie Title (2020)/Movie Title (2020).mkv`
 - Series: `Series Name (2020)/Season 01/...`, `Season 00` for specials
 
