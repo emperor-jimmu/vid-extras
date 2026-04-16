@@ -1,7 +1,7 @@
 // CLI module - handles command-line argument parsing and configuration
 
 use crate::error::CliError;
-use crate::models::{Source, all_sources, default_sources};
+use crate::models::{all_sources, default_sources, Source};
 use clap::Parser;
 use colored::Colorize;
 use std::path::PathBuf;
@@ -81,6 +81,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub dry_run: bool,
 
+    /// Output line-delimited JSON progress for external tools (e.g., web UI)
+    #[arg(long)]
+    pub json_progress: bool,
+
     /// DEPRECATED: Use --sources instead
     #[arg(long, hide = true)]
     pub mode: Option<String>,
@@ -102,6 +106,7 @@ pub struct CliConfig {
     pub media_type: Option<String>,
     pub cookies_from_browser: Option<String>,
     pub dry_run: bool,
+    pub json_progress: bool,
 }
 
 impl From<CliArgs> for CliConfig {
@@ -134,6 +139,7 @@ impl From<CliArgs> for CliConfig {
             media_type: args.r#type,
             cookies_from_browser: args.cookies_from_browser,
             dry_run: args.dry_run,
+            json_progress: args.json_progress,
         }
     }
 }
@@ -339,7 +345,7 @@ pub fn display_config(config: &CliConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Source, default_sources};
+    use crate::models::{default_sources, Source};
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -361,6 +367,7 @@ mod tests {
             cookies_from_browser: None,
             mode: None,
             dry_run: false,
+            json_progress: false,
         }
     }
 
@@ -391,6 +398,7 @@ mod tests {
             cookies_from_browser: None,
             mode: None,
             dry_run: false,
+            json_progress: true,
         };
 
         let config: CliConfig = args.into();
@@ -403,6 +411,7 @@ mod tests {
         assert!(config.season_extras);
         assert!(config.specials);
         assert_eq!(config.media_type, Some("series".to_string()));
+        assert!(config.json_progress);
     }
 
     #[test]
@@ -514,6 +523,7 @@ mod tests {
             media_type: Some("series".to_string()),
             cookies_from_browser: None,
             dry_run: false,
+            json_progress: false,
         };
         display_config(&config);
     }
@@ -653,6 +663,20 @@ mod tests {
     }
 
     #[test]
+    fn test_json_progress_flag_parsed_correctly() {
+        use clap::Parser;
+
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path().to_str().unwrap();
+
+        let args = CliArgs::try_parse_from(["extras_fetcher", root, "--json-progress"])
+            .expect("parse should succeed");
+        assert!(args.json_progress);
+        let config: CliConfig = args.into();
+        assert!(config.json_progress);
+    }
+
+    #[test]
     fn test_display_config_with_dry_run() {
         let config = CliConfig {
             root_directory: PathBuf::from("/test/movies"),
@@ -668,6 +692,7 @@ mod tests {
             media_type: None,
             cookies_from_browser: None,
             dry_run: true,
+            json_progress: false,
         };
         // Should not panic and should display dry-run indicator
         display_config(&config);
@@ -677,7 +702,7 @@ mod tests {
 #[cfg(test)]
 mod property_tests {
     use super::*;
-    use crate::models::{Source, default_sources};
+    use crate::models::{default_sources, Source};
     use proptest::prelude::*;
     use std::path::PathBuf;
 
@@ -705,6 +730,7 @@ mod property_tests {
                 media_type: None,
                 cookies_from_browser: None,
                 dry_run: false,
+                json_progress: false,
             };
 
             let mut output = Vec::new();
@@ -767,6 +793,7 @@ mod property_tests {
                 media_type: None,
                 cookies_from_browser: None,
                 dry_run: false,
+                json_progress: false,
             };
 
             prop_assert_eq!(config.verbose, verbose);
