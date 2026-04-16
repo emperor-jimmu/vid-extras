@@ -201,6 +201,7 @@ pub fn all_sources() -> Vec<Source> {
         Source::Dailymotion,
         Source::Youtube,
         Source::Vimeo,
+        Source::Bilibili,
     ]
 }
 

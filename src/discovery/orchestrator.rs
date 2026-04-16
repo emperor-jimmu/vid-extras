@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicU32;
 
 use super::ContentDiscoverer;
 use super::archive::ArchiveOrgDiscoverer;
+use super::bilibili::BilibiliDiscoverer;
 use super::dailymotion::DailymotionDiscoverer;
 use super::kinocheck::KinoCheckDiscoverer;
 use super::tmdb::TmdbDiscoverer;
@@ -33,6 +34,7 @@ pub struct DiscoveryOrchestrator {
     kinocheck: KinoCheckDiscoverer,
     dailymotion: DailymotionDiscoverer,
     vimeo: VimeoDiscoverer,
+    bilibili: BilibiliDiscoverer,
     sources: Vec<Source>,
 }
 
@@ -51,6 +53,7 @@ impl DiscoveryOrchestrator {
             kinocheck: KinoCheckDiscoverer::new(kinocheck_request_count),
             dailymotion: DailymotionDiscoverer::new(),
             vimeo: VimeoDiscoverer::new(vimeo_access_token),
+            bilibili: BilibiliDiscoverer::new(),
             sources,
         }
     }
@@ -70,6 +73,7 @@ impl DiscoveryOrchestrator {
             kinocheck: KinoCheckDiscoverer::new(kinocheck_request_count),
             dailymotion: DailymotionDiscoverer::new(),
             vimeo: VimeoDiscoverer::new(vimeo_access_token),
+            bilibili: BilibiliDiscoverer::new(),
             sources,
         }
     }
@@ -240,13 +244,26 @@ impl DiscoveryOrchestrator {
             }
         }
 
-        // Bilibili stub — discoverer not yet implemented.
         if self.sources.contains(&Source::Bilibili) {
-            warn!(
-                "{} source requested but discoverer not yet implemented — skipping for {}",
-                Source::Bilibili,
-                movie
-            );
+            match self.bilibili.discover(movie).await {
+                Ok(sources) => {
+                    info!("Found {} sources from Bilibili for {}", sources.len(), movie);
+                    source_results.push(SourceResult {
+                        source: Source::Bilibili,
+                        videos_found: sources.len(),
+                        error: None,
+                    });
+                    all_sources.extend(sources);
+                }
+                Err(e) => {
+                    warn!("Bilibili discovery failed for {}: {}", movie, e);
+                    source_results.push(SourceResult {
+                        source: Source::Bilibili,
+                        videos_found: 0,
+                        error: Some(e.to_string()),
+                    });
+                }
+            }
         }
 
         // Title+duration deduplication — runs before URL dedup and content limits.
