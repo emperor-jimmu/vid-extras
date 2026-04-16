@@ -7,6 +7,8 @@ use crate::models::{ContentCategory, SeriesExtra, SourceType};
 use log::{debug, error, info};
 use serde::Deserialize;
 
+use super::retry_with_backoff;
+
 /// TMDB API response for TV series search
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -103,10 +105,13 @@ impl TmdbSeriesDiscoverer {
 
         debug!("Searching TMDB for series: {} {:?}", title, year);
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
-            error!("TMDB series search request failed: {}", e);
-            DiscoveryError::NetworkError(e)
-        })?;
+        let response = retry_with_backoff(3, 500, || async {
+            self.client.get(&url).send().await.map_err(|e| {
+                error!("TMDB series search request failed: {}", e);
+                DiscoveryError::NetworkError(e)
+            })
+        })
+        .await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -144,10 +149,13 @@ impl TmdbSeriesDiscoverer {
 
         debug!("Fetching TMDB series videos for series ID: {}", series_id);
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
-            error!("TMDB series videos request failed: {}", e);
-            DiscoveryError::NetworkError(e)
-        })?;
+        let response = retry_with_backoff(3, 500, || async {
+            self.client.get(&url).send().await.map_err(|e| {
+                error!("TMDB series videos request failed: {}", e);
+                DiscoveryError::NetworkError(e)
+            })
+        })
+        .await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -205,10 +213,13 @@ impl TmdbSeriesDiscoverer {
 
         debug!("Fetching TMDB Season 0 for series ID: {}", series_id);
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
-            error!("TMDB Season 0 request failed: {}", e);
-            DiscoveryError::NetworkError(e)
-        })?;
+        let response = retry_with_backoff(3, 500, || async {
+            self.client.get(&url).send().await.map_err(|e| {
+                error!("TMDB Season 0 request failed: {}", e);
+                DiscoveryError::NetworkError(e)
+            })
+        })
+        .await?;
 
         // Season 0 might not exist, which is not an error
         if response.status() == 404 {
