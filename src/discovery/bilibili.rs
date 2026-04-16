@@ -9,9 +9,6 @@ use std::process::Command;
 use super::ContentDiscoverer;
 use super::title_matching;
 
-/// Maximum search results to fetch per query
-const MAX_RESULTS: u32 = 5;
-
 /// Bilibili content discoverer
 /// Uses yt-dlp to search Bilibili (Chinese: 哔哩哔哩, aka "B站")
 pub struct BilibiliDiscoverer {}
@@ -61,9 +58,7 @@ impl BilibiliDiscoverer {
             .output()
             .map_err(|e| {
                 debug!("Bilibili search command failed: {}", e);
-                DiscoveryError::DownloadError(
-                    crate::error::DownloadError::IoError(e),
-                )
+                DiscoveryError::YtDlpError(format!("yt-dlp failed: {}", e))
             })?;
 
         if !output.status.success() {
@@ -112,7 +107,8 @@ impl ContentDiscoverer for BilibiliDiscoverer {
                 Ok(json_output) => {
                     let videos = Self::parse_json_lines(&json_output);
                     for (title, duration, url) in videos {
-                        if !title_matching::is_duration_valid(duration) {
+                        // Duration filter: 30s–2400s (40 minutes)
+                        if !(30..=2400).contains(&duration) {
                             continue;
                         }
 
@@ -157,7 +153,11 @@ mod tests {
     fn test_build_search_queries() {
         let queries = BilibiliDiscoverer::build_search_queries("Inception", 2010);
         assert!(!queries.is_empty());
-        assert!(queries.iter().all(|(q, _)| q.contains("Inception") && q.contains("2010")));
+        assert!(
+            queries
+                .iter()
+                .all(|(q, _)| q.contains("Inception") && q.contains("2010"))
+        );
     }
 
     #[test]

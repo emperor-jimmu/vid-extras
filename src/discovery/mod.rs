@@ -3,12 +3,12 @@
 mod archive;
 mod bilibili;
 pub(crate) mod dailymotion;
-mod retry;
 mod fuzzy_matching;
 mod id_bridge;
 mod kinocheck;
 mod monitor_policy;
 mod orchestrator;
+mod retry;
 mod season_pack;
 mod season_zero_import;
 mod series_cache;
@@ -26,10 +26,10 @@ mod youtube;
 // Re-export public API
 pub use fuzzy_matching::FuzzyMatcher;
 pub use id_bridge::IdBridge;
-pub use retry::retry_with_backoff;
 pub use monitor_policy::MonitorPolicy;
 pub use orchestrator::DiscoveryOrchestrator;
 pub use orchestrator::SourceResult;
+pub use retry::retry_with_backoff;
 pub use season_pack::SeasonPackProcessor;
 pub use season_zero_import::Season0Importer;
 pub use series_cache::{CachedSeriesMetadata, SeriesMetadataCache};

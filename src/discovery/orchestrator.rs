@@ -247,7 +247,11 @@ impl DiscoveryOrchestrator {
         if self.sources.contains(&Source::Bilibili) {
             match self.bilibili.discover(movie).await {
                 Ok(sources) => {
-                    info!("Found {} sources from Bilibili for {}", sources.len(), movie);
+                    info!(
+                        "Found {} sources from Bilibili for {}",
+                        sources.len(),
+                        movie
+                    );
                     source_results.push(SourceResult {
                         source: Source::Bilibili,
                         videos_found: sources.len(),

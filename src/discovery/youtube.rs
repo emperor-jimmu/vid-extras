@@ -5,8 +5,8 @@ use crate::models::{ContentCategory, MovieEntry, SourceType, VideoSource};
 use log::{debug, error, info};
 
 use super::ContentDiscoverer;
-use super::title_matching;
 use super::retry_with_backoff;
+use super::title_matching;
 
 /// YouTube content discoverer
 pub struct YoutubeDiscoverer {

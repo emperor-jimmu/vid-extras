@@ -189,14 +189,9 @@ impl TvdbClient {
         debug!("Authenticating with TheTVDB API");
 
         let response = retry_with_backoff(3, 1000, || async {
-            self.client
-                .post(url)
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| {
-                    DiscoveryError::TvdbApiError(format!("Authentication request failed: {}", e))
-                })
+            self.client.post(url).json(&body).send().await.map_err(|e| {
+                DiscoveryError::TvdbApiError(format!("Authentication request failed: {}", e))
+            })
         })
         .await
         .map_err(|e| {
