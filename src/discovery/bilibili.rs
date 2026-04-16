@@ -107,12 +107,8 @@ impl ContentDiscoverer for BilibiliDiscoverer {
                 Ok(json_output) => {
                     let videos = Self::parse_json_lines(&json_output);
                     for (title, duration, url) in videos {
-                        // Duration filter: 30s–2400s (40 minutes)
+                        // Duration filter: 30s–40min (exclude full films and shorts)
                         if !(30..=2400).contains(&duration) {
-                            continue;
-                        }
-
-                        if duration > 5400 {
                             continue;
                         }
 
