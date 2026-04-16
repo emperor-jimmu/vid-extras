@@ -9,6 +9,8 @@ pub mod error;
 pub mod models;
 pub mod orchestrator;
 pub mod organizer;
+pub mod json_output;
 pub mod output;
 pub mod scanner;
 pub mod validation;
+pub use json_output::ProgressEvent;
