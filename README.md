@@ -644,7 +644,7 @@ cargo fmt -- --check
 
 ### Project Structure
 
-```
+```text
 src/
 ├── main.rs          - Entry point and orchestration
 ├── cli.rs           - Command-line interface
