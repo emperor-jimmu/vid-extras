@@ -4,7 +4,7 @@
 
 use crate::error::DiscoveryError;
 use crate::models::{ContentCategory, SourceType, VideoSource};
-use log::{info, warn};
+use log::warn;
 use serde::Deserialize;
 
 use super::title_matching;
@@ -153,36 +153,13 @@ impl DailymotionDiscoverer {
     ) -> Result<DailymotionResponse, DiscoveryError> {
         let url = Self::build_url(query, page);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(DiscoveryError::NetworkError)?;
-
-        // HTTP 429 — wait 1s and retry once (NFR10)
-        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            warn!("Dailymotion rate limited (429), retrying after 1s");
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            let retry = match self.client.get(&url).send().await {
-                Ok(r) => r,
-                Err(e) => {
-                    info!("Dailymotion retry network error: {}", e);
-                    return Ok(DailymotionResponse {
-                        list: vec![],
-                        has_more: false,
-                    });
-                }
-            };
-            if !retry.status().is_success() {
-                info!("Dailymotion retry failed with status {}", retry.status());
-                return Ok(DailymotionResponse {
-                    list: vec![],
-                    has_more: false,
-                });
-            }
-            return self.parse_response(retry).await;
-        }
+        let response = super::retry_with_backoff(3, 1000, || async {
+            self.client.get(&url).send().await.map_err(|e| {
+                warn!("Dailymotion request failed: {}", e);
+                DiscoveryError::NetworkError(e)
+            })
+        })
+        .await?;
 
         if !response.status().is_success() {
             return Err(DiscoveryError::ApiError(format!(
