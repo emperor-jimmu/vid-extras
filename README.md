@@ -6,7 +6,7 @@ A Rust-based automation tool for enriching Jellyfin movie libraries by discoveri
 
 ### Movies & TV Series Support
 
-- **Multi-source content discovery**: Automatically finds extras from TheMovieDB, Archive.org, and YouTube
+- **Multi-source content discovery**: Automatically finds extras from TMDB, Archive.org, YouTube, Vimeo, Dailymotion, and Bilibili
 - **Movie extras**: Trailers, behind-the-scenes footage, deleted scenes, featurettes, interviews
 - **TV series extras**: Series-level and season-specific bonus content
 - **Season 0 specials**: Discover and organize official special episodes
@@ -130,21 +130,39 @@ Arguments:
 
 Options:
   -f, --force              Ignore done markers and reprocess all items
-  -m, --mode <MODE>        Content source mode [default: all] [possible values: all, youtube]
-  -c, --concurrency <N>    Maximum number of items to process concurrently [default: 2]
-  -v, --verbose            Enable verbose logging output
+  --sources <SOURCES>     Discovery sources to query (comma-separated or repeated flags)
+                          [default: tmdb,youtube] [possible values: tmdb, archive, dailymotion,
+                          youtube, vimeo, bilibili]
+  --all                   Use all available discovery sources
+  -c, --concurrency <N>   Maximum number of items to process concurrently [default: 2]
+  -v, --verbose           Enable verbose logging output
+  -s, --single          Process a single folder directly (instead of scanning for multiple)
+  --cookies-from-browser   Browser to use for yt-dlp cookie authentication [possible values: chrome,
+                          firefox, edge]
+  --dry-run              Discover extras without downloading, converting, or organizing files
 
   Series-specific options:
   --series-only            Process only TV series (skip movies)
   --movies-only            Process only movies (skip TV series)
-  --season-extras          Enable season-specific extras discovery
-  --specials               Enable Season 0 specials discovery
+  --season-extras         Enable season-specific extras discovery
+  --specials              Enable Season 0 specials discovery
   --specials-folder <NAME> Folder name for Season 0 specials [default: Specials]
-  --type <TYPE>            Force media type classification [possible values: movie, series]
+  --type <TYPE>           Force media type classification [possible values: movie, series]
 
-  -h, --help               Print help information
-  -V, --version            Print version information
+  -h, --help              Print help information
+  -V, --version           Print version information
 ```
+
+### Available Discovery Sources
+
+- **tmdb** - TheMovieDB official content (trailers, behind-the-scenes, deleted scenes, featurettes, interviews). Primary source for official content.
+- **archive** - Archive.org (historical EPK content for movies before 2010)
+- **dailymotion** - Dailymotion video platform
+- **youtube** - YouTube community uploads with smart filtering (excludes shorts, reviews, reactions, etc.)
+- **vimeo** - Vimeo video platform
+- **bilibili** - Bilibili Chinese video platform
+
+Default sources are `tmdb,youtube`. Use `--all` to enable all sources or specify individual sources with `--sources tmdb,archive,youtube`.
 
 ### Examples
 
@@ -181,13 +199,37 @@ extras_fetcher --force /media/library
 **Use only YouTube as a content source:**
 
 ```bash
-extras_fetcher --mode youtube /media/library
+extras_fetcher --sources youtube /media/library
+```
+
+**Use all available discovery sources:**
+
+```bash
+extras_fetcher --all /media/library
 ```
 
 **Process 4 items concurrently with verbose logging:**
 
 ```bash
 extras_fetcher --concurrency 4 --verbose /media/library
+```
+
+**Process a single folder directly:**
+
+```bash
+extras_fetcher --single "/media/movies/Movie Title (2020)"
+```
+
+**Use browser cookies for YouTube authentication:**
+
+```bash
+extras_fetcher --cookies-from-browser chrome /media/library
+```
+
+**Discover extras without downloading (dry-run):**
+
+```bash
+extras_fetcher --dry-run /media/library
 ```
 
 **Enable debug logging:**
@@ -397,10 +439,11 @@ The tool automatically detects whether each folder contains a movie or TV series
    - Parses folder names to extract movie title and year
    - Skips folders with `.extras_done` marker (unless `--force` is used)
 
-2. **Discovery**: Queries multiple sources for extra content
+2. **Discovery**: Queries multiple sources for extra content (configurable via `--sources` or `--all`)
    - **TMDB**: Official trailers, behind-the-scenes, deleted scenes, featurettes
    - **Archive.org**: Historical EPK content for movies before 2010
    - **YouTube**: Community-uploaded extras with smart filtering
+   - **Vimeo**, **Dailymotion**, **Bilibili**: Additional video platforms
 
 3. **Downloading**: Downloads discovered videos using yt-dlp
    - Sequential downloads within each movie

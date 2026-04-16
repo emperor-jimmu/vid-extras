@@ -31,7 +31,8 @@ Or set `TMDB_API_KEY` environment variable. On first run, tool prompts for key a
 ## CLI Options
 
 - `-f, --force` - Reprocess all (ignores `.extras_done` markers)
-- `-m, --mode <MODE>` - Source: `all` or `youtube` (default: all)
+- `--sources <SOURCES>` - Discovery sources (comma-separated) [default: tmdb,youtube]
+- `--all` - Use all available discovery sources
 - `-c, --concurrency <N>` - Parallel items (default: 2)
 - `--series-only` - Skip movies, process only TV series
 - `--movies-only` - Skip series, process only movies
