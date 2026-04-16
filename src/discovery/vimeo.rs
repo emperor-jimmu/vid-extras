@@ -185,35 +185,13 @@ impl VimeoDiscoverer {
     async fn fetch_page(&self, query: &str, page: u32) -> Result<VimeoResponse, DiscoveryError> {
         let url = Self::build_url(query, page);
 
-        let response = self
-            .build_request(&url)
-            .send()
-            .await
-            .map_err(DiscoveryError::NetworkError)?;
-
-        // HTTP 429 — wait 1s and retry once (NFR10)
-        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            warn!("Vimeo rate limited (429), retrying after 1s");
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            let retry = match self.build_request(&url).send().await {
-                Ok(r) => r,
-                Err(e) => {
-                    info!("Vimeo retry network error: {}", e);
-                    return Ok(VimeoResponse {
-                        data: vec![],
-                        paging: VimeoPaging { next: None },
-                    });
-                }
-            };
-            if !retry.status().is_success() {
-                info!("Vimeo retry failed with status {}", retry.status());
-                return Ok(VimeoResponse {
-                    data: vec![],
-                    paging: VimeoPaging { next: None },
-                });
-            }
-            return self.parse_response(retry).await;
-        }
+        let response = super::retry_with_backoff(3, 1000, || async {
+            self.build_request(&url).send().await.map_err(|e| {
+                warn!("Vimeo request failed: {}", e);
+                DiscoveryError::NetworkError(e)
+            })
+        })
+        .await?;
 
         if !response.status().is_success() {
             return Err(DiscoveryError::ApiError(format!(
