@@ -1,6 +1,7 @@
 use extras_fetcher::cli::{display_banner, display_config, parse_args};
 use extras_fetcher::config::Config;
 use extras_fetcher::error::ValidationError;
+use extras_fetcher::json_output;
 use extras_fetcher::models::Source;
 use extras_fetcher::orchestrator::{
     DiscoveryConfig, Orchestrator, OrchestratorConfig, SeriesConfig,
@@ -29,6 +30,11 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    // Enable JSON progress output if requested
+    if config.json_progress {
+        json_output::set_json_progress_enabled(true);
+    }
 
     // Initialize logging based on verbose flag
     // Requirements: 13.8

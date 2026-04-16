@@ -1,6 +1,7 @@
 // Output module - handles CLI output formatting and progress display
 
 use crate::discovery::SourceResult;
+use crate::json_output::ProgressEvent;
 use crate::models::{ContentCategory, MovieEntry, SeriesEntry, Source, SourceType};
 use crate::orchestrator::ProcessingSummary;
 use colored::Colorize;
@@ -372,6 +373,15 @@ pub fn display_phase(phase_number: usize, phase_name: &str) {
 
 /// Display movie processing start with progress indicator
 pub fn display_movie_start(movie: &MovieEntry, current: usize, total: usize) {
+    let event = ProgressEvent::new(
+        "started",
+        current,
+        total,
+        movie.title.clone(),
+        Some(movie.year),
+    );
+    event.emit_if_enabled();
+
     println!("\n{}", "━".repeat(60).bright_cyan());
     println!(
         "{} [{}/{}] Processing: {}",
@@ -390,6 +400,12 @@ pub fn display_movie_complete(
     conversions: usize,
     success: bool,
 ) {
+    let mut event = ProgressEvent::new("completed", 0, 0, movie.title.clone(), Some(movie.year));
+    event.success = Some(success);
+    event.downloads = Some(downloads);
+    event.conversions = Some(conversions);
+    event.emit_if_enabled();
+
     if success {
         println!(
             "\n{} {} - {} downloads, {} conversions",
@@ -410,6 +426,9 @@ pub fn display_movie_complete(
 /// Display series processing start with progress indicator
 /// Requirements: 18.1
 pub fn display_series_start(series: &SeriesEntry, current: usize, total: usize) {
+    let event = ProgressEvent::new("started", current, total, series.title.clone(), series.year);
+    event.emit_if_enabled();
+
     println!("\n{}", "━".repeat(60).bright_cyan());
     println!(
         "{} [{}/{}] Processing: {}",
@@ -475,6 +494,12 @@ pub fn display_series_complete(
     conversions: usize,
     success: bool,
 ) {
+    let mut event = ProgressEvent::new("completed", 0, 0, series.title.clone(), series.year);
+    event.success = Some(success);
+    event.downloads = Some(downloads);
+    event.conversions = Some(conversions);
+    event.emit_if_enabled();
+
     if success {
         println!(
             "\n{} {} - {} downloads, {} conversions",

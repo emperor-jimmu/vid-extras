@@ -1,4 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static JSON_PROGRESS_ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn set_json_progress_enabled(enabled: bool) {
+    JSON_PROGRESS_ENABLED.store(enabled, Ordering::SeqCst);
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressEvent {
@@ -40,6 +47,12 @@ impl ProgressEvent {
 
     pub fn emit(&self) {
         println!("{}", serde_json::to_string(self).unwrap());
+    }
+
+    pub fn emit_if_enabled(&self) {
+        if JSON_PROGRESS_ENABLED.load(Ordering::SeqCst) {
+            self.emit();
+        }
     }
 }
 
