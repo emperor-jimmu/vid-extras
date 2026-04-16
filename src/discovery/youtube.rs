@@ -6,6 +6,7 @@ use log::{debug, error, info};
 
 use super::ContentDiscoverer;
 use super::title_matching;
+use super::retry_with_backoff;
 
 /// YouTube content discoverer
 pub struct YoutubeDiscoverer {
@@ -142,24 +143,26 @@ impl YoutubeDiscoverer {
 
         debug!("Searching YouTube with query: {}", query);
 
-        // Execute yt-dlp to search and get video metadata
-        let mut cmd = tokio::process::Command::new("yt-dlp");
-        cmd.arg("--dump-json")
-            .arg("--no-playlist")
-            .arg("--skip-download")
-            .arg("--remote-components")
-            .arg("ejs:github")
-            .arg(&search_query);
+        // Wrap yt-dlp execution in retry logic
+        let output = retry_with_backoff(3, 1000, || async {
+            let mut cmd = tokio::process::Command::new("yt-dlp");
+            cmd.arg("--dump-json")
+                .arg("--no-playlist")
+                .arg("--skip-download")
+                .arg("--remote-components")
+                .arg("ejs:github")
+                .arg(&search_query);
 
-        // Pass browser cookies when configured to bypass bot-detection
-        if let Some(browser) = &self.cookies_from_browser {
-            cmd.arg("--cookies-from-browser").arg(browser);
-        }
+            if let Some(browser) = &self.cookies_from_browser {
+                cmd.arg("--cookies-from-browser").arg(browser);
+            }
 
-        let output = cmd.output().await.map_err(|e| {
-            error!("Failed to execute yt-dlp: {}", e);
-            DiscoveryError::YtDlpError(format!("Failed to execute yt-dlp: {}", e))
-        })?;
+            cmd.output().await.map_err(|e| {
+                error!("Failed to execute yt-dlp: {}", e);
+                DiscoveryError::YtDlpError(format!("Failed to execute yt-dlp: {}", e))
+            })
+        })
+        .await?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
