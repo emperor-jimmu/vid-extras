@@ -2,6 +2,7 @@
 
 mod archive;
 pub(crate) mod dailymotion;
+mod retry;
 mod fuzzy_matching;
 mod id_bridge;
 mod kinocheck;
@@ -24,6 +25,7 @@ mod youtube;
 // Re-export public API
 pub use fuzzy_matching::FuzzyMatcher;
 pub use id_bridge::IdBridge;
+pub use retry::retry_with_backoff;
 pub use monitor_policy::MonitorPolicy;
 pub use orchestrator::DiscoveryOrchestrator;
 pub use orchestrator::SourceResult;
