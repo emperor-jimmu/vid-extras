@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use super::retry_with_backoff;
+
 /// Base episode data from the Season 0 listing endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TvdbEpisode {
@@ -186,15 +188,20 @@ impl TvdbClient {
 
         debug!("Authenticating with TheTVDB API");
 
-        let response = self
-            .client
-            .post(url)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| {
-                DiscoveryError::TvdbApiError(format!("Authentication request failed: {}", e))
-            })?;
+        let response = retry_with_backoff(3, 1000, || async {
+            self.client
+                .post(url)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| {
+                    DiscoveryError::TvdbApiError(format!("Authentication request failed: {}", e))
+                })
+        })
+        .await
+        .map_err(|e| {
+            DiscoveryError::TvdbApiError(format!("Authentication failed after retries: {}", e))
+        })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -235,19 +242,24 @@ impl TvdbClient {
     pub async fn authenticated_get(&self, url: &str) -> Result<reqwest::Response, DiscoveryError> {
         let token = self.ensure_token().await?;
 
-        let response = self
-            .client
-            .get(url)
-            .header("Authorization", format!("Bearer {}", token))
-            .send()
-            .await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    DiscoveryError::TvdbApiError(format!("Request timeout: {}", e))
-                } else {
-                    DiscoveryError::TvdbApiError(format!("Request failed: {}", e))
-                }
-            })?;
+        let response = retry_with_backoff(3, 500, || async {
+            self.client
+                .get(url)
+                .header("Authorization", format!("Bearer {}", token))
+                .send()
+                .await
+                .map_err(|e| {
+                    if e.is_timeout() {
+                        DiscoveryError::TvdbApiError(format!("Request timeout: {}", e))
+                    } else {
+                        DiscoveryError::TvdbApiError(format!("Request failed: {}", e))
+                    }
+                })
+        })
+        .await
+        .map_err(|e| {
+            DiscoveryError::TvdbApiError(format!("Request failed after retries: {}", e))
+        })?;
 
         // Handle 401 Unauthorized - retry once with re-authentication
         if response.status() == 401 {
@@ -257,15 +269,20 @@ impl TvdbClient {
             *token_write = Some(new_token.clone());
             drop(token_write);
 
-            let retry_response = self
-                .client
-                .get(url)
-                .header("Authorization", format!("Bearer {}", new_token))
-                .send()
-                .await
-                .map_err(|e| {
-                    DiscoveryError::TvdbApiError(format!("Retry request failed: {}", e))
-                })?;
+            let retry_response = retry_with_backoff(3, 500, || async {
+                self.client
+                    .get(url)
+                    .header("Authorization", format!("Bearer {}", new_token))
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        DiscoveryError::TvdbApiError(format!("Retry request failed: {}", e))
+                    })
+            })
+            .await
+            .map_err(|e| {
+                DiscoveryError::TvdbApiError(format!("Retry request failed after retries: {}", e))
+            })?;
 
             return Ok(retry_response);
         }
