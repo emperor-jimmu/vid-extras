@@ -65,10 +65,13 @@ impl TmdbDiscoverer {
 
         debug!("Searching TMDB for: {} ({})", title, year);
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
-            error!("TMDB search request failed: {}", e);
-            DiscoveryError::NetworkError(e)
-        })?;
+        let response = super::retry_with_backoff(3, 500, || async {
+            self.client.get(&url).send().await.map_err(|e| {
+                error!("TMDB search request failed: {}", e);
+                DiscoveryError::NetworkError(e)
+            })
+        })
+        .await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -102,10 +105,13 @@ impl TmdbDiscoverer {
 
         debug!("Fetching TMDB videos for movie ID: {}", movie_id);
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
-            error!("TMDB videos request failed: {}", e);
-            DiscoveryError::NetworkError(e)
-        })?;
+        let response = super::retry_with_backoff(3, 500, || async {
+            self.client.get(&url).send().await.map_err(|e| {
+                error!("TMDB videos request failed: {}", e);
+                DiscoveryError::NetworkError(e)
+            })
+        })
+        .await?;
 
         if !response.status().is_success() {
             let status = response.status();
