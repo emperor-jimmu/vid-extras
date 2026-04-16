@@ -253,10 +253,13 @@ impl ArchiveOrgDiscoverer {
 
         debug!("Archive.org query: {}", query);
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
-            error!("Archive.org search request failed: {}", e);
-            DiscoveryError::NetworkError(e)
-        })?;
+        let response = super::retry_with_backoff(3, 500, || async {
+            self.client.get(&url).send().await.map_err(|e| {
+                error!("Archive.org search request failed: {}", e);
+                DiscoveryError::NetworkError(e)
+            })
+        })
+        .await?;
 
         if !response.status().is_success() {
             let status = response.status();
