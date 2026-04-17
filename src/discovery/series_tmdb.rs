@@ -273,6 +273,7 @@ impl TmdbSeriesDiscoverer {
             "Bloopers" => Some(ContentCategory::Featurette),
             "Interview" => Some(ContentCategory::Interview),
             "Short" => Some(ContentCategory::Short),
+            "Clip" => Some(ContentCategory::Featurette),
             _ => {
                 debug!("Unknown TMDB video type: {}", tmdb_type);
                 None
@@ -485,7 +486,7 @@ mod property_tests {
                 "Behind the Scenes" => {
                     prop_assert_eq!(result, Some(ContentCategory::BehindTheScenes));
                 }
-                "Featurette" | "Bloopers" => {
+                "Featurette" | "Bloopers" | "Clip" => {
                     prop_assert_eq!(result, Some(ContentCategory::Featurette));
                 }
                 "Interview" => {
