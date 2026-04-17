@@ -42,6 +42,6 @@ jobs:
           VERSION: ${{ steps.get_version.outputs.VERSION }}
         run: |
           # Replace 'YOUR_BINARY_NAME' with the actual output name of your executable
-          gh release create "v$VERSION" target/release/video-clip-extractor \
+          gh release create "v$VERSION" target/release/extras_fetcher \
             --title "v$VERSION" \
             --generate-notes
