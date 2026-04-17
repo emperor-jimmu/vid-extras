@@ -646,17 +646,45 @@ cargo fmt -- --check
 
 ```text
 src/
-├── main.rs          - Entry point and orchestration
+├── main.rs          - Entry point
+├── lib.rs           - Library module declarations
 ├── cli.rs           - Command-line interface
-├── scanner.rs       - Directory scanning and movie discovery
-├── discovery.rs     - Multi-source content discovery
+├── config.rs        - Configuration management
+├── scanner.rs       - Directory scanning
+├── discovery/       - Multi-source content discovery (module directory)
+│   ├── mod.rs       - Module declarations
+│   ├── archive.rs   - Archive.org integration
+│   ├── bilibili.rs - Bilibili integration
+│   ├── dailymotion.rs - Dailymotion integration
+│   ├── fuzzy_matching.rs - Fuzzy title matching
+│   ├── id_bridge.rs - ID bridging between sources
+│   ├── kinocheck.rs - Kinocheck integration
+│   ├── monitor_policy.rs - YouTube monitoring policy
+│   ├── orchestrator.rs - Discovery orchestration
+│   ├── retry.rs     - Retry logic
+│   ├── season_pack.rs - Season pack extraction
+│   ├── season_zero_import.rs - Season 0 import
+│   ├── series_cache.rs - Series metadata caching
+│   ├── series_orchestrator.rs - Series discovery orchestration
+│   ├── series_tmdb.rs - Series TMDB discovery
+│   ├── series_youtube.rs - Series YouTube discovery
+│   ├── special_searcher.rs - Special content search
+│   ├── special_validator.rs - Special content validation
+│   ├── title_matching.rs - Title matching logic
+│   ├── tmdb.rs      - TMDB integration
+│   ├── tvdb.rs      - TVDB integration
+│   ├── vimeo.rs     - Vimeo integration
+│   └── youtube.rs   - YouTube integration
 ├── downloader.rs    - Video downloading with yt-dlp
 ├── converter.rs     - Video format conversion with ffmpeg
 ├── organizer.rs     - File organization and done markers
 ├── validation.rs    - Dependency validation
 ├── output.rs        - CLI output formatting
 ├── models.rs        - Data structures and types
-└── error.rs         - Error type definitions
+├── error.rs         - Error type definitions
+├── orchestrator.rs  - Processing orchestration
+├── deduplication.rs - Deduplication logic
+└── json_output.rs   - JSON progress output
 ```
 
 ## License

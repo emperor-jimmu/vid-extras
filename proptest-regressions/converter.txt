@@ -1,9 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc bade42cf940658d728e7f7f8de39658530571fec4a9b8d29af1462fa0a2f8e4c # shrinks to filename = "-0_00.mp4"
-cc d91455fb717516deb0bb48137f73e07c9e3840781b9c3ef0b16f55fe471738cf # shrinks to filename = "_aAaa.mp4"
-cc 60e73f06fa50fb1d52d5df4f4cfb2cbb1bd0b4ccb2a267d1857ec54e9c77617d # shrinks to hw_accel = VideoToolbox

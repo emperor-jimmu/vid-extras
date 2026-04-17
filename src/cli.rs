@@ -1,7 +1,7 @@
 // CLI module - handles command-line argument parsing and configuration
 
 use crate::error::CliError;
-use crate::models::{all_sources, default_sources, Source};
+use crate::models::{Source, all_sources, default_sources};
 use clap::Parser;
 use colored::Colorize;
 use std::path::PathBuf;
@@ -345,7 +345,7 @@ pub fn display_config(config: &CliConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{default_sources, Source};
+    use crate::models::{Source, default_sources};
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -702,7 +702,7 @@ mod tests {
 #[cfg(test)]
 mod property_tests {
     use super::*;
-    use crate::models::{default_sources, Source};
+    use crate::models::{Source, default_sources};
     use proptest::prelude::*;
     use std::path::PathBuf;
 

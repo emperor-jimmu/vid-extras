@@ -1,8 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc 0b51f6d84c489278645b8b1e99bf7ab6eaa81c97f3b20652d37bcecb880d0adf # shrinks to series_id = 1000, episode_count = 1, season_number = None
-cc 13c4d90d02d0108bc87262adfb901579af80561c201375a735c906d3ab1771c2 # shrinks to video_type = "Bloopers"
