@@ -1,4 +1,5 @@
 # extras_fetcher
+[![Rust](https://github.com/emperor-jimmu/vid-extras/actions/workflows/rust.yml/badge.svg)](https://github.com/emperor-jimmu/vid-extras/actions/workflows/rust.yml)
 
 A Rust-based automation tool for enriching Jellyfin movie libraries by discovering, downloading, and organizing supplementary video content (trailers, behind-the-scenes footage, deleted scenes, featurettes) from multiple online sources.
 
