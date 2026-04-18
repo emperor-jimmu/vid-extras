@@ -37,6 +37,7 @@ struct TmdbVideo {
 }
 
 /// TMDB content discoverer
+#[derive(Clone)]
 pub struct TmdbDiscoverer {
     api_key: String,
     client: reqwest::Client,

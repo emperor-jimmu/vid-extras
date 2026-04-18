@@ -9,7 +9,7 @@ use tokio::fs;
 use tokio::process::Command;
 
 /// Video converter that uses ffmpeg to convert videos to x265/HEVC format
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Converter {
     /// Hardware acceleration type to use
     hw_accel: HardwareAccel,

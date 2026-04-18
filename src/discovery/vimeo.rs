@@ -44,6 +44,7 @@ struct VimeoVideo {
 ///
 /// Searches by title+year, filters by duration and keywords, and paginates
 /// up to 3 pages. Handles HTTP 429 with a single retry after 1-second backoff.
+#[derive(Clone)]
 pub(crate) struct VimeoDiscoverer {
     /// SECURITY: Personal Access Token — never log this value.
     access_token: String,

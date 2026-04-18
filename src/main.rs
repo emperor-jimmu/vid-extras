@@ -40,16 +40,26 @@ async fn main() {
 
     // Initialize logging based on verbose flag
     // Requirements: 13.8
-    // When TUI is active, suppress all logs - rely on TUI for progress
+    // When TUI is active, also write to file for debugging
     if config.tui {
+        let log_file_path = "tui_log.txt";
         let _ = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open("tui_log.txt");
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("off"))
-            .format(|buf, record| {
+            .open(log_file_path);
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+            .format(move |buf, record| {
                 use std::io::Write;
+                let msg = format!("[{}] {}\n", record.level(), record.args());
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .append(true)
+                    .open(log_file_path)
+                {
+                    let _ = f.write_all(msg.as_bytes());
+                }
                 writeln!(buf, "[{}] {}", record.level(), record.args())
             })
             .init();

@@ -11,6 +11,7 @@ use super::title_matching;
 
 /// Bilibili content discoverer
 /// Uses yt-dlp to search Bilibili (Chinese: 哔哩哔哩, aka "B站")
+#[derive(Clone)]
 pub struct BilibiliDiscoverer {}
 
 impl BilibiliDiscoverer {

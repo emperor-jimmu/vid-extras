@@ -27,6 +27,7 @@ pub struct SourceResult {
 }
 
 /// Orchestrates discovery from all sources
+#[derive(Clone)]
 pub struct DiscoveryOrchestrator {
     tmdb: TmdbDiscoverer,
     archive: ArchiveOrgDiscoverer,

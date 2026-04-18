@@ -129,6 +129,7 @@ struct ArchiveOrgDoc {
 ///
 /// Returns detail page URLs in the format `https://archive.org/details/{identifier}`
 /// which are fully supported by yt-dlp's archive.org extractor.
+#[derive(Clone)]
 pub struct ArchiveOrgDiscoverer {
     client: reqwest::Client,
 }

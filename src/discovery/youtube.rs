@@ -9,6 +9,7 @@ use super::retry_with_backoff;
 use super::title_matching;
 
 /// YouTube content discoverer
+#[derive(Clone)]
 pub struct YoutubeDiscoverer {
     /// Browser to source cookies from for bot-detection bypass (e.g. "chrome", "firefox")
     cookies_from_browser: Option<String>,

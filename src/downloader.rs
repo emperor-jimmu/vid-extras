@@ -15,6 +15,7 @@ fn truncate_str(s: &str, max: usize) -> &str {
 }
 
 /// Downloader handles video acquisition using yt-dlp
+#[derive(Clone)]
 pub struct Downloader {
     /// Base directory for temporary downloads
     temp_base: PathBuf,
