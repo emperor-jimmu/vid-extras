@@ -21,6 +21,7 @@ A Rust-based automation tool for enriching Jellyfin movie libraries by discoveri
 - **Idempotent execution**: Safe to run multiple times - tracks completed items with done markers
 - **Configurable processing**: Control concurrency, source filtering, and processing modes
 - **Rich CLI output**: Colored progress indicators and detailed status information
+- **TUI mode**: Split-pane terminal UI with per-thread logs and real-time progress bar
 
 ### Advanced Features
 
@@ -138,6 +139,7 @@ Options:
   -c, --concurrency <N>   Maximum number of items to process concurrently [default: 2]
   -v, --verbose           Enable verbose logging output
   -s, --single          Process a single folder directly (instead of scanning for multiple)
+  --tui                 Enable split-pane TUI with per-thread logs and progress bar
   --cookies-from-browser   Browser to use for yt-dlp cookie authentication [possible values: chrome,
                           firefox, edge]
   --dry-run              Discover extras without downloading, converting, or organizing files
@@ -164,6 +166,41 @@ Options:
 - **bilibili** - Bilibili Chinese video platform
 
 Default sources are `tmdb,youtube`. Use `--all` to enable all sources or specify individual sources with `--sources tmdb,archive,youtube`.
+
+### TUI Mode
+
+Enable TUI mode with `--tui` for a split-pane terminal interface:
+
+```bash
+extras_fetcher --tui /path/to/library
+```
+
+**TUI Features:**
+- **Split-pane layout**: Each thread gets its own pane showing real-time progress
+- **Per-thread logs**: Discovery, download, and conversion messages display in respective thread panes
+- **Progress bar**: Bottom bar shows overall progress and all active items
+- **Active items**: Multiple concurrent items displayed in progress bar
+
+**Example state:**
+```
+┌ [Thread 1] ──────────────────────┐
+│▶ Processing: Movie Name (2020)       │
+│  🔍 Discovering...              │
+│  ✓ Found 5 sources              │
+│  ↓ Downloading 5 videos...     │
+│    → trailer.mp4               │
+│    → behind_scenes.mp4         │
+│  ⇄ Converting 5 videos...     │
+│  ✓ Done: Movie (5 dl, 5 conv)  │
+└───────────────────────────────┘
+┌ [Thread 2] ──────────────────────┐
+│▶ Processing: Another (2021)       │
+│  ...                            │
+└───────────────────────────────┘
+┌ Processing 100 movies... 50/100 | 2 threads | Movie Name | Another ─┐
+│ ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 50% │
+└───────────────────────────────────────────────────────────┘
+```
 
 ### Examples
 

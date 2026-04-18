@@ -10,6 +10,7 @@ use crate::models::{
 use crate::organizer::{Organizer, SeriesOrganizer};
 use crate::output;
 use crate::scanner::Scanner;
+use crate::tui::TuiState;
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -38,6 +39,8 @@ struct MovieProcessingContext {
     temp_base: PathBuf,
     dry_run: bool,
     library_movies: Arc<Vec<MovieEntry>>,
+    tui: Option<Arc<TuiState>>,
+    thread_id: usize,
 }
 
 /// Summary statistics for processing run
@@ -324,6 +327,7 @@ pub struct Orchestrator {
     specials_folder: String,
     dry_run: bool,
     sources: Vec<Source>,
+    tui: Option<Arc<TuiState>>,
 }
 
 impl Orchestrator {
@@ -432,38 +436,67 @@ impl Orchestrator {
             specials_folder: config.series.specials_folder,
             dry_run: config.discovery.dry_run,
             sources: config.discovery.sources,
+            tui: None,
         })
+    }
+
+    pub fn with_tui(mut self, tui: Arc<TuiState>) -> Self {
+        self.tui = Some(tui);
+        self
     }
 
     /// Run the orchestrator and process all movies and/or series
     pub async fn run(&self) -> Result<ProcessingSummary, OrchestratorError> {
         info!("Starting orchestrator run");
 
+        let tui = self.tui.clone();
+        if let Some(ref tui_state) = tui {
+            tui_state.set_thread_count(self.concurrency);
+            tui_state.start();
+            let tui_clone = tui_state.clone();
+            std::thread::spawn(move || {
+                crate::tui::run_tui(tui_clone);
+            });
+        }
+
         self.cleanup_pre_existing_temp().await;
 
         info!("Phase 1: Scanning for media");
+        if let Some(ref tui_state) = tui {
+            tui_state.set_system_status("Scanning folder...");
+        }
         let (movies, series) = self
             .scanner
             .scan_all()
             .map_err(|e| OrchestratorError::Processing(format!("Scan failed: {}", e)))?;
 
+        let movie_count = movies.len();
+        let series_count = series.len();
         info!(
             "Found {} movies and {} series to process",
-            movies.len(),
-            series.len()
+            movie_count, series_count
         );
 
+        let total_items = movie_count + series_count;
+        if let Some(ref tui_state) = tui {
+            tui_state.set_total_items(total_items);
+            tui_state.set_system_status(&format!("Found {} movies, {} series", movie_count, series_count));
+        }
+
         let mut summary = ProcessingSummary::new();
-        summary.total_movies = movies.len();
-        summary.total_series = series.len();
+        summary.total_movies = movie_count;
+        summary.total_series = series_count;
 
         if self.processing_mode != ProcessingMode::SeriesOnly && !movies.is_empty() {
             info!("Processing movies");
+            if let Some(ref tui_state) = tui {
+                tui_state.set_system_status(&format!("Processing {} movies...", movie_count));
+            }
             let library = Arc::new(movies.clone());
             let results = if self.concurrency > 1 {
-                self.process_movies_parallel(movies, library).await
+                self.process_movies_parallel(movies, library, tui.clone()).await
             } else {
-                self.process_movies_sequential(movies, library).await
+                self.process_movies_sequential(movies, library, tui.clone()).await
             };
 
             for result in results {
@@ -481,10 +514,13 @@ impl Orchestrator {
 
         if self.processing_mode != ProcessingMode::MoviesOnly && !series.is_empty() {
             info!("Processing series");
+            if let Some(ref tui_state) = tui {
+                tui_state.set_system_status(&format!("Processing {} series...", series.len()));
+            }
             let results = if self.concurrency > 1 {
-                self.process_series_parallel(series).await
+                self.process_series_parallel(series, tui.clone()).await
             } else {
-                self.process_series_sequential(series).await
+                self.process_series_sequential(series, tui.clone()).await
             };
 
             for result in results {
@@ -498,6 +534,11 @@ impl Orchestrator {
                 }
                 summary.add_series_result(&result);
             }
+        }
+
+        if let Some(ref tui_state) = tui {
+            tui_state.set_system_status("Complete!");
+            tui_state.stop();
         }
 
         info!("Orchestrator run complete");
@@ -517,13 +558,20 @@ impl Orchestrator {
         &self,
         movies: Vec<MovieEntry>,
         library: Arc<Vec<MovieEntry>>,
+        tui: Option<Arc<TuiState>>,
     ) -> Vec<MovieResult> {
         let total = movies.len();
         let mut results = Vec::new();
         for (idx, movie) in movies.into_iter().enumerate() {
+            if let Some(ref tui_state) = tui {
+                tui_state.set_current_item(&format!("{}", movie));
+            }
             output::display_movie_start(&movie, idx + 1, total);
             let result = self.process_movie(movie, library.clone()).await;
             results.push(result);
+            if let Some(ref tui_state) = tui {
+                tui_state.increment_processed();
+            }
         }
         results
     }
@@ -532,30 +580,53 @@ impl Orchestrator {
         &self,
         movies: Vec<MovieEntry>,
         library: Arc<Vec<MovieEntry>>,
+        tui: Option<Arc<TuiState>>,
     ) -> Vec<MovieResult> {
         let semaphore = Arc::new(Semaphore::new(self.concurrency));
         let total = movies.len();
         let counter = Arc::new(AtomicUsize::new(0));
+        let thread_counter = Arc::new(AtomicUsize::new(0));
         let mut tasks = Vec::new();
 
         for movie in movies {
             let sem = semaphore.clone();
             let counter = counter.clone();
+            let thread_counter = thread_counter.clone();
+            let tui = tui.clone();
 
-            let ctx = MovieProcessingContext {
+            let mut ctx = MovieProcessingContext {
                 discovery: self.discovery.clone(),
                 downloader: self.downloader.clone(),
                 converter: self.converter.clone(),
                 temp_base: self.temp_base.clone(),
                 dry_run: self.dry_run,
                 library_movies: library.clone(),
+                tui: tui.clone(),
+                thread_id: 0,
             };
 
             let task = tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore should not be closed");
                 let current = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                let thread_id = thread_counter.fetch_add(1, Ordering::SeqCst);
+                ctx.thread_id = thread_id;
+                if let Some(ref tui_state) = tui {
+                    tui_state.set_current_item(&format!("{}", movie));
+                    tui_state.log(thread_id, &format!("▶ Processing: {}", movie));
+                }
                 output::display_movie_start(&movie, current, total);
-                Self::process_movie_standalone(movie, ctx).await
+                let result = Self::process_movie_standalone(movie, ctx).await;
+                if let Some(ref tui_state) = tui {
+                    tui_state.increment_processed();
+                    if result.success {
+                        tui_state.log(thread_id, &format!("✓ Done: {} ({} dl, {} conv)",
+                            result.movie, result.downloads, result.conversions));
+                    } else {
+                        let err = result.error.clone().unwrap_or_else(|| "unknown".to_string());
+                        tui_state.log(thread_id, &format!("✗ Failed: {} — {}", result.movie, err));
+                    }
+                }
+                result
             });
             tasks.push(task);
         }
@@ -577,6 +648,8 @@ impl Orchestrator {
             temp_base: self.temp_base.clone(),
             dry_run: self.dry_run,
             library_movies: library,
+            tui: None,
+            thread_id: 0,
         };
         Self::process_movie_standalone(movie, ctx).await
     }
@@ -593,10 +666,17 @@ impl Orchestrator {
 
         // Phase 2: Discovery
         info!("Phase 2: Discovering content for {}", movie);
+        if let Some(ref tui) = ctx.tui {
+            tui.log(ctx.thread_id, "  🔍 Discovering...");
+        }
         let (sources, source_results, dedup_removed) = ctx
             .discovery
             .discover_all(&movie, &ctx.library_movies)
             .await;
+
+        if let Some(ref tui) = ctx.tui {
+            tui.log(ctx.thread_id, &format!("  Found {} sources", sources.len()));
+        }
 
         // Dry-run: display results and return early — no file I/O (AC3/NFR5)
         if ctx.dry_run {
@@ -612,9 +692,15 @@ impl Orchestrator {
 
         if sources.is_empty() {
             warn!("No sources found for {}", movie);
+            if let Some(ref tui) = ctx.tui {
+                tui.log(ctx.thread_id, "  ✗ No sources found");
+            }
             return MovieResult::success_with_dedup(movie, 0, 0, source_results, dedup_removed);
         }
         info!("Found {} sources for {}", sources.len(), movie);
+        if let Some(ref tui) = ctx.tui {
+            tui.log(ctx.thread_id, &format!("  ✓ Found {} sources", sources.len()));
+        }
 
         // Phase 3: Download
         info!(
@@ -622,6 +708,9 @@ impl Orchestrator {
             sources.len(),
             movie
         );
+        if let Some(ref tui) = ctx.tui {
+            tui.log(ctx.thread_id, &format!("  ↓ Downloading {} videos...", sources.len()));
+        }
         let downloads = ctx.downloader.download_all(&movie_id, sources).await;
         let successful_downloads = downloads.iter().filter(|d| d.success).count();
         info!(
@@ -630,6 +719,19 @@ impl Orchestrator {
             downloads.len(),
             movie
         );
+        if let Some(ref tui) = ctx.tui {
+            if successful_downloads > 0 {
+                tui.log(ctx.thread_id, &format!("  ✓ Downloaded {}/{}", successful_downloads, downloads.len()));
+                for d in downloads.iter().filter(|d| d.success) {
+                    let name = d.local_path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
+                    tui.log(ctx.thread_id, &format!("    → {}", name));
+                }
+            } else {
+                tui.log(ctx.thread_id, &format!("  ✗ No downloads"));
+            }
+        }
 
         if successful_downloads == 0 {
             warn!("No successful downloads for {}", movie);
@@ -648,6 +750,9 @@ impl Orchestrator {
             "Phase 4: Converting {} videos for {}",
             successful_downloads, movie
         );
+        if let Some(ref tui) = ctx.tui {
+            tui.log(ctx.thread_id, &format!("  ⇄ Converting {} videos...", successful_downloads));
+        }
         let conversions = ctx.converter.convert_batch(downloads).await;
         let successful_conversions = conversions.iter().filter(|c| c.success).count();
         info!(
@@ -656,6 +761,13 @@ impl Orchestrator {
             conversions.len(),
             movie
         );
+        if let Some(ref tui) = ctx.tui {
+            if successful_conversions > 0 {
+                tui.log(ctx.thread_id, &format!("  ✓ Converted {}/{}", successful_conversions, conversions.len()));
+            } else {
+                tui.log(ctx.thread_id, &format!("  ✗ No conversions"));
+            }
+        }
 
         if successful_conversions == 0 {
             warn!("No successful conversions for {}", movie);
@@ -695,21 +807,36 @@ impl Orchestrator {
         }
     }
 
-    async fn process_series_sequential(&self, series_list: Vec<SeriesEntry>) -> Vec<SeriesResult> {
+    async fn process_series_sequential(
+        &self,
+        series_list: Vec<SeriesEntry>,
+        tui: Option<Arc<TuiState>>,
+    ) -> Vec<SeriesResult> {
         let total = series_list.len();
         let mut results = Vec::new();
         for (idx, series) in series_list.into_iter().enumerate() {
+            if let Some(ref tui_state) = tui {
+                tui_state.set_current_item(&format!("{}", series));
+            }
             output::display_series_start(&series, idx + 1, total);
             let result = self.process_series(series).await;
             results.push(result);
+            if let Some(ref tui_state) = tui {
+                tui_state.increment_processed();
+            }
         }
         results
     }
 
-    async fn process_series_parallel(&self, series_list: Vec<SeriesEntry>) -> Vec<SeriesResult> {
+    async fn process_series_parallel(
+        &self,
+        series_list: Vec<SeriesEntry>,
+        tui: Option<Arc<TuiState>>,
+    ) -> Vec<SeriesResult> {
         let semaphore = Arc::new(Semaphore::new(self.concurrency));
         let total = series_list.len();
         let counter = Arc::new(AtomicUsize::new(0));
+        let thread_counter = Arc::new(AtomicUsize::new(0));
         let mut tasks = Vec::new();
 
         for series in series_list {
@@ -722,6 +849,8 @@ impl Orchestrator {
             let season_extras = self.season_extras;
             let specials = self.specials;
             let counter = counter.clone();
+            let thread_counter = thread_counter.clone();
+            let tui = tui.clone();
 
             let ctx = SeriesProcessingContext {
                 series_discovery,
@@ -738,8 +867,27 @@ impl Orchestrator {
             let task = tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore should not be closed");
                 let current = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                let thread_id = thread_counter.fetch_add(1, Ordering::SeqCst);
+                let series_name = format!("{}", series);
+                if let Some(ref tui_state) = tui {
+                    tui_state.set_current_item(&series_name);
+                    tui_state.add_active_item(&series_name);
+                    tui_state.log(thread_id, &format!("▶ Processing: {}", series));
+                }
                 output::display_series_start(&series, current, total);
-                Self::process_series_standalone(series, ctx).await
+                let result = Self::process_series_standalone(series, ctx).await;
+                if let Some(ref tui_state) = tui {
+                    tui_state.remove_active_item(&series_name);
+                    tui_state.increment_processed();
+                    if result.success {
+                        tui_state.log(thread_id, &format!("✓ Done: {} ({} dl, {} conv)",
+                            result.series, result.downloads, result.conversions));
+                    } else {
+                        let err = result.error.clone().unwrap_or_else(|| "unknown".to_string());
+                        tui_state.log(thread_id, &format!("✗ Failed: {} — {}", result.series, err));
+                    }
+                }
+                result
             });
             tasks.push(task);
         }

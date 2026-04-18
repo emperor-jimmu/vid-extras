@@ -39,6 +39,7 @@ impl Scanner {
     }
 
     /// Scan the root directory and return a list of movies to process
+    /// Returns movies sorted alphabetically by title
     pub fn scan(&self) -> Result<Vec<MovieEntry>, ScanError> {
         // If single mode, treat root_dir as a single movie folder
         if self.single {
@@ -48,12 +49,16 @@ impl Scanner {
         // Otherwise, scan for multiple movie folders
         let mut movies = Vec::new();
         self.scan_directory(&self.root_dir, &mut movies)?;
+
+        // Sort alphabetically by title
+        movies.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+
         Ok(movies)
     }
 
     /// Scan the root directory and return both movies and series
     /// Classifies each folder using detect_media_type
-    /// Returns (movies, series) tuple
+    /// Returns (movies, series) tuple sorted alphabetically by title
     pub fn scan_all(&self) -> Result<(Vec<MovieEntry>, Vec<SeriesEntry>), ScanError> {
         // If single mode, detect type of the single folder
         if self.single {
@@ -64,6 +69,11 @@ impl Scanner {
         let mut movies = Vec::new();
         let mut series = Vec::new();
         self.scan_directory_all(&self.root_dir, &mut movies, &mut series)?;
+
+        // Sort alphabetically by title
+        movies.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        series.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+
         Ok((movies, series))
     }
 

@@ -7,7 +7,9 @@ use extras_fetcher::orchestrator::{
     DiscoveryConfig, Orchestrator, OrchestratorConfig, SeriesConfig,
 };
 use extras_fetcher::output::display_summary;
+use extras_fetcher::tui::TuiState;
 use extras_fetcher::validation::Validator;
+use std::sync::Arc;
 
 /// Main entry point for extras_fetcher
 ///
@@ -38,7 +40,20 @@ async fn main() {
 
     // Initialize logging based on verbose flag
     // Requirements: 13.8
-    if config.verbose {
+    // When TUI is active, suppress all logs - rely on TUI for progress
+    if config.tui {
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open("tui_log.txt");
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("off"))
+            .format(|buf, record| {
+                use std::io::Write;
+                writeln!(buf, "[{}] {}", record.level(), record.args())
+            })
+            .init();
+    } else if config.verbose {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     } else {
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -155,7 +170,7 @@ async fn main() {
     display_config(&display);
 
     // Create orchestrator with validated configuration
-    let orchestrator = match Orchestrator::new(OrchestratorConfig {
+    let mut orchestrator = match Orchestrator::new(OrchestratorConfig {
         root_dir: config.root_directory.clone(),
         tmdb_api_key,
         tvdb_api_key,
@@ -184,6 +199,13 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    // Attach TUI if enabled
+    if config.tui {
+        extras_fetcher::set_tui_active(true);
+        let tui_state = Arc::new(TuiState::new());
+        orchestrator = orchestrator.with_tui(tui_state);
+    }
 
     // Execute the orchestrator
     log::info!("Starting processing pipeline");

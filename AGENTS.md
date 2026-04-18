@@ -30,6 +30,7 @@ Or set `TMDB_API_KEY` environment variable. On first run, tool prompts for key a
 
 ## CLI Options
 
+- `--tui` - Enable split-pane TUI with per-thread logs and progress bar (Recommended for parallel runs)
 - `-f, --force` - Reprocess all (ignores `.extras_done` markers)
 - `--sources <SOURCES>` - Discovery sources (comma-separated) [default: tmdb,youtube]
 - `--all` - Use all available discovery sources

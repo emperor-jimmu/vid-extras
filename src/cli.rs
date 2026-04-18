@@ -85,6 +85,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub json_progress: bool,
 
+    /// Enable split-pane TUI with per-thread logs
+    #[arg(long)]
+    pub tui: bool,
+
     /// DEPRECATED: Use --sources instead
     #[arg(long, hide = true)]
     pub mode: Option<String>,
@@ -107,6 +111,7 @@ pub struct CliConfig {
     pub cookies_from_browser: Option<String>,
     pub dry_run: bool,
     pub json_progress: bool,
+    pub tui: bool,
 }
 
 impl From<CliArgs> for CliConfig {
@@ -140,6 +145,7 @@ impl From<CliArgs> for CliConfig {
             cookies_from_browser: args.cookies_from_browser,
             dry_run: args.dry_run,
             json_progress: args.json_progress,
+            tui: args.tui,
         }
     }
 }
@@ -368,6 +374,7 @@ mod tests {
             mode: None,
             dry_run: false,
             json_progress: false,
+            tui: false,
         }
     }
 
@@ -399,6 +406,7 @@ mod tests {
             mode: None,
             dry_run: false,
             json_progress: true,
+            tui: false,
         };
 
         let config: CliConfig = args.into();
@@ -524,6 +532,7 @@ mod tests {
             cookies_from_browser: None,
             dry_run: false,
             json_progress: false,
+            tui: false,
         };
         display_config(&config);
     }
@@ -693,6 +702,7 @@ mod tests {
             cookies_from_browser: None,
             dry_run: true,
             json_progress: false,
+            tui: false,
         };
         // Should not panic and should display dry-run indicator
         display_config(&config);
@@ -731,6 +741,7 @@ mod property_tests {
                 cookies_from_browser: None,
                 dry_run: false,
                 json_progress: false,
+                tui: false,
             };
 
             let mut output = Vec::new();
@@ -794,6 +805,7 @@ mod property_tests {
                 cookies_from_browser: None,
                 dry_run: false,
                 json_progress: false,
+                tui: false,
             };
 
             prop_assert_eq!(config.verbose, verbose);

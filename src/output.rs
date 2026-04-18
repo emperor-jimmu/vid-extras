@@ -4,10 +4,14 @@ use crate::discovery::SourceResult;
 use crate::json_output::ProgressEvent;
 use crate::models::{ContentCategory, MovieEntry, SeriesEntry, Source, SourceType};
 use crate::orchestrator::ProcessingSummary;
+use crate::is_tui_active;
 use colored::Colorize;
 
 /// Display scanning progress for a movie
 pub fn display_scanning_progress(movie: &MovieEntry, skipped: bool) {
+    if is_tui_active() {
+        return;
+    }
     if skipped {
         println!(
             "  {} {} - {}",
@@ -42,6 +46,9 @@ pub fn display_download_progress(
     current: usize,
     total: usize,
 ) {
+    if is_tui_active() {
+        return;
+    }
     println!(
         "  {} Downloading [{}/{}]: {} ({})",
         "⬇".blue(),
@@ -54,6 +61,9 @@ pub fn display_download_progress(
 
 /// Display download result
 pub fn display_download_result(title: &str, success: bool, error: Option<&str>) {
+    if is_tui_active() {
+        return;
+    }
     if success {
         println!(
             "    {} {}",
@@ -73,6 +83,9 @@ pub fn display_download_result(title: &str, success: bool, error: Option<&str>) 
 
 /// Display conversion progress for a single video
 pub fn display_conversion_progress(filename: &str, current: usize, total: usize) {
+    if is_tui_active() {
+        return;
+    }
     println!(
         "  {} Converting [{}/{}]: {}",
         "⚙".blue(),
@@ -84,6 +97,9 @@ pub fn display_conversion_progress(filename: &str, current: usize, total: usize)
 
 /// Display conversion result
 pub fn display_conversion_result(filename: &str, success: bool, error: Option<&str>) {
+    if is_tui_active() {
+        return;
+    }
     if success {
         println!(
             "    {} {}",
@@ -373,6 +389,9 @@ pub fn display_phase(phase_number: usize, phase_name: &str) {
 
 /// Display movie processing start with progress indicator
 pub fn display_movie_start(movie: &MovieEntry, current: usize, total: usize) {
+    if is_tui_active() {
+        return;
+    }
     let event = ProgressEvent::new(
         "started",
         current,
@@ -400,6 +419,9 @@ pub fn display_movie_complete(
     conversions: usize,
     success: bool,
 ) {
+    if is_tui_active() {
+        return;
+    }
     let mut event = ProgressEvent::new("completed", 0, 0, movie.title.clone(), Some(movie.year));
     event.success = Some(success);
     event.downloads = Some(downloads);
@@ -426,6 +448,9 @@ pub fn display_movie_complete(
 /// Display series processing start with progress indicator
 /// Requirements: 18.1
 pub fn display_series_start(series: &SeriesEntry, current: usize, total: usize) {
+    if is_tui_active() {
+        return;
+    }
     let event = ProgressEvent::new("started", current, total, series.title.clone(), series.year);
     event.emit_if_enabled();
 
@@ -447,6 +472,9 @@ pub fn display_series_discovery_progress(
     tmdb_count: usize,
     youtube_count: usize,
 ) {
+    if is_tui_active() {
+        return;
+    }
     println!(
         "\n{} {} - TMDB: {}, YouTube: {}",
         "🔍".blue(),
@@ -459,6 +487,9 @@ pub fn display_series_discovery_progress(
 /// Display series download statistics
 /// Requirements: 18.4
 pub fn display_series_download_stats(_series: &SeriesEntry, successful: usize, failed: usize) {
+    if is_tui_active() {
+        return;
+    }
     let total = successful + failed;
     println!(
         "  {} Downloads: {}/{} successful",
@@ -474,6 +505,9 @@ pub fn display_series_download_stats(_series: &SeriesEntry, successful: usize, f
 /// Display series conversion statistics
 /// Requirements: 18.5
 pub fn display_series_conversion_stats(_series: &SeriesEntry, successful: usize, failed: usize) {
+    if is_tui_active() {
+        return;
+    }
     let total = successful + failed;
     println!(
         "  {} Conversions: {}/{} successful",
@@ -494,6 +528,9 @@ pub fn display_series_complete(
     conversions: usize,
     success: bool,
 ) {
+    if is_tui_active() {
+        return;
+    }
     let mut event = ProgressEvent::new("completed", 0, 0, series.title.clone(), series.year);
     event.success = Some(success);
     event.downloads = Some(downloads);
