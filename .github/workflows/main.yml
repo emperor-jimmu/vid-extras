@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -71,8 +73,32 @@ jobs:
           name: ${{ matrix.asset_name }}
           path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
 
-  publish:
+  attest:
     needs: [check-version, build]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - asset_name: extras_fetcher-linux-x86_64
+            artifact_name: extras_fetcher
+          - asset_name: extras_fetcher-windows-x86_64.exe
+            artifact_name: extras_fetcher.exe
+          - asset_name: extras_fetcher-macos-aarch64
+            artifact_name: extras_fetcher
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: artifact
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: artifact/${{ matrix.artifact_name }}
+
+  publish:
+    needs: [check-version, build, attest]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
