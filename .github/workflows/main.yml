@@ -9,8 +9,11 @@ permissions:
   contents: write
 
 jobs:
-  build-and-publish:
+  check-version:
     runs-on: ubuntu-latest
+    outputs:
+      VERSION: ${{ steps.get_version.outputs.VERSION }}
+      EXISTS: ${{ steps.check_release.outputs.EXISTS }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,17 +34,65 @@ jobs:
             echo "EXISTS=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Compile Executable
-        if: steps.check_release.outputs.EXISTS == 'false'
-        run: cargo build --release
+  build:
+    needs: check-version
+    if: needs.check-version.outputs.EXISTS == 'false'
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: extras_fetcher
+            asset_name: extras_fetcher-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: extras_fetcher.exe
+            asset_name: extras_fetcher-windows-x86_64.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: extras_fetcher
+            asset_name: extras_fetcher-macos-aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Publish Release and Upload Binary
-        if: steps.check_release.outputs.EXISTS == 'false'
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Compile Executable
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+  publish:
+    needs: [check-version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Rename artifacts
+        run: |
+          mv artifacts/extras_fetcher-linux-x86_64/extras_fetcher artifacts/extras_fetcher-linux-x86_64
+          mv artifacts/extras_fetcher-windows-x86_64.exe/extras_fetcher.exe artifacts/extras_fetcher-windows-x86_64.exe
+          mv artifacts/extras_fetcher-macos-aarch64/extras_fetcher artifacts/extras_fetcher-macos-aarch64
+
+      - name: Publish Release and Upload Binaries
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.get_version.outputs.VERSION }}
+          VERSION: ${{ needs.check-version.outputs.VERSION }}
         run: |
-          # Replace 'YOUR_BINARY_NAME' with the actual output name of your executable
-          gh release create "v$VERSION" target/release/extras_fetcher \
+          gh release create "v$VERSION" \
+            artifacts/extras_fetcher-linux-x86_64 \
+            artifacts/extras_fetcher-windows-x86_64.exe \
+            artifacts/extras_fetcher-macos-aarch64 \
             --title "v$VERSION" \
             --generate-notes
