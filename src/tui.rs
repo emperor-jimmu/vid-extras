@@ -68,10 +68,8 @@ impl TuiState {
     }
 
     pub fn add_active_item(&self, item: &str) {
-        if let Ok(mut items) = self.active_items.lock() {
-            if !items.contains(&item.to_string()) {
-                items.push(item.to_string());
-            }
+        if let Ok(mut items) = self.active_items.lock() && !items.contains(&item.to_string()) {
+            items.push(item.to_string());
         }
     }
 

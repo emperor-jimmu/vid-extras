@@ -729,7 +729,7 @@ impl Orchestrator {
                     tui.log(ctx.thread_id, &format!("    → {}", name));
                 }
             } else {
-                tui.log(ctx.thread_id, &format!("  ✗ No downloads"));
+                tui.log(ctx.thread_id, "  ✗ No downloads");
             }
         }
 
@@ -765,7 +765,7 @@ impl Orchestrator {
             if successful_conversions > 0 {
                 tui.log(ctx.thread_id, &format!("  ✓ Converted {}/{}", successful_conversions, conversions.len()));
             } else {
-                tui.log(ctx.thread_id, &format!("  ✗ No conversions"));
+                tui.log(ctx.thread_id, "  ✗ No conversions");
             }
         }
 
