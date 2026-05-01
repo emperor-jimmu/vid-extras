@@ -33,19 +33,21 @@ pub struct CachedTvdbSeasonZero {
 pub struct SeriesMetadataCache {
     /// Base cache directory (typically .cache under series folder)
     cache_dir: PathBuf,
+    /// Cache TTL in days
+    ttl_days: i64,
 }
 
 impl SeriesMetadataCache {
-    /// Create a new cache manager for a series
+    /// Create a new cache manager for a series (default 7-day TTL)
     pub fn new(series_path: &Path) -> Self {
         let cache_dir = series_path.join(".cache");
-        Self { cache_dir }
+        Self { cache_dir, ttl_days: 7 }
     }
 
-    /// Create a new cache manager with custom TTL
-    pub fn with_ttl(series_path: &Path, _ttl_days: i64) -> Self {
+    /// Create a new cache manager with a custom TTL in days
+    pub fn with_ttl(series_path: &Path, ttl_days: i64) -> Self {
         let cache_dir = series_path.join(".cache");
-        Self { cache_dir }
+        Self { cache_dir, ttl_days }
     }
 
     /// Get cache file path for a series
@@ -64,13 +66,13 @@ impl SeriesMetadataCache {
             .collect()
     }
 
-    /// Check if cache is still fresh (not expired)
-    pub fn is_cache_fresh(cached_at: &str) -> bool {
+    /// Check if cache is still fresh (not expired) given a TTL in days
+    pub fn is_cache_fresh(cached_at: &str, ttl_days: i64) -> bool {
         if let Ok(cached_time) = DateTime::parse_from_rfc3339(cached_at) {
             let cached_utc = cached_time.with_timezone(&Utc);
             let now = Utc::now();
             let age = now.signed_duration_since(cached_utc);
-            age < Duration::days(7)
+            age < Duration::days(ttl_days)
         } else {
             false
         }
@@ -95,7 +97,7 @@ impl SeriesMetadataCache {
         match fs::read_to_string(&cache_file).await {
             Ok(content) => match serde_json::from_str::<CachedSeriesMetadata>(&content) {
                 Ok(metadata) => {
-                    if Self::is_cache_fresh(&metadata.cached_at) {
+                    if Self::is_cache_fresh(&metadata.cached_at, self.ttl_days) {
                         Ok(Some(metadata))
                     } else {
                         Ok(None)
@@ -179,7 +181,7 @@ impl SeriesMetadataCache {
         match fs::read_to_string(&cache_file).await {
             Ok(content) => match serde_json::from_str::<CachedTvdbSeasonZero>(&content) {
                 Ok(cached_data) => {
-                    if Self::is_cache_fresh(&cached_data.cached_at) {
+                    if Self::is_cache_fresh(&cached_data.cached_at, self.ttl_days) {
                         Ok(Some(cached_data))
                     } else {
                         Ok(None)
@@ -571,7 +573,7 @@ mod property_tests {
             let old_time = Utc::now() - Duration::days(days_old);
             let cached_at = old_time.to_rfc3339();
 
-            let is_fresh = SeriesMetadataCache::is_cache_fresh(&cached_at);
+            let is_fresh = SeriesMetadataCache::is_cache_fresh(&cached_at, 7);
 
             if force {
                 // Force flag doesn't affect is_cache_fresh, but would be handled at call site

@@ -31,6 +31,9 @@ pub fn display_scanning_progress(movie: &MovieEntry, skipped: bool) {
 
 /// Display discovery phase start
 pub fn display_discovery_start(movie: &MovieEntry, source_count: usize) {
+    if is_tui_active() {
+        return;
+    }
     println!(
         "\n{} {} - Discovered {} sources",
         "🔍".blue(),

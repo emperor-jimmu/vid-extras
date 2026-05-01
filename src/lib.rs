@@ -21,9 +21,9 @@ use std::sync::atomic::AtomicBool;
 static TUI_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 pub fn set_tui_active(active: bool) {
-    TUI_ACTIVE.store(active, std::sync::atomic::Ordering::SeqCst);
+    TUI_ACTIVE.store(active, std::sync::atomic::Ordering::Release);
 }
 
 pub fn is_tui_active() -> bool {
-    TUI_ACTIVE.load(std::sync::atomic::Ordering::SeqCst)
+    TUI_ACTIVE.load(std::sync::atomic::Ordering::Acquire)
 }

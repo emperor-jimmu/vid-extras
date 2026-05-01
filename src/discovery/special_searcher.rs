@@ -456,7 +456,8 @@ mod property_tests {
                 .collect();
 
             // Filter to monitored episodes (all by default, minus exclusions)
-            let monitored = MonitorPolicy::filter_monitored(&episodes, latest_season, &exclude_list);
+            let _ = latest_season; // kept for proptest variety; no longer used by MonitorPolicy
+            let monitored = MonitorPolicy::filter_monitored(&episodes, &exclude_list);
 
             // Generate queries for monitored episodes
             let mut query_count = 0;
@@ -480,7 +481,7 @@ mod property_tests {
             // Verify excluded episodes don't produce queries in our workflow
             // (This is a workflow property - we only call build_queries for monitored episodes)
             for episode in &episodes {
-                let is_monitored = MonitorPolicy::should_monitor(episode, latest_season, &exclude_list);
+                let is_monitored = MonitorPolicy::should_monitor(episode, &exclude_list);
 
                 if is_monitored {
                     // Monitored episodes should produce queries

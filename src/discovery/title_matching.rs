@@ -377,10 +377,13 @@ pub fn mentions_sequel_number(video_title: &str, movie_title: &str) -> bool {
 
 /// Check if video title mentions a different year (potential sequel/different movie)
 pub fn mentions_different_year(title: &str, expected_year: u16) -> bool {
-    // Look for 4-digit years in the title
-    let year_regex = regex::Regex::new(r"\b(19\d{2}|20\d{2})\b").unwrap();
+    use regex::Regex;
+    use std::sync::LazyLock;
 
-    for capture in year_regex.captures_iter(title) {
+    static YEAR_RE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\b(19\d{2}|20\d{2})\b").unwrap());
+
+    for capture in YEAR_RE.captures_iter(title) {
         if let Some(year_str) = capture.get(1)
             && let Ok(found_year) = year_str.as_str().parse::<u16>()
         {

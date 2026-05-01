@@ -2,7 +2,13 @@ use log::{debug, warn};
 use regex::Regex;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use tokio::fs;
+
+static SEASON_ZERO_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)S00E\d{1,2}").expect("valid regex"));
+static EPISODE_NUM_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)S00E(\d{1,2})").expect("valid regex"));
 
 /// Handles scanning and importing of local Season 0 files
 pub struct Season0Importer;
@@ -11,7 +17,6 @@ impl Season0Importer {
     /// Scan series folder for S00Exx files
     pub async fn scan_for_season_zero_files(series_path: &Path) -> Result<Vec<PathBuf>, String> {
         let mut season_zero_files = Vec::new();
-        let season_zero_regex = Regex::new(r"(?i)S00E\d{1,2}").map_err(|e| e.to_string())?;
 
         let mut entries = fs::read_dir(series_path)
             .await
@@ -36,7 +41,7 @@ impl Season0Importer {
             if Self::is_video_file(&path)
                 && let Some(filename) = path.file_name()
                 && let Some(filename_str) = filename.to_str()
-                && season_zero_regex.is_match(filename_str)
+                && SEASON_ZERO_RE.is_match(filename_str)
             {
                 debug!("Found Season 0 file: {}", filename_str);
                 season_zero_files.push(path);
@@ -48,8 +53,7 @@ impl Season0Importer {
 
     /// Extract episode number from S00Exx pattern
     pub fn extract_episode_number(filename: &str) -> Option<u8> {
-        let regex = Regex::new(r"(?i)S00E(\d{1,2})").ok()?;
-        regex
+        EPISODE_NUM_RE
             .captures(filename)
             .and_then(|caps| caps.get(1))
             .and_then(|m| m.as_str().parse::<u8>().ok())

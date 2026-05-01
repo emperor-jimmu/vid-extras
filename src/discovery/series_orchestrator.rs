@@ -517,12 +517,9 @@ impl SeriesDiscoveryOrchestrator {
         // Load manual exclusion list
         let exclude_list = MonitorPolicy::load_manual_exclude_list(&series.path).await;
 
-        // Determine latest season on disk
-        let latest_season = *series.seasons.iter().max().unwrap_or(&0);
-
         // Filter via MonitorPolicy (all monitored by default, exclusion list removes specific episodes)
         let monitored =
-            MonitorPolicy::filter_monitored(&enriched_episodes, latest_season, &exclude_list);
+            MonitorPolicy::filter_monitored(&enriched_episodes, &exclude_list);
 
         info!(
             "Filtered to {} monitored Season 0 episodes for {}",
@@ -677,12 +674,9 @@ impl SeriesDiscoveryOrchestrator {
         // Load manual exclusion list
         let exclude_list = MonitorPolicy::load_manual_exclude_list(&series.path).await;
 
-        // Determine latest season on disk
-        let latest_season = *series.seasons.iter().max().unwrap_or(&0);
-
         // Filter via MonitorPolicy
         let monitored =
-            MonitorPolicy::filter_monitored(&enriched_episodes, latest_season, &exclude_list);
+            MonitorPolicy::filter_monitored(&enriched_episodes, &exclude_list);
 
         info!(
             "Filtered to {} monitored Season 0 episodes for {}",

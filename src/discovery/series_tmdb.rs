@@ -94,8 +94,7 @@ impl TmdbSeriesDiscoverer {
         year: Option<u16>,
     ) -> Result<Option<u64>, DiscoveryError> {
         let mut url = format!(
-            "https://api.themoviedb.org/3/search/tv?api_key={}&query={}",
-            self.api_key,
+            "https://api.themoviedb.org/3/search/tv?query={}",
             urlencoding::encode(title)
         );
 
@@ -106,10 +105,15 @@ impl TmdbSeriesDiscoverer {
         debug!("Searching TMDB for series: {} {:?}", title, year);
 
         let response = retry_with_backoff(3, 500, || async {
-            self.client.get(&url).send().await.map_err(|e| {
+            self.client
+                .get(&url)
+                .bearer_auth(&self.api_key)
+                .send()
+                .await
+                .map_err(|e| {
                 error!("TMDB series search request failed: {}", e);
-                DiscoveryError::NetworkError(e)
-            })
+                    DiscoveryError::NetworkError(e)
+                })
         })
         .await?;
 
@@ -143,14 +147,19 @@ impl TmdbSeriesDiscoverer {
         series_id: u64,
     ) -> Result<Vec<SeriesExtra>, DiscoveryError> {
         let url = format!(
-            "https://api.themoviedb.org/3/tv/{}/videos?api_key={}",
-            series_id, self.api_key
+            "https://api.themoviedb.org/3/tv/{}/videos",
+            series_id
         );
 
         debug!("Fetching TMDB series videos for series ID: {}", series_id);
 
         let response = retry_with_backoff(3, 500, || async {
-            self.client.get(&url).send().await.map_err(|e| {
+            self.client
+                .get(&url)
+                .bearer_auth(&self.api_key)
+                .send()
+                .await
+                .map_err(|e| {
                 error!("TMDB series videos request failed: {}", e);
                 DiscoveryError::NetworkError(e)
             })
@@ -207,14 +216,19 @@ impl TmdbSeriesDiscoverer {
         series_id: u64,
     ) -> Result<Vec<SpecialEpisode>, DiscoveryError> {
         let url = format!(
-            "https://api.themoviedb.org/3/tv/{}/season/0?api_key={}",
-            series_id, self.api_key
+            "https://api.themoviedb.org/3/tv/{}/season/0",
+            series_id
         );
 
         debug!("Fetching TMDB Season 0 for series ID: {}", series_id);
 
         let response = retry_with_backoff(3, 500, || async {
-            self.client.get(&url).send().await.map_err(|e| {
+            self.client
+                .get(&url)
+                .bearer_auth(&self.api_key)
+                .send()
+                .await
+                .map_err(|e| {
                 error!("TMDB Season 0 request failed: {}", e);
                 DiscoveryError::NetworkError(e)
             })

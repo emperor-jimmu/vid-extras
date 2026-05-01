@@ -27,6 +27,7 @@ pub struct TuiState {
     thread_logs: Arc<Mutex<HashMap<usize, Vec<String>>>>,
     system_status: Arc<Mutex<String>>,
     active_items: Arc<Mutex<Vec<String>>>,
+    log_counter: Arc<AtomicUsize>,
 }
 
 impl Clone for TuiState {
@@ -41,6 +42,7 @@ impl Clone for TuiState {
             thread_logs: self.thread_logs.clone(),
             system_status: self.system_status.clone(),
             active_items: self.active_items.clone(),
+            log_counter: self.log_counter.clone(),
         }
     }
 }
@@ -64,6 +66,7 @@ impl TuiState {
             thread_logs: Arc::new(Mutex::new(HashMap::new())),
             system_status: Arc::new(Mutex::new(String::new())),
             active_items: Arc::new(Mutex::new(Vec::new())),
+            log_counter: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -88,27 +91,27 @@ impl TuiState {
     }
 
     pub fn set_thread_count(&self, count: usize) {
-        self.thread_count.store(count, Ordering::SeqCst);
+        self.thread_count.store(count, Ordering::Relaxed);
     }
 
     pub fn set_total_items(&self, total: usize) {
-        self.total_items.store(total, Ordering::SeqCst);
+        self.total_items.store(total, Ordering::Relaxed);
     }
 
     pub fn start(&self) {
-        self.active.store(true, Ordering::SeqCst);
+        self.active.store(true, Ordering::Release);
     }
 
     pub fn stop(&self) {
-        self.active.store(false, Ordering::SeqCst);
+        self.active.store(false, Ordering::Release);
     }
 
     pub fn is_stop_requested(&self) -> bool {
-        self.requested_stop.load(Ordering::SeqCst)
+        self.requested_stop.load(Ordering::Acquire)
     }
 
     pub fn request_stop(&self) {
-        self.requested_stop.store(true, Ordering::SeqCst);
+        self.requested_stop.store(true, Ordering::Release);
     }
 
     pub fn set_current_item(&self, item: &str) {
@@ -124,11 +127,11 @@ impl TuiState {
     }
 
     pub fn increment_processed(&self) {
-        self.processed_items.fetch_add(1, Ordering::SeqCst);
+        self.processed_items.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn log(&self, thread_id: usize, line: &str) {
-        if !self.active.load(Ordering::SeqCst) {
+        if !self.active.load(Ordering::Acquire) {
             return;
         }
         if let Ok(mut logs) = self.thread_logs.lock() {
@@ -145,13 +148,12 @@ impl TuiState {
     }
 
     fn get_thread_id(&self) -> usize {
-        let thread_id_counter = Arc::new(AtomicUsize::new(0));
-        let id = thread_id_counter.fetch_add(1, Ordering::SeqCst);
-        id % self.thread_count.load(Ordering::SeqCst).max(1)
+        let id = self.log_counter.fetch_add(1, Ordering::Relaxed);
+        id % self.thread_count.load(Ordering::Relaxed).max(1)
     }
 
     pub fn capture_log(&self, line: &str) {
-        if !self.active.load(Ordering::SeqCst) {
+        if !self.active.load(Ordering::Acquire) {
             return;
         }
         let thread_id = self.get_thread_id();
@@ -159,8 +161,8 @@ impl TuiState {
     }
 
     fn get_progress(&self) -> f64 {
-        let total = self.total_items.load(Ordering::SeqCst);
-        let processed = self.processed_items.load(Ordering::SeqCst);
+        let total = self.total_items.load(Ordering::Relaxed);
+        let processed = self.processed_items.load(Ordering::Relaxed);
         if total == 0 {
             0.0
         } else {
@@ -170,7 +172,7 @@ impl TuiState {
 
     fn render(&self, frame: &mut Frame) {
         let area = frame.area();
-        let thread_count = self.thread_count.load(Ordering::SeqCst).max(1) as u16;
+        let thread_count = self.thread_count.load(Ordering::Relaxed).max(1) as u16;
 
         let progress_height = PROGRESS_BAR_HEIGHT as u16;
         let total_height = area.height.saturating_sub(progress_height);
@@ -237,9 +239,9 @@ impl TuiState {
 
     fn render_progress_bar(&self, frame: &mut Frame, area: Rect) {
         let progress = self.get_progress();
-        let total = self.total_items.load(Ordering::SeqCst);
-        let processed = self.processed_items.load(Ordering::SeqCst);
-        let total_threads = self.thread_count.load(Ordering::SeqCst);
+        let total = self.total_items.load(Ordering::Relaxed);
+        let processed = self.processed_items.load(Ordering::Relaxed);
+        let total_threads = self.thread_count.load(Ordering::Relaxed);
 
         let active_items = self.get_active_items();
         let current_item = self.current_item.lock().map(|c| c.clone()).unwrap_or_default();
@@ -258,7 +260,7 @@ impl TuiState {
 
         let system_status = self.system_status.lock().map(|s| s.clone()).unwrap_or_default();
 
-        let status_text = if self.requested_stop.load(Ordering::SeqCst) {
+        let status_text = if self.requested_stop.load(Ordering::Acquire) {
             " STOPPING... ".to_string()
         } else if !system_status.is_empty() {
             format!(" {} ", system_status)
@@ -287,7 +289,7 @@ impl TuiState {
             items_display
         );
 
-        let border_color = if self.requested_stop.load(Ordering::SeqCst) {
+        let border_color = if self.requested_stop.load(Ordering::Acquire) {
             Color::Yellow
         } else if progress >= 1.0 {
             Color::Green
@@ -295,7 +297,7 @@ impl TuiState {
             Color::Blue
         };
 
-        let content_color = if self.requested_stop.load(Ordering::SeqCst) {
+        let content_color = if self.requested_stop.load(Ordering::Acquire) {
             Color::Yellow
         } else if progress >= 1.0 {
             Color::Green
@@ -327,7 +329,7 @@ pub fn run_tui(state: Arc<TuiState>) {
         return;
     }
 
-    while state.active.load(Ordering::SeqCst) {
+    while state.active.load(Ordering::Acquire) {
         if terminal.draw(|f| state.render(f)).is_err() {
             break;
         }
@@ -353,7 +355,7 @@ mod tests {
     #[test]
     fn test_tui_state_creation() {
         let state = TuiState::new();
-        assert!(!state.active.load(Ordering::SeqCst));
+        assert!(!state.active.load(Ordering::Acquire));
         assert!(!state.is_stop_requested());
     }
 
@@ -361,14 +363,14 @@ mod tests {
     fn test_tui_state_thread_count() {
         let state = TuiState::new();
         state.set_thread_count(4);
-        assert_eq!(state.thread_count.load(Ordering::SeqCst), 4);
+        assert_eq!(state.thread_count.load(Ordering::Relaxed), 4);
     }
 
     #[test]
     fn test_tui_state_total_items() {
         let state = TuiState::new();
         state.set_total_items(100);
-        assert_eq!(state.total_items.load(Ordering::SeqCst), 100);
+        assert_eq!(state.total_items.load(Ordering::Relaxed), 100);
     }
 
     #[test]

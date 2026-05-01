@@ -58,8 +58,7 @@ impl TmdbDiscoverer {
     /// Search for a movie by title and year, returns the TMDB movie ID
     async fn search_movie(&self, title: &str, year: u16) -> Result<Option<u64>, DiscoveryError> {
         let url = format!(
-            "https://api.themoviedb.org/3/search/movie?api_key={}&query={}&year={}",
-            self.api_key,
+            "https://api.themoviedb.org/3/search/movie?query={}&year={}",
             urlencoding::encode(title),
             year
         );
@@ -67,7 +66,12 @@ impl TmdbDiscoverer {
         debug!("Searching TMDB for: {} ({})", title, year);
 
         let response = super::retry_with_backoff(3, 500, || async {
-            self.client.get(&url).send().await.map_err(|e| {
+            self.client
+                .get(&url)
+                .bearer_auth(&self.api_key)
+                .send()
+                .await
+                .map_err(|e| {
                 error!("TMDB search request failed: {}", e);
                 DiscoveryError::NetworkError(e)
             })
@@ -100,14 +104,19 @@ impl TmdbDiscoverer {
     /// Fetch videos for a movie by ID
     async fn fetch_videos(&self, movie_id: u64) -> Result<Vec<TmdbVideo>, DiscoveryError> {
         let url = format!(
-            "https://api.themoviedb.org/3/movie/{}/videos?api_key={}",
-            movie_id, self.api_key
+            "https://api.themoviedb.org/3/movie/{}/videos",
+            movie_id
         );
 
         debug!("Fetching TMDB videos for movie ID: {}", movie_id);
 
         let response = super::retry_with_backoff(3, 500, || async {
-            self.client.get(&url).send().await.map_err(|e| {
+            self.client
+                .get(&url)
+                .bearer_auth(&self.api_key)
+                .send()
+                .await
+                .map_err(|e| {
                 error!("TMDB videos request failed: {}", e);
                 DiscoveryError::NetworkError(e)
             })

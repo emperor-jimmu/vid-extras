@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static JSON_PROGRESS_ENABLED: AtomicBool = AtomicBool::new(false);
 
 pub fn set_json_progress_enabled(enabled: bool) {
-    JSON_PROGRESS_ENABLED.store(enabled, Ordering::SeqCst);
+    JSON_PROGRESS_ENABLED.store(enabled, Ordering::Release);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +50,7 @@ impl ProgressEvent {
     }
 
     pub fn emit_if_enabled(&self) {
-        if JSON_PROGRESS_ENABLED.load(Ordering::SeqCst) {
+        if JSON_PROGRESS_ENABLED.load(Ordering::Acquire) {
             self.emit();
         }
     }

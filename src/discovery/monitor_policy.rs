@@ -23,7 +23,6 @@ impl MonitorPolicy {
     /// appears in the manual exclusion list.
     pub fn should_monitor(
         episode: &TvdbEpisodeExtended,
-        _latest_season: u8,
         manual_exclude_list: &[u8],
     ) -> bool {
         !manual_exclude_list.contains(&episode.number)
@@ -34,12 +33,11 @@ impl MonitorPolicy {
     /// Returns all episodes except those in the exclusion list.
     pub fn filter_monitored<'a>(
         episodes: &'a [TvdbEpisodeExtended],
-        latest_season: u8,
         manual_exclude_list: &[u8],
     ) -> Vec<&'a TvdbEpisodeExtended> {
         episodes
             .iter()
-            .filter(|episode| Self::should_monitor(episode, latest_season, manual_exclude_list))
+            .filter(|episode| Self::should_monitor(episode, manual_exclude_list))
             .collect()
     }
 
@@ -97,66 +95,66 @@ mod tests {
     #[test]
     fn test_default_monitored() {
         let episode = create_test_episode(1, None, None);
-        assert!(MonitorPolicy::should_monitor(&episode, 5, &[]));
+        assert!(MonitorPolicy::should_monitor(&episode, &[]));
     }
 
     #[test]
     fn test_monitored_with_airs_after_season() {
         // airs_after_season is informational only, episode is still monitored
         let episode = create_test_episode(1, Some(5), None);
-        assert!(MonitorPolicy::should_monitor(&episode, 5, &[]));
+        assert!(MonitorPolicy::should_monitor(&episode, &[]));
     }
 
     #[test]
     fn test_monitored_with_airs_after_season_mismatch() {
         // airs_after_season doesn't affect monitoring
         let episode = create_test_episode(1, Some(4), None);
-        assert!(MonitorPolicy::should_monitor(&episode, 5, &[]));
+        assert!(MonitorPolicy::should_monitor(&episode, &[]));
     }
 
     #[test]
     fn test_monitored_is_movie_true() {
         // is_movie is informational only, episode is still monitored
         let episode = create_test_episode(1, None, Some(true));
-        assert!(MonitorPolicy::should_monitor(&episode, 5, &[]));
+        assert!(MonitorPolicy::should_monitor(&episode, &[]));
     }
 
     #[test]
     fn test_monitored_is_movie_false() {
         // is_movie doesn't affect monitoring
         let episode = create_test_episode(1, None, Some(false));
-        assert!(MonitorPolicy::should_monitor(&episode, 5, &[]));
+        assert!(MonitorPolicy::should_monitor(&episode, &[]));
     }
 
     #[test]
     fn test_excluded_by_list() {
         let episode = create_test_episode(3, None, None);
-        assert!(!MonitorPolicy::should_monitor(&episode, 5, &[1, 3, 5]));
+        assert!(!MonitorPolicy::should_monitor(&episode, &[1, 3, 5]));
     }
 
     #[test]
     fn test_not_excluded_by_list() {
         let episode = create_test_episode(2, None, None);
-        assert!(MonitorPolicy::should_monitor(&episode, 5, &[1, 3, 5]));
+        assert!(MonitorPolicy::should_monitor(&episode, &[1, 3, 5]));
     }
 
     #[test]
     fn test_excluded_overrides_metadata() {
         // Even with airs_after_season and is_movie, exclusion list wins
         let episode = create_test_episode(1, Some(5), Some(true));
-        assert!(!MonitorPolicy::should_monitor(&episode, 5, &[1]));
+        assert!(!MonitorPolicy::should_monitor(&episode, &[1]));
     }
 
     #[test]
     fn test_not_excluded_with_metadata() {
         let episode = create_test_episode(1, Some(5), None);
-        assert!(MonitorPolicy::should_monitor(&episode, 5, &[2, 3]));
+        assert!(MonitorPolicy::should_monitor(&episode, &[2, 3]));
     }
 
     #[test]
     fn test_filter_monitored_empty() {
         let episodes = vec![];
-        let filtered = MonitorPolicy::filter_monitored(&episodes, 5, &[]);
+        let filtered = MonitorPolicy::filter_monitored(&episodes, &[]);
         assert_eq!(filtered.len(), 0);
     }
 
@@ -170,7 +168,7 @@ mod tests {
             create_test_episode(5, None, None),       // monitored
         ];
 
-        let filtered = MonitorPolicy::filter_monitored(&episodes, 5, &[2, 4]);
+        let filtered = MonitorPolicy::filter_monitored(&episodes, &[2, 4]);
         assert_eq!(filtered.len(), 3);
         assert_eq!(filtered[0].number, 1);
         assert_eq!(filtered[1].number, 3);
@@ -185,7 +183,7 @@ mod tests {
             create_test_episode(3, None, None),
         ];
 
-        let filtered = MonitorPolicy::filter_monitored(&episodes, 5, &[]);
+        let filtered = MonitorPolicy::filter_monitored(&episodes, &[]);
         assert_eq!(filtered.len(), 3);
     }
 
@@ -197,7 +195,7 @@ mod tests {
             create_test_episode(3, Some(5), None),
         ];
 
-        let filtered = MonitorPolicy::filter_monitored(&episodes, 5, &[1, 2, 3]);
+        let filtered = MonitorPolicy::filter_monitored(&episodes, &[1, 2, 3]);
         assert_eq!(filtered.len(), 0);
     }
 
@@ -244,7 +242,6 @@ mod property_tests {
         #[test]
         fn prop_monitor_policy_correctness(
             episode_number in 0u8..=255,
-            latest_season in 0u8..=20,
             airs_after_season in prop::option::of(0u8..=20),
             is_movie in prop::option::of(any::<bool>()),
             exclude_list in prop::collection::vec(0u8..=255, 0..10),
@@ -263,7 +260,7 @@ mod property_tests {
                 is_movie,
             };
 
-            let should_monitor = MonitorPolicy::should_monitor(&episode, latest_season, &exclude_list);
+            let should_monitor = MonitorPolicy::should_monitor(&episode, &exclude_list);
 
             // All episodes are monitored unless explicitly excluded
             let expected_monitored = !exclude_list.contains(&episode_number);
@@ -306,12 +303,12 @@ mod property_tests {
                 })
                 .collect();
 
-            let filtered = MonitorPolicy::filter_monitored(&episodes, latest_season, &exclude_list);
+            let filtered = MonitorPolicy::filter_monitored(&episodes, &exclude_list);
 
             // Verify all filtered episodes should be monitored
             for episode in &filtered {
                 prop_assert!(
-                    MonitorPolicy::should_monitor(episode, latest_season, &exclude_list),
+                    MonitorPolicy::should_monitor(episode, &exclude_list),
                     "Filtered episode {} should be monitored",
                     episode.number
                 );
@@ -321,7 +318,7 @@ mod property_tests {
             for episode in &episodes {
                 let is_in_filtered = filtered.iter().any(|e| e.id == episode.id);
                 let should_be_monitored =
-                    MonitorPolicy::should_monitor(episode, latest_season, &exclude_list);
+                    MonitorPolicy::should_monitor(episode, &exclude_list);
 
                 prop_assert_eq!(
                     is_in_filtered, should_be_monitored,
@@ -329,6 +326,8 @@ mod property_tests {
                     episode.number
                 );
             }
+
+            let _ = latest_season; // kept for proptest input variety but unused by policy
         }
     }
 
@@ -336,7 +335,6 @@ mod property_tests {
         #[test]
         fn prop_default_monitored(
             episode_number in 0u8..=255,
-            latest_season in 0u8..=20,
         ) {
             let episode = TvdbEpisodeExtended {
                 id: 1,
@@ -352,7 +350,7 @@ mod property_tests {
                 is_movie: Some(false),
             };
 
-            let should_monitor = MonitorPolicy::should_monitor(&episode, latest_season, &[]);
+            let should_monitor = MonitorPolicy::should_monitor(&episode, &[]);
 
             prop_assert!(should_monitor, "Episode should default to monitored");
         }
@@ -362,7 +360,6 @@ mod property_tests {
         #[test]
         fn prop_exclude_list_removes_episodes(
             episode_number in 0u8..=255,
-            latest_season in 0u8..=20,
         ) {
             let episode = TvdbEpisodeExtended {
                 id: 1,
@@ -379,7 +376,7 @@ mod property_tests {
             };
 
             let exclude_list = vec![episode_number];
-            let should_monitor = MonitorPolicy::should_monitor(&episode, latest_season, &exclude_list);
+            let should_monitor = MonitorPolicy::should_monitor(&episode, &exclude_list);
 
             prop_assert!(
                 !should_monitor,
