@@ -81,9 +81,10 @@ jobs:
 
       - name: Rename artifacts
         run: |
-          mv artifacts/extras_fetcher-linux-x86_64/extras_fetcher artifacts/extras_fetcher-linux-x86_64
-          mv artifacts/extras_fetcher-windows-x86_64.exe/extras_fetcher.exe artifacts/extras_fetcher-windows-x86_64.exe
-          mv artifacts/extras_fetcher-macos-aarch64/extras_fetcher artifacts/extras_fetcher-macos-aarch64
+          mkdir dist
+          mv artifacts/extras_fetcher-linux-x86_64/extras_fetcher dist/extras_fetcher-linux-x86_64
+          mv artifacts/extras_fetcher-windows-x86_64.exe/extras_fetcher.exe dist/extras_fetcher-windows-x86_64.exe
+          mv artifacts/extras_fetcher-macos-aarch64/extras_fetcher dist/extras_fetcher-macos-aarch64
 
       - name: Publish Release and Upload Binaries
         env:
@@ -91,8 +92,8 @@ jobs:
           VERSION: ${{ needs.check-version.outputs.VERSION }}
         run: |
           gh release create "v$VERSION" \
-            artifacts/extras_fetcher-linux-x86_64 \
-            artifacts/extras_fetcher-windows-x86_64.exe \
-            artifacts/extras_fetcher-macos-aarch64 \
+            dist/extras_fetcher-linux-x86_64 \
+            dist/extras_fetcher-windows-x86_64.exe \
+            dist/extras_fetcher-macos-aarch64 \
             --title "v$VERSION" \
             --generate-notes
