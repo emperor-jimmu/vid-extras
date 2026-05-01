@@ -3,6 +3,8 @@
 
 A Rust-based automation tool for enriching Jellyfin movie libraries by discovering, downloading, and organizing supplementary video content (trailers, behind-the-scenes footage, deleted scenes, featurettes) from multiple online sources.
 
+**Supported platforms:** Windows 10/11, Linux, macOS (Apple Silicon)
+
 ## Features
 
 ### Movies & TV Series Support
