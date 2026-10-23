@@ -1,12 +1,11 @@
 // TMDB series content discoverer
 
 use crate::error::DiscoveryError;
-#[cfg(test)]
-use crate::models::SpecialEpisode;
-use crate::models::{ContentCategory, SeriesExtra, SourceType};
+use crate::models::{ContentCategory, SourceType, VideoSource};
 use log::{debug, error, info};
 use serde::Deserialize;
 
+use super::orchestrator::{CandidateSource, DiscoveryQuery};
 use super::retry_with_backoff;
 
 /// TMDB API response for TV series search
@@ -48,25 +47,6 @@ struct TmdbVideo {
     site: String,
     #[serde(rename = "type")]
     video_type: String,
-}
-
-/// TMDB API response for season details
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct TmdbSeasonResponse {
-    #[allow(dead_code)]
-    season_number: u8,
-    episodes: Vec<TmdbEpisode>,
-}
-
-/// TMDB episode entry
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct TmdbEpisode {
-    episode_number: u8,
-    name: String,
-    #[serde(default)]
-    air_date: Option<String>,
 }
 
 /// TMDB series content discoverer
@@ -111,7 +91,7 @@ impl TmdbSeriesDiscoverer {
                 .send()
                 .await
                 .map_err(|e| {
-                error!("TMDB series search request failed: {}", e);
+                    error!("TMDB series search request failed: {}", e);
                     DiscoveryError::NetworkError(e)
                 })
         })
@@ -145,11 +125,8 @@ impl TmdbSeriesDiscoverer {
     pub async fn discover_series_extras(
         &self,
         series_id: u64,
-    ) -> Result<Vec<SeriesExtra>, DiscoveryError> {
-        let url = format!(
-            "https://api.themoviedb.org/3/tv/{}/videos",
-            series_id
-        );
+    ) -> Result<Vec<VideoSource>, DiscoveryError> {
+        let url = format!("https://api.themoviedb.org/3/tv/{}/videos", series_id);
 
         debug!("Fetching TMDB series videos for series ID: {}", series_id);
 
@@ -160,9 +137,9 @@ impl TmdbSeriesDiscoverer {
                 .send()
                 .await
                 .map_err(|e| {
-                error!("TMDB series videos request failed: {}", e);
-                DiscoveryError::NetworkError(e)
-            })
+                    error!("TMDB series videos request failed: {}", e);
+                    DiscoveryError::NetworkError(e)
+                })
         })
         .await?;
 
@@ -185,96 +162,25 @@ impl TmdbSeriesDiscoverer {
             videos_result.results.len()
         );
 
-        // Convert TMDB videos to SeriesExtra
-        let extras: Vec<SeriesExtra> = videos_result
+        // Convert TMDB videos to candidates
+        let sources: Vec<VideoSource> = videos_result
             .results
             .into_iter()
             .filter(|v| v.site == "YouTube") // Only YouTube videos are downloadable
             .filter_map(|v| {
-                Self::map_tmdb_type(&v.video_type).map(|category| SeriesExtra {
-                    series_id: series_id.to_string(),
+                Self::map_tmdb_type(&v.video_type).map(|category| VideoSource {
                     season_number: None, // Series-level extras have no season
                     category,
                     title: v.name,
                     url: format!("https://www.youtube.com/watch?v={}", v.key),
                     source_type: SourceType::TMDB,
-                    local_path: None,
                     duration_secs: None,
                 })
             })
             .collect();
 
-        info!("Discovered {} series-level extras from TMDB", extras.len());
-        Ok(extras)
-    }
-
-    /// Discover Season 0 specials from TMDB
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub async fn discover_season_zero(
-        &self,
-        series_id: u64,
-    ) -> Result<Vec<SpecialEpisode>, DiscoveryError> {
-        let url = format!(
-            "https://api.themoviedb.org/3/tv/{}/season/0",
-            series_id
-        );
-
-        debug!("Fetching TMDB Season 0 for series ID: {}", series_id);
-
-        let response = retry_with_backoff(3, 500, || async {
-            self.client
-                .get(&url)
-                .bearer_auth(&self.api_key)
-                .send()
-                .await
-                .map_err(|e| {
-                error!("TMDB Season 0 request failed: {}", e);
-                DiscoveryError::NetworkError(e)
-            })
-        })
-        .await?;
-
-        // Season 0 might not exist, which is not an error
-        if response.status() == 404 {
-            debug!("Season 0 not found for series ID: {}", series_id);
-            return Ok(Vec::new());
-        }
-
-        if !response.status().is_success() {
-            let status = response.status();
-            error!("TMDB Season 0 fetch failed with status: {}", status);
-            return Err(DiscoveryError::ApiError(format!(
-                "TMDB API returned status {}",
-                status
-            )));
-        }
-
-        let season_response: TmdbSeasonResponse = response.json().await.map_err(|e| {
-            error!("Failed to parse TMDB Season 0 response: {}", e);
-            DiscoveryError::NetworkError(e)
-        })?;
-
-        info!(
-            "Found {} Season 0 episodes from TMDB",
-            season_response.episodes.len()
-        );
-
-        // Convert TMDB episodes to SpecialEpisode
-        let specials: Vec<SpecialEpisode> = season_response
-            .episodes
-            .into_iter()
-            .map(|ep| SpecialEpisode {
-                episode_number: ep.episode_number,
-                title: ep.name,
-                air_date: ep.air_date,
-                url: None, // URLs would need to be fetched separately
-                local_path: None,
-                tvdb_id: None, // TVDB ID would be populated by IdBridge
-            })
-            .collect();
-
-        Ok(specials)
+        info!("Discovered {} series-level extras from TMDB", sources.len());
+        Ok(sources)
     }
 
     /// Map TMDB video type to content category
@@ -292,6 +198,20 @@ impl TmdbSeriesDiscoverer {
                 debug!("Unknown TMDB video type: {}", tmdb_type);
                 None
             }
+        }
+    }
+}
+
+impl CandidateSource for TmdbSeriesDiscoverer {
+    async fn discover(&self, query: &DiscoveryQuery) -> Result<Vec<VideoSource>, DiscoveryError> {
+        // TMDB has no season-scoped videos endpoint in use here.
+        if query.season.is_some() {
+            return Ok(Vec::new());
+        }
+
+        match self.search_series(&query.title, query.year).await? {
+            Some(series_id) => self.discover_series_extras(series_id).await,
+            None => Ok(Vec::new()),
         }
     }
 }
@@ -371,62 +291,6 @@ mod tests {
     fn test_tmdb_series_discoverer_creation() {
         let discoverer = TmdbSeriesDiscoverer::new("test_api_key".to_string());
         assert_eq!(discoverer.api_key, "test_api_key");
-    }
-
-    #[test]
-    fn test_series_extra_creation_from_video() {
-        let series_id = 1234u64;
-        let category = ContentCategory::Trailer;
-        let title = "Series Trailer".to_string();
-        let url = "https://www.youtube.com/watch?v=abc123".to_string();
-
-        let extra = SeriesExtra {
-            series_id: series_id.to_string(),
-            season_number: None,
-            category,
-            title,
-            url,
-            source_type: SourceType::TMDB,
-            local_path: None,
-            duration_secs: None,
-        };
-
-        assert_eq!(extra.series_id, "1234");
-        assert_eq!(extra.season_number, None);
-        assert_eq!(extra.category, ContentCategory::Trailer);
-        assert_eq!(extra.source_type, SourceType::TMDB);
-    }
-
-    #[test]
-    fn test_special_episode_creation() {
-        let episode = SpecialEpisode {
-            episode_number: 1,
-            title: "Pilot Special".to_string(),
-            air_date: Some("2020-01-01".to_string()),
-            url: None,
-            local_path: None,
-            tvdb_id: None,
-        };
-
-        assert_eq!(episode.episode_number, 1);
-        assert_eq!(episode.title, "Pilot Special");
-        assert_eq!(episode.air_date, Some("2020-01-01".to_string()));
-        assert_eq!(episode.url, None);
-    }
-
-    #[test]
-    fn test_special_episode_without_air_date() {
-        let episode = SpecialEpisode {
-            episode_number: 2,
-            title: "Unknown Special".to_string(),
-            air_date: None,
-            url: None,
-            local_path: None,
-            tvdb_id: None,
-        };
-
-        assert_eq!(episode.episode_number, 2);
-        assert_eq!(episode.air_date, None);
     }
 
     #[test]
@@ -514,66 +378,6 @@ mod property_tests {
                     prop_assert_eq!(result, None);
                 }
             }
-        }
-    }
-
-    // Property 6: Season 0 Episode Separation
-    // Validates: Requirements 4.5
-    proptest! {
-        #[test]
-        fn prop_season_zero_episode_separation(
-            series_id in 1000u64..9999u64,
-            episode_count in 1usize..20usize,
-        ) {
-            // Create series-level extras (season_number = None)
-            let series_extras: Vec<SeriesExtra> = (0..episode_count)
-                .map(|i| SeriesExtra {
-                    series_id: series_id.to_string(),
-                    season_number: None,
-                    category: ContentCategory::Trailer,
-                    title: format!("Series Extra {}", i),
-                    url: format!("https://example.com/video{}", i),
-                    source_type: SourceType::TMDB,
-                    local_path: None,
-                    duration_secs: None,
-                })
-                .collect();
-
-            // Create season-specific extras (season_number = Some(1))
-            let season_extras: Vec<SeriesExtra> = (0..episode_count)
-                .map(|i| SeriesExtra {
-                    series_id: series_id.to_string(),
-                    season_number: Some(1u8),
-                    category: ContentCategory::BehindTheScenes,
-                    title: format!("Season Extra {}", i),
-                    url: format!("https://example.com/season_video{}", i),
-                    source_type: SourceType::TMDB,
-                    local_path: None,
-                    duration_secs: None,
-                })
-                .collect();
-
-            // Verify separation: series-level extras have None season_number
-            for extra in &series_extras {
-                prop_assert_eq!(extra.season_number, None);
-            }
-
-            // Verify separation: season-specific extras have Some season_number
-            for extra in &season_extras {
-                prop_assert_eq!(extra.season_number, Some(1u8));
-            }
-
-            // Verify no overlap: all series extras differ from season extras in season_number
-            for series_extra in &series_extras {
-                for season_extra in &season_extras {
-                    // They should differ in season_number
-                    prop_assert_ne!(series_extra.season_number, season_extra.season_number);
-                }
-            }
-
-            // Verify collections are separate
-            prop_assert_eq!(series_extras.len(), episode_count);
-            prop_assert_eq!(season_extras.len(), episode_count);
         }
     }
 }

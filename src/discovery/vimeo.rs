@@ -7,6 +7,7 @@ use crate::models::{ContentCategory, SourceType, VideoSource};
 use log::{debug, info, warn};
 use serde::Deserialize;
 
+use super::orchestrator::{CandidateSource, DiscoveryQuery};
 use super::title_matching;
 
 /// Maximum number of pages to fetch from Vimeo search results.
@@ -135,11 +136,7 @@ impl VimeoDiscoverer {
     ///
     /// Paginates up to 3 pages. Stops early when `paging.next` is `None`
     /// or a page fetch fails.
-    pub async fn discover(
-        &self,
-        title: &str,
-        year: u16,
-    ) -> Result<Vec<VideoSource>, DiscoveryError> {
+    async fn search(&self, title: &str, year: u16) -> Result<Vec<VideoSource>, DiscoveryError> {
         let query = Self::build_search_query(title, year);
         let mut all_sources = Vec::new();
 
@@ -225,6 +222,12 @@ impl VimeoDiscoverer {
                 )))
             }
         }
+    }
+}
+
+impl CandidateSource for VimeoDiscoverer {
+    async fn discover(&self, query: &DiscoveryQuery) -> Result<Vec<VideoSource>, DiscoveryError> {
+        self.search(&query.title, query.year.unwrap_or(0)).await
     }
 }
 
@@ -404,33 +407,20 @@ mod tests {
     async fn test_vimeo_discoverer_new_compiles() {
         let discoverer = VimeoDiscoverer::new("test_token".to_string());
         // Verify the discoverer is functional — discover returns Ok
-        let result = discoverer.discover("Test", 2020).await;
+        let result = discoverer.search("Test", 2020).await;
         assert!(result.is_ok());
     }
 
     // --- Existing orchestrator wiring tests (from Story 8.1) ---
     #[test]
-    fn test_discovery_orchestrator_with_vimeo_source() {
-        use crate::discovery::DiscoveryOrchestrator;
-        use crate::models::Source;
+    fn test_discovery_module_accepts_vimeo_source() {
+        use crate::discovery::{Discovery, DiscoveryConfig};
 
-        let _orch = DiscoveryOrchestrator::new(
-            "tmdb_key".to_string(),
-            vec![Source::Vimeo],
-            Arc::new(AtomicU32::new(0)),
-            "token".to_string(),
-        );
-    }
-
-    #[test]
-    fn test_series_orchestrator_with_vimeo_source() {
-        use crate::discovery::SeriesDiscoveryOrchestrator;
-        use crate::models::Source;
-
-        let _orch = SeriesDiscoveryOrchestrator::new(
-            "tmdb_key".to_string(),
-            vec![Source::Vimeo],
-            "token".to_string(),
-        );
+        let _discovery = Discovery::new(DiscoveryConfig {
+            tmdb_api_key: "tmdb_key".to_string(),
+            vimeo_access_token: "token".to_string(),
+            cookies_from_browser: None,
+            kinocheck_request_count: Arc::new(AtomicU32::new(0)),
+        });
     }
 }

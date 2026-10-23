@@ -7,6 +7,7 @@ use crate::models::{ContentCategory, SourceType, VideoSource};
 use log::warn;
 use serde::Deserialize;
 
+use super::orchestrator::{CandidateSource, DiscoveryQuery};
 use super::title_matching;
 
 /// Maximum number of pages to fetch from Dailymotion search results.
@@ -108,11 +109,7 @@ impl DailymotionDiscoverer {
     ///
     /// Paginates up to 3 pages with 1-second pacing between requests (NFR2).
     /// Stops early when `has_more` is false or a page fetch fails.
-    pub async fn discover(
-        &self,
-        title: &str,
-        year: u16,
-    ) -> Result<Vec<VideoSource>, DiscoveryError> {
+    async fn search(&self, title: &str, year: u16) -> Result<Vec<VideoSource>, DiscoveryError> {
         let query = Self::build_search_query(title, year);
         let mut all_sources = Vec::new();
 
@@ -192,6 +189,12 @@ impl DailymotionDiscoverer {
                 )))
             }
         }
+    }
+}
+
+impl CandidateSource for DailymotionDiscoverer {
+    async fn discover(&self, query: &DiscoveryQuery) -> Result<Vec<VideoSource>, DiscoveryError> {
+        self.search(&query.title, query.year.unwrap_or(0)).await
     }
 }
 

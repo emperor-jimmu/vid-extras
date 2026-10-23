@@ -1,10 +1,10 @@
 // Output module - handles CLI output formatting and progress display
 
 use crate::discovery::SourceResult;
-use crate::json_output::ProgressEvent;
-use crate::models::{ContentCategory, MovieEntry, SeriesEntry, Source, SourceType};
-use crate::orchestrator::ProcessingSummary;
 use crate::is_tui_active;
+use crate::json_output::ProgressEvent;
+use crate::models::{ContentCategory, MovieEntry, SeriesEntry, SourceType};
+use crate::orchestrator::ProcessingSummary;
 use colored::Colorize;
 
 /// Display scanning progress for a movie
@@ -322,7 +322,7 @@ pub fn display_summary(summary: &ProcessingSummary) {
 
     // Per-source discovery section
     if !summary.source_totals.is_empty() {
-        let mut entries: Vec<(&Source, &usize)> = summary.source_totals.iter().collect();
+        let mut entries: Vec<(&SourceType, &usize)> = summary.source_totals.iter().collect();
         entries.sort_by_key(|(s, _)| (s.tier(), s.to_string()));
         println!("  {}", "─".repeat(45).bright_white());
         println!("  {}", "Discovery:".bright_white().bold());
@@ -781,21 +781,20 @@ mod tests {
 
     #[test]
     fn test_display_dry_run_movie_results_populated() {
-        use crate::models::Source;
         let movie = create_test_movie();
         let source_results = vec![
             SourceResult {
-                source: Source::Tmdb,
+                source: SourceType::TMDB,
                 videos_found: 3,
                 error: None,
             },
             SourceResult {
-                source: Source::Youtube,
+                source: SourceType::YouTube,
                 videos_found: 7,
                 error: None,
             },
             SourceResult {
-                source: Source::Archive,
+                source: SourceType::ArchiveOrg,
                 videos_found: 0,
                 error: None,
             },
@@ -805,16 +804,15 @@ mod tests {
 
     #[test]
     fn test_display_dry_run_movie_results_with_errors() {
-        use crate::models::Source;
         let movie = create_test_movie();
         let source_results = vec![
             SourceResult {
-                source: Source::Tmdb,
+                source: SourceType::TMDB,
                 videos_found: 3,
                 error: None,
             },
             SourceResult {
-                source: Source::Youtube,
+                source: SourceType::YouTube,
                 videos_found: 0,
                 error: Some("connection refused".to_string()),
             },
@@ -830,16 +828,15 @@ mod tests {
 
     #[test]
     fn test_display_dry_run_series_results_populated() {
-        use crate::models::Source;
         let series = create_test_series();
         let source_results = vec![
             SourceResult {
-                source: Source::Tmdb,
+                source: SourceType::TMDB,
                 videos_found: 5,
                 error: None,
             },
             SourceResult {
-                source: Source::Youtube,
+                source: SourceType::YouTube,
                 videos_found: 7,
                 error: None,
             },
@@ -868,11 +865,10 @@ mod tests {
 
     #[test]
     fn test_display_summary_with_source_totals() {
-        use crate::models::Source;
         let mut source_totals = std::collections::HashMap::new();
-        source_totals.insert(Source::Tmdb, 42);
-        source_totals.insert(Source::Archive, 3);
-        source_totals.insert(Source::Youtube, 18);
+        source_totals.insert(SourceType::TMDB, 42);
+        source_totals.insert(SourceType::ArchiveOrg, 3);
+        source_totals.insert(SourceType::YouTube, 18);
 
         let summary = ProcessingSummary {
             total_movies: 5,
@@ -892,10 +888,9 @@ mod tests {
 
     #[test]
     fn test_display_summary_with_duplicates_removed() {
-        use crate::models::Source;
         let mut source_totals = std::collections::HashMap::new();
-        source_totals.insert(Source::Tmdb, 42);
-        source_totals.insert(Source::Youtube, 18);
+        source_totals.insert(SourceType::TMDB, 42);
+        source_totals.insert(SourceType::YouTube, 18);
 
         let summary = ProcessingSummary {
             total_movies: 3,
@@ -916,16 +911,15 @@ mod tests {
 
     #[test]
     fn test_display_dry_run_movie_with_duplicates() {
-        use crate::models::Source;
         let movie = create_test_movie();
         let source_results = vec![
             SourceResult {
-                source: Source::Tmdb,
+                source: SourceType::TMDB,
                 videos_found: 8,
                 error: None,
             },
             SourceResult {
-                source: Source::Youtube,
+                source: SourceType::YouTube,
                 videos_found: 7,
                 error: None,
             },
@@ -936,16 +930,15 @@ mod tests {
 
     #[test]
     fn test_display_dry_run_series_with_duplicates() {
-        use crate::models::Source;
         let series = create_test_series();
         let source_results = vec![
             SourceResult {
-                source: Source::Tmdb,
+                source: SourceType::TMDB,
                 videos_found: 6,
                 error: None,
             },
             SourceResult {
-                source: Source::Youtube,
+                source: SourceType::YouTube,
                 videos_found: 5,
                 error: None,
             },

@@ -2,11 +2,11 @@
 // Bilibili is a Chinese video platform that hosts movie extras, documentaries, and interviews.
 
 use crate::error::DiscoveryError;
-use crate::models::{ContentCategory, MovieEntry, SourceType, VideoSource};
+use crate::models::{ContentCategory, SourceType, VideoSource};
 use log::{debug, info};
 use std::process::Command;
 
-use super::ContentDiscoverer;
+use super::orchestrator::{CandidateSource, DiscoveryQuery};
 use super::title_matching;
 
 /// Bilibili content discoverer
@@ -96,11 +96,13 @@ impl Default for BilibiliDiscoverer {
 }
 
 #[allow(async_fn_in_trait)]
-impl ContentDiscoverer for BilibiliDiscoverer {
-    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
-        info!("Searching Bilibili for: {} ({})", movie.title, movie.year);
+impl CandidateSource for BilibiliDiscoverer {
+    async fn discover(&self, query: &DiscoveryQuery) -> Result<Vec<VideoSource>, DiscoveryError> {
+        let title = &query.title;
+        let year = query.year.unwrap_or(0);
+        info!("Searching Bilibili for: {} ({})", title, year);
 
-        let queries = Self::build_search_queries(&movie.title, movie.year);
+        let queries = Self::build_search_queries(title, year);
         let mut all_sources = Vec::new();
 
         for (query, _category) in &queries {

@@ -1,9 +1,10 @@
 // YouTube content discoverer for TV series
 
 use crate::error::DiscoveryError;
-use crate::models::{ContentCategory, SeriesEntry, SeriesExtra, SourceType};
+use crate::models::{ContentCategory, SourceType, VideoSource};
 use log::{debug, error, info};
 
+use super::orchestrator::{CandidateSource, DiscoveryQuery};
 use super::title_matching;
 
 /// YouTube content discoverer for TV series
@@ -140,7 +141,7 @@ impl YoutubeSeriesDiscoverer {
         series_title: &str,
         category: ContentCategory,
         season_number: Option<u8>,
-    ) -> Result<Vec<SeriesExtra>, DiscoveryError> {
+    ) -> Result<Vec<VideoSource>, DiscoveryError> {
         let search_query = format!("ytsearch5:{}", query);
 
         debug!("Searching YouTube with query: {}", query);
@@ -217,14 +218,12 @@ impl YoutubeSeriesDiscoverer {
 
                         let resolved_category =
                             title_matching::infer_category_from_title(&title).unwrap_or(category);
-                        sources.push(SeriesExtra {
-                            series_id: series_title.to_lowercase().replace(' ', "_"),
+                        sources.push(VideoSource {
                             season_number: final_season,
                             category: resolved_category,
                             title: title.clone(),
                             url,
                             source_type: SourceType::YouTube,
-                            local_path: None,
                             duration_secs: Some(duration),
                         });
                         debug!(
@@ -246,18 +245,17 @@ impl YoutubeSeriesDiscoverer {
     /// Discover series-level YouTube extras
     pub async fn discover_series_extras(
         &self,
-        series: &SeriesEntry,
-    ) -> Result<Vec<SeriesExtra>, DiscoveryError> {
-        info!("Discovering YouTube series-level extras for: {}", series);
+        title: &str,
+        year: Option<u16>,
+        seasons: &[u8],
+    ) -> Result<Vec<VideoSource>, DiscoveryError> {
+        info!("Discovering YouTube series-level extras for: {}", title);
 
-        let queries = Self::build_series_search_queries(&series.title, series.year);
+        let queries = Self::build_series_search_queries(title, year);
         let mut all_sources = Vec::new();
 
         for (query, category) in queries {
-            match self
-                .search_youtube(&query, &series.title, category, None)
-                .await
-            {
+            match self.search_youtube(&query, title, category, None).await {
                 Ok(mut sources) => {
                     info!(
                         "Found {} YouTube videos for query: {}",
@@ -275,10 +273,10 @@ impl YoutubeSeriesDiscoverer {
         // Filter out videos that reference seasons not available on disk
         let before_count = all_sources.len();
         all_sources.retain(|extra| {
-            if title_matching::references_unavailable_season(&extra.title, &series.seasons) {
+            if title_matching::references_unavailable_season(&extra.title, seasons) {
                 debug!(
                     "Excluding '{}' - references season not on disk (available: {:?})",
-                    extra.title, series.seasons
+                    extra.title, seasons
                 );
                 false
             } else {
@@ -289,14 +287,14 @@ impl YoutubeSeriesDiscoverer {
         if filtered > 0 {
             info!(
                 "Filtered {} videos referencing unavailable seasons for {}",
-                filtered, series
+                filtered, title
             );
         }
 
         info!(
             "Discovered {} YouTube series-level sources for: {}",
             all_sources.len(),
-            series
+            title
         );
         Ok(all_sources)
     }
@@ -304,20 +302,22 @@ impl YoutubeSeriesDiscoverer {
     /// Discover season-specific YouTube extras
     pub async fn discover_season_extras(
         &self,
-        series: &SeriesEntry,
+        title: &str,
+        year: Option<u16>,
+        seasons: &[u8],
         season: u8,
-    ) -> Result<Vec<SeriesExtra>, DiscoveryError> {
+    ) -> Result<Vec<VideoSource>, DiscoveryError> {
         info!(
             "Discovering YouTube season-specific extras for: {} Season {}",
-            series, season
+            title, season
         );
 
-        let queries = Self::build_season_search_queries(&series.title, series.year, season);
+        let queries = Self::build_season_search_queries(title, year, season);
         let mut all_sources = Vec::new();
 
         for (query, category) in queries {
             match self
-                .search_youtube(&query, &series.title, category, Some(season))
+                .search_youtube(&query, title, category, Some(season))
                 .await
             {
                 Ok(mut sources) => {
@@ -339,10 +339,10 @@ impl YoutubeSeriesDiscoverer {
         // (YouTube search is fuzzy and may return results for other seasons)
         let before_count = all_sources.len();
         all_sources.retain(|extra| {
-            if title_matching::references_unavailable_season(&extra.title, &series.seasons) {
+            if title_matching::references_unavailable_season(&extra.title, seasons) {
                 debug!(
                     "Excluding '{}' - references season not on disk (available: {:?})",
-                    extra.title, series.seasons
+                    extra.title, seasons
                 );
                 false
             } else {
@@ -353,17 +353,32 @@ impl YoutubeSeriesDiscoverer {
         if filtered > 0 {
             info!(
                 "Filtered {} videos referencing unavailable seasons for {} Season {}",
-                filtered, series, season
+                filtered, title, season
             );
         }
 
         info!(
             "Discovered {} YouTube season-specific sources for: {} Season {}",
             all_sources.len(),
-            series,
+            title,
             season
         );
         Ok(all_sources)
+    }
+}
+
+impl CandidateSource for YoutubeSeriesDiscoverer {
+    async fn discover(&self, query: &DiscoveryQuery) -> Result<Vec<VideoSource>, DiscoveryError> {
+        match query.season {
+            Some(season) => {
+                self.discover_season_extras(&query.title, query.year, &query.seasons, season)
+                    .await
+            }
+            None => {
+                self.discover_series_extras(&query.title, query.year, &query.seasons)
+                    .await
+            }
+        }
     }
 }
 
@@ -398,7 +413,7 @@ mod tests {
 
             // Extract query strings and categories
             let query_strings: Vec<_> = queries.iter().map(|(q, _)| q.clone()).collect();
-            let categories: Vec<_> = queries.iter().map(|(_, c)| c.clone()).collect();
+            let categories: Vec<_> = queries.iter().map(|(_, c)| *c).collect();
 
             // Verify all queries contain the series title
             for query in &query_strings {

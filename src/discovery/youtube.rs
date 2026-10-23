@@ -1,10 +1,10 @@
 // YouTube content discoverer
 
 use crate::error::DiscoveryError;
-use crate::models::{ContentCategory, MovieEntry, SourceType, VideoSource};
+use crate::models::{ContentCategory, SourceType, VideoSource};
 use log::{debug, error, info};
 
-use super::ContentDiscoverer;
+use super::orchestrator::{CandidateSource, DiscoveryQuery};
 use super::retry_with_backoff;
 use super::title_matching;
 
@@ -230,18 +230,16 @@ impl YoutubeDiscoverer {
     /// Discover YouTube content for a movie
     async fn discover_youtube(
         &self,
-        movie: &MovieEntry,
+        title: &str,
+        year: u16,
     ) -> Result<Vec<VideoSource>, DiscoveryError> {
-        info!("Discovering YouTube content for: {}", movie);
+        info!("Discovering YouTube content for: {} ({})", title, year);
 
-        let queries = Self::build_search_queries(&movie.title, movie.year);
+        let queries = Self::build_search_queries(title, year);
         let mut all_sources = Vec::new();
 
         for (query, category) in queries {
-            match self
-                .search_youtube(&query, &movie.title, category, movie.year)
-                .await
-            {
+            match self.search_youtube(&query, title, category, year).await {
                 Ok(mut sources) => {
                     info!(
                         "Found {} YouTube videos for query: {}",
@@ -257,16 +255,18 @@ impl YoutubeDiscoverer {
         }
 
         info!(
-            "Discovered {} YouTube sources for: {}",
+            "Discovered {} YouTube sources for: {} ({})",
             all_sources.len(),
-            movie
+            title,
+            year
         );
         Ok(all_sources)
     }
 }
 
-impl ContentDiscoverer for YoutubeDiscoverer {
-    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
-        self.discover_youtube(movie).await
+impl CandidateSource for YoutubeDiscoverer {
+    async fn discover(&self, query: &DiscoveryQuery) -> Result<Vec<VideoSource>, DiscoveryError> {
+        self.discover_youtube(&query.title, query.year.unwrap_or(0))
+            .await
     }
 }

@@ -104,8 +104,8 @@ Extras organized into: `trailers/`, `behind the scenes/`, `deleted scenes/`, `fe
 
 | File | Description |
 |------|-------------|
-| `orchestrator.rs` | Coordinates all movie discoverers |
-| `series_orchestrator.rs` | Coordinates TV series discoverers + Season 0 specials flow |
+| `orchestrator.rs` | One `Discovery` module: query in, candidates + per-source report out; owns fan-out, dedupe, limits, KinoCheck fallback |
+| `specials.rs` | Season 0 specials: TVDB metadata + candidate selection |
 | `tmdb.rs` | TMDB `/movie/{id}/videos` (trailers, featurettes, BTS, deleted scenes, interviews) |
 | `series_tmdb.rs` | TMDB `/tv/{id}/videos` + season-specific videos |
 | `youtube.rs` | yt-dlp `--flat-playlist` YouTube search for movie extras |

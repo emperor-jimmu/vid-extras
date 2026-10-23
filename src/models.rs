@@ -207,7 +207,7 @@ pub fn all_sources() -> Vec<Source> {
 
 /// Type of content source
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SourceType {
     /// TheMovieDB API
     TMDB,
@@ -378,54 +378,6 @@ impl fmt::Display for SeriesEntry {
     }
 }
 
-/// Represents an extra video for a TV series
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SeriesExtra {
-    /// Series identifier (for caching and organization)
-    pub series_id: String,
-    /// Optional season number (None = series-level extra)
-    pub season_number: Option<u8>,
-    /// Content category
-    pub category: ContentCategory,
-    /// Title/description
-    pub title: String,
-    /// Video URL
-    pub url: String,
-    /// Source type (TMDB, YouTube, etc.)
-    pub source_type: SourceType,
-    /// Local path after download (optional)
-    pub local_path: Option<PathBuf>,
-    /// Duration in seconds, populated from API metadata where available
-    pub duration_secs: Option<u32>,
-}
-
-impl fmt::Display for SeriesExtra {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let season_str = self
-            .season_number
-            .map(|s| format!("S{:02}", s))
-            .unwrap_or_else(|| "Series".to_string());
-        write!(
-            f,
-            "{} - {} - {} ({})",
-            season_str, self.title, self.category, self.source_type
-        )
-    }
-}
-
-impl From<SeriesExtra> for VideoSource {
-    fn from(extra: SeriesExtra) -> Self {
-        VideoSource {
-            url: extra.url,
-            source_type: extra.source_type,
-            category: extra.category,
-            title: extra.title,
-            season_number: extra.season_number,
-            duration_secs: extra.duration_secs,
-        }
-    }
-}
-
 /// Represents a Season 0 special episode
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpecialEpisode {
@@ -510,42 +462,6 @@ mod tests {
             seasons: vec![1, 2, 3, 4, 5],
         };
         assert_eq!(entry.to_string(), "Breaking Bad");
-    }
-
-    #[test]
-    fn test_series_extra_display() {
-        let extra = SeriesExtra {
-            series_id: "bb".to_string(),
-            season_number: Some(1),
-            category: ContentCategory::BehindTheScenes,
-            title: "Making of Pilot".to_string(),
-            url: "https://example.com/video".to_string(),
-            source_type: SourceType::YouTube,
-            local_path: None,
-            duration_secs: None,
-        };
-        assert_eq!(
-            extra.to_string(),
-            "S01 - Making of Pilot - Behind the Scenes (YouTube)"
-        );
-    }
-
-    #[test]
-    fn test_series_extra_display_series_level() {
-        let extra = SeriesExtra {
-            series_id: "bb".to_string(),
-            season_number: None,
-            category: ContentCategory::Trailer,
-            title: "Series Trailer".to_string(),
-            url: "https://example.com/video".to_string(),
-            source_type: SourceType::TMDB,
-            local_path: None,
-            duration_secs: None,
-        };
-        assert_eq!(
-            extra.to_string(),
-            "Series - Series Trailer - Trailer (TMDB)"
-        );
     }
 
     #[test]
@@ -707,49 +623,6 @@ mod property_tests {
                 "Timestamp should be valid ISO 8601/RFC 3339 format: {}",
                 deserialized.finished_at
             );
-        }
-    }
-
-    // Feature: tv-series-extras, Property 4: SeriesExtra Serialization Round-Trip
-    // Validates: Requirements 2.6
-    proptest! {
-        #[test]
-        fn prop_series_extra_serialization_round_trip(
-            series_id in "[a-z0-9_]{1,20}",
-            season_number in proptest::option::of(1u8..=99u8),
-            title in "[a-zA-Z0-9 :',&!?.-]{1,100}",
-            url in "https://[a-z0-9.]{5,30}/[a-z0-9]{5,20}",
-            local_path_str in proptest::option::of("/tmp/[a-z0-9]{5,20}\\.mp4")
-        ) {
-            let category = ContentCategory::Featurette;
-            let source_type = SourceType::YouTube;
-            let local_path = local_path_str.map(PathBuf::from);
-
-            let extra = SeriesExtra {
-                series_id: series_id.clone(),
-                season_number,
-                category,
-                title: title.clone(),
-                url: url.clone(),
-                source_type,
-                local_path: local_path.clone(),
-                duration_secs: None,
-            };
-
-            // Serialize to JSON
-            let json = serde_json::to_string(&extra).unwrap();
-
-            // Deserialize from JSON
-            let deserialized: SeriesExtra = serde_json::from_str(&json).unwrap();
-
-            // Verify round-trip preserves all fields
-            prop_assert_eq!(&extra.series_id, &deserialized.series_id);
-            prop_assert_eq!(extra.season_number, deserialized.season_number);
-            prop_assert_eq!(extra.category, deserialized.category);
-            prop_assert_eq!(&extra.title, &deserialized.title);
-            prop_assert_eq!(&extra.url, &deserialized.url);
-            prop_assert_eq!(extra.source_type, deserialized.source_type);
-            prop_assert_eq!(&extra.local_path, &deserialized.local_path);
         }
     }
 }

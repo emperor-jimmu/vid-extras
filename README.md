@@ -705,7 +705,7 @@ src/
 │   ├── season_pack.rs - Season pack extraction
 │   ├── season_zero_import.rs - Season 0 import
 │   ├── series_cache.rs - Series metadata caching
-│   ├── series_orchestrator.rs - Series discovery orchestration
+│   ├── specials.rs - Season 0 specials via TVDB + candidate selection
 │   ├── series_tmdb.rs - Series TMDB discovery
 │   ├── series_youtube.rs - Series YouTube discovery
 │   ├── special_searcher.rs - Special content search

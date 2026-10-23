@@ -367,45 +367,6 @@ fn test_series_entry_data_model() {
 }
 
 #[test]
-fn test_series_extra_data_model() {
-    // Test SeriesExtra data model correctness
-    // Requirements: 2.1, 2.2, 2.3, 2.4, 2.6
-
-    use extras_fetcher::models::{ContentCategory, SeriesExtra, SourceType};
-    use std::path::PathBuf;
-
-    // Series-level extra (no season number)
-    let series_level = SeriesExtra {
-        series_id: "123".to_string(),
-        season_number: None,
-        category: ContentCategory::Trailer,
-        title: "Series Trailer".to_string(),
-        url: "https://example.com/trailer".to_string(),
-        source_type: SourceType::TMDB,
-        local_path: None,
-        duration_secs: None,
-    };
-
-    assert_eq!(series_level.season_number, None);
-    assert_eq!(series_level.category, ContentCategory::Trailer);
-
-    // Season-specific extra (with season number)
-    let season_specific = SeriesExtra {
-        series_id: "123".to_string(),
-        season_number: Some(1),
-        category: ContentCategory::BehindTheScenes,
-        title: "Season 1 Behind the Scenes".to_string(),
-        url: "https://example.com/bts".to_string(),
-        source_type: SourceType::YouTube,
-        local_path: Some(PathBuf::from("/test/bts.mp4")),
-        duration_secs: None,
-    };
-
-    assert_eq!(season_specific.season_number, Some(1));
-    assert_eq!(season_specific.category, ContentCategory::BehindTheScenes);
-}
-
-#[test]
 fn test_media_type_detection() {
     // Test media type detection for series vs movies
     // Requirements: 10.1, 10.2, 10.3

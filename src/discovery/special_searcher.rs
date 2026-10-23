@@ -400,7 +400,7 @@ mod property_tests {
 
             // Similarity should be between 0.0 and 1.0
             prop_assert!(
-                similarity >= 0.0 && similarity <= 1.0,
+                (0.0..=1.0).contains(&similarity),
                 "Similarity must be in range [0.0, 1.0], got: {}",
                 similarity
             );

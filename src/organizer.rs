@@ -1956,10 +1956,13 @@ mod property_tests {
                 }];
 
                 let organizer = SeriesOrganizer::new(series_path.clone(), vec![]);
-                organizer.organize_specials(&series_title, specials, &folder_name).await.unwrap();
+                organizer
+                    .organize_specials(&series_title, specials, folder_name)
+                    .await
+                    .unwrap();
 
                 // Requirement 7.1: File is placed in {series_folder}/{specials_folder_name}/
-                let specials_dir = series_path.join(&folder_name);
+                let specials_dir = series_path.join(folder_name);
                 prop_assert!(specials_dir.exists());
                 prop_assert!(specials_dir.is_dir());
 

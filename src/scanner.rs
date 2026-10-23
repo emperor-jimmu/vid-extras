@@ -51,7 +51,7 @@ impl Scanner {
         self.scan_directory(&self.root_dir, &mut movies)?;
 
         // Sort alphabetically by title
-        movies.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        movies.sort_by_key(|a| a.title.to_lowercase());
 
         Ok(movies)
     }
@@ -71,8 +71,8 @@ impl Scanner {
         self.scan_directory_all(&self.root_dir, &mut movies, &mut series)?;
 
         // Sort alphabetically by title
-        movies.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
-        series.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        movies.sort_by_key(|a| a.title.to_lowercase());
+        series.sort_by_key(|a| a.title.to_lowercase());
 
         Ok((movies, series))
     }

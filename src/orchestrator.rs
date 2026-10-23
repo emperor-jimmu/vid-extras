@@ -1,11 +1,13 @@
 // Orchestrator module - coordinates all processing phases
 
 use crate::converter::Converter;
-use crate::discovery::{DiscoveryOrchestrator, SeriesDiscoveryOrchestrator, SourceResult};
+use crate::discovery::{
+    Discovery, DiscoveryQuery, SourceResult, SpecialDiscovery, TvdbEpisodeExtended,
+};
 use crate::downloader::Downloader;
 use crate::error::OrchestratorError;
 use crate::models::{
-    ConversionResult, MovieEntry, ProcessingMode, SeriesEntry, SeriesExtra, Source, VideoSource,
+    ConversionResult, MovieEntry, ProcessingMode, SeriesEntry, Source, SourceType, VideoSource,
 };
 use crate::organizer::{Organizer, SeriesOrganizer};
 use crate::output;
@@ -20,7 +22,8 @@ use tokio::sync::Semaphore;
 
 /// Shared context for series processing, bundling dependencies passed between phases
 struct SeriesProcessingContext {
-    series_discovery: Arc<SeriesDiscoveryOrchestrator>,
+    discovery: Arc<Discovery>,
+    special_discovery: Arc<SpecialDiscovery>,
     downloader: Arc<Downloader>,
     converter: Arc<Converter>,
     temp_base: PathBuf,
@@ -28,17 +31,17 @@ struct SeriesProcessingContext {
     specials: bool,
     specials_folder: String,
     dry_run: bool,
-    active_sources: Vec<Source>,
+    sources: Vec<Source>,
 }
 
 /// Shared context for movie processing, bundling dependencies passed between phases
 struct MovieProcessingContext {
-    discovery: Arc<DiscoveryOrchestrator>,
+    discovery: Arc<Discovery>,
     downloader: Arc<Downloader>,
     converter: Arc<Converter>,
     temp_base: PathBuf,
     dry_run: bool,
-    library_movies: Arc<Vec<MovieEntry>>,
+    sources: Vec<Source>,
     tui: Option<Arc<TuiState>>,
     thread_id: usize,
 }
@@ -62,8 +65,8 @@ pub struct ProcessingSummary {
     pub total_downloads: usize,
     /// Total number of videos converted
     pub total_conversions: usize,
-    /// Per-source video counts (pre-dedup raw totals)
-    pub(crate) source_totals: HashMap<Source, usize>,
+    /// Per-source-type video counts (pre-dedup raw totals)
+    pub(crate) source_totals: HashMap<SourceType, usize>,
     /// Total videos discovered across all sources (pre-dedup raw total)
     pub(crate) total_videos_discovered: usize,
     /// Total duplicates removed by title+duration deduplication
@@ -315,8 +318,8 @@ pub struct OrchestratorConfig {
 /// Orchestrator coordinates all processing phases
 pub struct Orchestrator {
     scanner: Scanner,
-    discovery: Arc<DiscoveryOrchestrator>,
-    series_discovery: Arc<SeriesDiscoveryOrchestrator>,
+    discovery: Arc<Discovery>,
+    special_discovery: Arc<SpecialDiscovery>,
     downloader: Arc<Downloader>,
     converter: Arc<Converter>,
     temp_base: PathBuf,
@@ -368,55 +371,34 @@ impl Orchestrator {
             info!("  Dry run: enabled (discovery only)");
         }
 
-        // Shared KinoCheck request counter — tracks API usage across both pipelines
+        // Shared KinoCheck request counter — tracks API usage across the run
         let kinocheck_counter = Arc::new(AtomicU32::new(0));
 
-        // Build series discovery — consumes tvdb_api_key, clones tmdb_api_key
-        let series_discovery =
-            if let (true, Some(tvdb_key)) = (config.series.specials, config.tvdb_api_key) {
-                let cache_dir = config.root_dir.join(".cache").join("tvdb_ids");
-                info!("  TVDB support enabled for Season 0 specials");
-                let mut orch = SeriesDiscoveryOrchestrator::new_with_tvdb(
-                    config.tmdb_api_key.clone(),
-                    tvdb_key,
-                    config.discovery.sources.clone(),
-                    cache_dir,
-                    config.discovery.vimeo_access_token.clone(),
-                );
-                if let Some(ref browser) = config.discovery.cookies_from_browser {
-                    orch = orch.with_cookies(browser.clone());
-                }
-                Arc::new(orch)
-            } else {
-                let mut orch = SeriesDiscoveryOrchestrator::new(
-                    config.tmdb_api_key.clone(),
-                    config.discovery.sources.clone(),
-                    config.discovery.vimeo_access_token.clone(),
-                );
-                if let Some(ref browser) = config.discovery.cookies_from_browser {
-                    orch = orch.with_cookies(browser.clone());
-                }
-                Arc::new(orch)
-            };
+        let discovery = Discovery::new(crate::discovery::DiscoveryConfig {
+            tmdb_api_key: config.tmdb_api_key.clone(),
+            vimeo_access_token: config.discovery.vimeo_access_token.clone(),
+            cookies_from_browser: config.discovery.cookies_from_browser.clone(),
+            kinocheck_request_count: kinocheck_counter,
+        });
 
-        // Build movie discovery — clones tmdb_api_key (last clone before move)
-        let discovery = match &config.discovery.cookies_from_browser {
-            Some(browser) => DiscoveryOrchestrator::with_cookies(
-                config.tmdb_api_key.clone(),
-                config.discovery.sources.clone(),
-                browser.clone(),
-                kinocheck_counter.clone(),
-                config.discovery.vimeo_access_token.clone(),
-            ),
-            None => DiscoveryOrchestrator::new(
-                config.tmdb_api_key,
-                config.discovery.sources.clone(),
-                kinocheck_counter,
-                config.discovery.vimeo_access_token,
-            ),
+        // Season 0 specials are their own module, outside the discovery seam.
+        if config.series.specials && config.tvdb_api_key.is_some() {
+            info!("  TVDB support enabled for Season 0 specials");
+        }
+        let tvdb_api_key = if config.series.specials {
+            config.tvdb_api_key
+        } else {
+            None
         };
+        let specials_cache_dir = config.root_dir.join(".cache").join("tvdb_ids");
+        let special_discovery = SpecialDiscovery::new(
+            config.tmdb_api_key,
+            tvdb_api_key,
+            specials_cache_dir,
+            config.discovery.cookies_from_browser.clone(),
+        );
 
-        // Build downloader — consumes cookies_from_browser
+        // Build downloader — clones cookies_from_browser before the config is consumed
         let downloader = match config.discovery.cookies_from_browser {
             Some(browser) => Downloader::with_cookies(temp_base.clone(), browser),
             None => Downloader::new(temp_base.clone()),
@@ -425,7 +407,7 @@ impl Orchestrator {
         Ok(Self {
             scanner: Scanner::new(config.root_dir, config.force, config.single),
             discovery: Arc::new(discovery),
-            series_discovery,
+            special_discovery: Arc::new(special_discovery),
             downloader: Arc::new(downloader),
             converter: Arc::new(Converter::new()),
             temp_base,
@@ -480,7 +462,10 @@ impl Orchestrator {
         let total_items = movie_count + series_count;
         if let Some(ref tui_state) = tui {
             tui_state.set_total_items(total_items);
-            tui_state.set_system_status(&format!("Found {} movies, {} series", movie_count, series_count));
+            tui_state.set_system_status(&format!(
+                "Found {} movies, {} series",
+                movie_count, series_count
+            ));
         }
 
         let mut summary = ProcessingSummary::new();
@@ -492,11 +477,10 @@ impl Orchestrator {
             if let Some(ref tui_state) = tui {
                 tui_state.set_system_status(&format!("Processing {} movies...", movie_count));
             }
-            let library = Arc::new(movies.clone());
             let results = if self.concurrency > 1 {
-                self.process_movies_parallel(movies, library, tui.clone()).await
+                self.process_movies_parallel(movies, tui.clone()).await
             } else {
-                self.process_movies_sequential(movies, library, tui.clone()).await
+                self.process_movies_sequential(movies, tui.clone()).await
             };
 
             for result in results {
@@ -557,7 +541,6 @@ impl Orchestrator {
     async fn process_movies_sequential(
         &self,
         movies: Vec<MovieEntry>,
-        library: Arc<Vec<MovieEntry>>,
         tui: Option<Arc<TuiState>>,
     ) -> Vec<MovieResult> {
         let total = movies.len();
@@ -567,7 +550,7 @@ impl Orchestrator {
                 tui_state.set_current_item(&format!("{}", movie));
             }
             output::display_movie_start(&movie, idx + 1, total);
-            let result = self.process_movie(movie, library.clone()).await;
+            let result = self.process_movie(movie).await;
             results.push(result);
             if let Some(ref tui_state) = tui {
                 tui_state.increment_processed();
@@ -579,7 +562,6 @@ impl Orchestrator {
     async fn process_movies_parallel(
         &self,
         movies: Vec<MovieEntry>,
-        library: Arc<Vec<MovieEntry>>,
         tui: Option<Arc<TuiState>>,
     ) -> Vec<MovieResult> {
         let semaphore = Arc::new(Semaphore::new(self.concurrency));
@@ -600,7 +582,7 @@ impl Orchestrator {
                 converter: self.converter.clone(),
                 temp_base: self.temp_base.clone(),
                 dry_run: self.dry_run,
-                library_movies: library.clone(),
+                sources: self.sources.clone(),
                 tui: tui.clone(),
                 thread_id: 0,
             };
@@ -619,10 +601,18 @@ impl Orchestrator {
                 if let Some(ref tui_state) = tui {
                     tui_state.increment_processed();
                     if result.success {
-                        tui_state.log(thread_id, &format!("✓ Done: {} ({} dl, {} conv)",
-                            result.movie, result.downloads, result.conversions));
+                        tui_state.log(
+                            thread_id,
+                            &format!(
+                                "✓ Done: {} ({} dl, {} conv)",
+                                result.movie, result.downloads, result.conversions
+                            ),
+                        );
                     } else {
-                        let err = result.error.clone().unwrap_or_else(|| "unknown".to_string());
+                        let err = result
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| "unknown".to_string());
                         tui_state.log(thread_id, &format!("✗ Failed: {} — {}", result.movie, err));
                     }
                 }
@@ -640,14 +630,14 @@ impl Orchestrator {
         results
     }
 
-    async fn process_movie(&self, movie: MovieEntry, library: Arc<Vec<MovieEntry>>) -> MovieResult {
+    async fn process_movie(&self, movie: MovieEntry) -> MovieResult {
         let ctx = MovieProcessingContext {
             discovery: self.discovery.clone(),
             downloader: self.downloader.clone(),
             converter: self.converter.clone(),
             temp_base: self.temp_base.clone(),
             dry_run: self.dry_run,
-            library_movies: library,
+            sources: self.sources.clone(),
             tui: None,
             thread_id: 0,
         };
@@ -669,10 +659,11 @@ impl Orchestrator {
         if let Some(ref tui) = ctx.tui {
             tui.log(ctx.thread_id, "  🔍 Discovering...");
         }
-        let (sources, source_results, dedup_removed) = ctx
-            .discovery
-            .discover_all(&movie, &ctx.library_movies)
-            .await;
+        let query = DiscoveryQuery::movie(&movie, ctx.sources.clone());
+        let report = ctx.discovery.discover(std::slice::from_ref(&query)).await;
+        let sources = report.candidates;
+        let source_results = report.source_results;
+        let dedup_removed = report.duplicates_removed;
 
         if let Some(ref tui) = ctx.tui {
             tui.log(ctx.thread_id, &format!("  Found {} sources", sources.len()));
@@ -680,8 +671,12 @@ impl Orchestrator {
 
         // Dry-run: display results and return early — no file I/O (AC3/NFR5)
         if ctx.dry_run {
-            let total = source_results.iter().map(|sr| sr.videos_found).sum();
-            output::display_dry_run_movie_results(&movie, &source_results, total, dedup_removed);
+            output::display_dry_run_movie_results(
+                &movie,
+                &source_results,
+                sources.len(),
+                dedup_removed,
+            );
             return MovieResult::success_with_dedup(movie, 0, 0, source_results, dedup_removed);
         }
 
@@ -699,7 +694,10 @@ impl Orchestrator {
         }
         info!("Found {} sources for {}", sources.len(), movie);
         if let Some(ref tui) = ctx.tui {
-            tui.log(ctx.thread_id, &format!("  ✓ Found {} sources", sources.len()));
+            tui.log(
+                ctx.thread_id,
+                &format!("  ✓ Found {} sources", sources.len()),
+            );
         }
 
         // Phase 3: Download
@@ -709,7 +707,10 @@ impl Orchestrator {
             movie
         );
         if let Some(ref tui) = ctx.tui {
-            tui.log(ctx.thread_id, &format!("  ↓ Downloading {} videos...", sources.len()));
+            tui.log(
+                ctx.thread_id,
+                &format!("  ↓ Downloading {} videos...", sources.len()),
+            );
         }
         let downloads = ctx.downloader.download_all(&movie_id, sources).await;
         let successful_downloads = downloads.iter().filter(|d| d.success).count();
@@ -721,9 +722,18 @@ impl Orchestrator {
         );
         if let Some(ref tui) = ctx.tui {
             if successful_downloads > 0 {
-                tui.log(ctx.thread_id, &format!("  ✓ Downloaded {}/{}", successful_downloads, downloads.len()));
+                tui.log(
+                    ctx.thread_id,
+                    &format!(
+                        "  ✓ Downloaded {}/{}",
+                        successful_downloads,
+                        downloads.len()
+                    ),
+                );
                 for d in downloads.iter().filter(|d| d.success) {
-                    let name = d.local_path.file_name()
+                    let name = d
+                        .local_path
+                        .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| "unknown".to_string());
                     tui.log(ctx.thread_id, &format!("    → {}", name));
@@ -751,7 +761,10 @@ impl Orchestrator {
             successful_downloads, movie
         );
         if let Some(ref tui) = ctx.tui {
-            tui.log(ctx.thread_id, &format!("  ⇄ Converting {} videos...", successful_downloads));
+            tui.log(
+                ctx.thread_id,
+                &format!("  ⇄ Converting {} videos...", successful_downloads),
+            );
         }
         let conversions = ctx.converter.convert_batch(downloads).await;
         let successful_conversions = conversions.iter().filter(|c| c.success).count();
@@ -763,7 +776,14 @@ impl Orchestrator {
         );
         if let Some(ref tui) = ctx.tui {
             if successful_conversions > 0 {
-                tui.log(ctx.thread_id, &format!("  ✓ Converted {}/{}", successful_conversions, conversions.len()));
+                tui.log(
+                    ctx.thread_id,
+                    &format!(
+                        "  ✓ Converted {}/{}",
+                        successful_conversions,
+                        conversions.len()
+                    ),
+                );
             } else {
                 tui.log(ctx.thread_id, "  ✗ No conversions");
             }
@@ -841,7 +861,8 @@ impl Orchestrator {
 
         for series in series_list {
             let sem = semaphore.clone();
-            let series_discovery = self.series_discovery.clone();
+            let discovery = self.discovery.clone();
+            let special_discovery = self.special_discovery.clone();
             let downloader = self.downloader.clone();
             let converter = self.converter.clone();
             let temp_base = self.temp_base.clone();
@@ -853,7 +874,8 @@ impl Orchestrator {
             let tui = tui.clone();
 
             let ctx = SeriesProcessingContext {
-                series_discovery,
+                discovery,
+                special_discovery,
                 downloader,
                 converter,
                 temp_base,
@@ -861,7 +883,7 @@ impl Orchestrator {
                 specials,
                 specials_folder,
                 dry_run: self.dry_run,
-                active_sources: self.sources.clone(),
+                sources: self.sources.clone(),
             };
 
             let task = tokio::spawn(async move {
@@ -880,10 +902,18 @@ impl Orchestrator {
                     tui_state.remove_active_item(&series_name);
                     tui_state.increment_processed();
                     if result.success {
-                        tui_state.log(thread_id, &format!("✓ Done: {} ({} dl, {} conv)",
-                            result.series, result.downloads, result.conversions));
+                        tui_state.log(
+                            thread_id,
+                            &format!(
+                                "✓ Done: {} ({} dl, {} conv)",
+                                result.series, result.downloads, result.conversions
+                            ),
+                        );
                     } else {
-                        let err = result.error.clone().unwrap_or_else(|| "unknown".to_string());
+                        let err = result
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| "unknown".to_string());
                         tui_state.log(thread_id, &format!("✗ Failed: {} — {}", result.series, err));
                     }
                 }
@@ -903,7 +933,8 @@ impl Orchestrator {
 
     async fn process_series(&self, series: SeriesEntry) -> SeriesResult {
         let ctx = SeriesProcessingContext {
-            series_discovery: self.series_discovery.clone(),
+            discovery: self.discovery.clone(),
+            special_discovery: self.special_discovery.clone(),
             downloader: self.downloader.clone(),
             converter: self.converter.clone(),
             temp_base: self.temp_base.clone(),
@@ -911,7 +942,7 @@ impl Orchestrator {
             specials: self.specials,
             specials_folder: self.specials_folder.clone(),
             dry_run: self.dry_run,
-            active_sources: self.sources.clone(),
+            sources: self.sources.clone(),
         };
         Self::process_series_standalone(series, ctx).await
     }
@@ -931,18 +962,19 @@ impl Orchestrator {
         );
 
         // Phase 2: Discovery
-        let (
-            all_extras,
-            season_zero_extras,
-            tvdb_episodes_metadata,
-            series_source_results,
-            dedup_removed,
-        ) = discover_series_content(
+        let SeriesDiscoveryOutcome {
+            extras: all_extras,
+            season_zero: season_zero_extras,
+            tvdb_episodes: tvdb_episodes_metadata,
+            source_results: series_source_results,
+            duplicates_removed: dedup_removed,
+        } = discover_series_content(
             &series,
-            &ctx.series_discovery,
+            &ctx.discovery,
+            &ctx.special_discovery,
             ctx.season_extras,
             ctx.specials,
-            &ctx.active_sources,
+            &ctx.sources,
         )
         .await;
 
@@ -1131,154 +1163,64 @@ async fn write_done_marker(path: &std::path::Path, label: &str) {
     }
 }
 
+/// Everything the series discovery stage produces.
+struct SeriesDiscoveryOutcome {
+    extras: Vec<VideoSource>,
+    season_zero: Vec<VideoSource>,
+    tvdb_episodes: Vec<TvdbEpisodeExtended>,
+    source_results: Vec<SourceResult>,
+    duplicates_removed: usize,
+}
+
 /// Discover all content for a series: regular extras, season extras, and Season 0 specials.
-/// Returns (regular_extras, season_zero_extras, tvdb_episode_metadata, source_results, duplicates_removed).
 async fn discover_series_content(
     series: &SeriesEntry,
-    series_discovery: &SeriesDiscoveryOrchestrator,
+    discovery: &Discovery,
+    special_discovery: &SpecialDiscovery,
     season_extras_enabled: bool,
     specials_enabled: bool,
-    active_sources: &[crate::models::Source],
-) -> (
-    Vec<SeriesExtra>,
-    Vec<SeriesExtra>,
-    Vec<crate::discovery::TvdbEpisodeExtended>,
-    Vec<crate::discovery::SourceResult>,
-    usize,
-) {
+    sources: &[Source],
+) -> SeriesDiscoveryOutcome {
     info!("Phase 2: Discovering content for {}", series);
     info!(
         "Discovery flags: season_extras={}, specials={}",
         season_extras_enabled, specials_enabled
     );
 
-    // Stage 1: Series-level extras (always)
-    let (mut all_extras, series_source_results) = series_discovery.discover_all(series).await;
-    let series_level_count = all_extras.len();
-    info!(
-        "Series-level discovery: found {} extras",
-        series_level_count
-    );
-
-    // Stage 2: Season-specific extras (if enabled)
-    let mut season_specific_count = 0;
+    // One discover call for the series and all its seasons, so duplicates that
+    // appear in both scopes are removed once over the union.
+    let base_query = DiscoveryQuery::series(series, sources.to_vec());
+    let mut queries = vec![base_query.clone()];
     if season_extras_enabled {
         for &season in &series.seasons {
-            let (extras, _season_source_results) = series_discovery
-                .discover_season_extras(series, season)
-                .await;
-            info!(
-                "Found {} season {} extras for {}",
-                extras.len(),
-                season,
-                series
-            );
-            season_specific_count += extras.len();
-            all_extras.extend(extras);
+            queries.push(base_query.for_season(season));
         }
     }
 
-    // Stage 3: Season 0 specials (if enabled)
-    let (season_zero_extras, tvdb_episodes) = if specials_enabled {
-        discover_season_zero_specials(series, series_discovery).await
+    let report = discovery.discover(&queries).await;
+
+    // Season 0 specials are selected from TVDB metadata, not from source queries.
+    let (season_zero, tvdb_episodes) = if specials_enabled {
+        info!("Discovering Season 0 specials for {}", series);
+        special_discovery.select(series).await
     } else {
         (Vec::new(), Vec::new())
     };
 
-    // Title+duration deduplication — runs before URL dedup.
-    // Season 0 specials (season_zero_extras) are excluded — they use per-episode candidate scoring.
-    let (mut all_extras, title_dedup_removed) =
-        crate::deduplication::deduplicate_series(all_extras, active_sources);
-    if title_dedup_removed > 0 {
-        info!(
-            "Removed {} title+duration duplicates for {}",
-            title_dedup_removed, series
-        );
-    }
-
-    // Deduplicate regular extras by URL — safety net after title+duration dedup
-    let before_dedup = all_extras.len();
-    let mut seen_urls = std::collections::HashSet::new();
-    all_extras.retain(|extra| seen_urls.insert(extra.url.clone()));
-    let deduped = before_dedup - all_extras.len();
-    if deduped > 0 {
-        info!("Deduplicated {} duplicate URLs for {}", deduped, series);
-    }
-
     info!(
-        "Discovery summary for {}: {} series-level, {} season-specific, {} specials",
+        "Discovery summary for {}: {} extras, {} specials",
         series,
-        series_level_count,
-        season_specific_count,
-        season_zero_extras.len()
+        report.candidates.len(),
+        season_zero.len()
     );
 
-    (
-        all_extras,
-        season_zero_extras,
+    SeriesDiscoveryOutcome {
+        extras: report.candidates,
+        season_zero,
         tvdb_episodes,
-        series_source_results,
-        title_dedup_removed,
-    )
-}
-
-/// Discover Season 0 specials via TVDB candidate selection.
-/// Returns (extras_to_download, matched_tvdb_episodes).
-async fn discover_season_zero_specials(
-    series: &SeriesEntry,
-    series_discovery: &SeriesDiscoveryOrchestrator,
-) -> (Vec<SeriesExtra>, Vec<crate::discovery::TvdbEpisodeExtended>) {
-    info!("Discovering Season 0 specials for {}", series);
-    let (_raw_extras, episodes) = series_discovery
-        .discover_season_zero_with_metadata(series)
-        .await;
-
-    if episodes.is_empty() {
-        info!("No monitored Season 0 episodes for {}", series);
-        return (Vec::new(), Vec::new());
+        source_results: report.source_results,
+        duplicates_removed: report.duplicates_removed,
     }
-
-    info!(
-        "Selecting best candidates for {} Season 0 episodes of {}",
-        episodes.len(),
-        series
-    );
-    let selections = crate::discovery::SpecialValidator::select_best_candidates(
-        &series.title,
-        &episodes,
-        series_discovery.cookies_from_browser.as_deref(),
-    )
-    .await;
-
-    let mut extras = Vec::new();
-    let mut matched_episodes = Vec::new();
-
-    for (selection, episode) in selections.into_iter().zip(episodes.into_iter()) {
-        if let Some(selected) = selection {
-            extras.push(SeriesExtra {
-                series_id: format!(
-                    "{}_{}",
-                    series.title.replace(' ', "_"),
-                    series.year.unwrap_or(0)
-                ),
-                season_number: Some(0),
-                category: crate::models::ContentCategory::Featurette,
-                title: format!("S00E{:02} - {}", episode.number, episode.name),
-                url: selected.url,
-                source_type: crate::models::SourceType::TheTVDB,
-                local_path: None,
-                duration_secs: None,
-            });
-            matched_episodes.push(episode);
-        }
-    }
-
-    info!(
-        "Found {} valid Season 0 specials for {}",
-        extras.len(),
-        series
-    );
-    (extras, matched_episodes)
 }
 
 /// Download and convert both regular extras and Season 0 specials.
@@ -1286,8 +1228,8 @@ async fn discover_season_zero_specials(
 async fn download_and_convert_series(
     series: &SeriesEntry,
     series_id: &str,
-    all_extras: Vec<SeriesExtra>,
-    season_zero_extras: &[SeriesExtra],
+    all_extras: Vec<VideoSource>,
+    season_zero_extras: &[VideoSource],
     downloader: &Downloader,
     converter: &Converter,
     temp_base: &std::path::Path,
@@ -1298,8 +1240,7 @@ async fn download_and_convert_series(
         all_extras.len(),
         series
     );
-    let video_sources: Vec<VideoSource> = all_extras.into_iter().map(|e| e.into()).collect();
-    let downloads = downloader.download_all(series_id, video_sources).await;
+    let downloads = downloader.download_all(series_id, all_extras).await;
     let successful_downloads = downloads.iter().filter(|d| d.success).count();
     info!(
         "Downloaded {}/{} regular extras for {}",
@@ -1315,11 +1256,9 @@ async fn download_and_convert_series(
             season_zero_extras.len(),
             series
         );
-        let sources: Vec<VideoSource> = season_zero_extras
-            .iter()
-            .map(|e| e.clone().into())
-            .collect();
-        downloader.download_all(series_id, sources).await
+        downloader
+            .download_all(series_id, season_zero_extras.to_vec())
+            .await
     } else {
         Vec::new()
     };
@@ -1368,8 +1307,8 @@ async fn download_and_convert_series(
 
 /// Context for organizing Season 0 specials
 struct SpecialsOrganizationContext<'a> {
-    tvdb_episodes_metadata: &'a [crate::discovery::TvdbEpisodeExtended],
-    season_zero_extras: &'a [SeriesExtra],
+    tvdb_episodes_metadata: &'a [TvdbEpisodeExtended],
+    season_zero_extras: &'a [VideoSource],
     specials_folder: &'a str,
 }
 
@@ -2122,40 +2061,40 @@ mod tests {
         // First batch: TMDB 5, YouTube 3
         let batch1 = vec![
             SourceResult {
-                source: Source::Tmdb,
+                source: SourceType::TMDB,
                 videos_found: 5,
                 error: None,
             },
             SourceResult {
-                source: Source::Youtube,
+                source: SourceType::YouTube,
                 videos_found: 3,
                 error: None,
             },
         ];
         summary.add_source_results(&batch1);
 
-        assert_eq!(summary.source_totals[&Source::Tmdb], 5);
-        assert_eq!(summary.source_totals[&Source::Youtube], 3);
+        assert_eq!(summary.source_totals[&SourceType::TMDB], 5);
+        assert_eq!(summary.source_totals[&SourceType::YouTube], 3);
         assert_eq!(summary.total_videos_discovered, 8);
 
         // Second batch: TMDB 2, Archive 4 — TMDB should accumulate
         let batch2 = vec![
             SourceResult {
-                source: Source::Tmdb,
+                source: SourceType::TMDB,
                 videos_found: 2,
                 error: None,
             },
             SourceResult {
-                source: Source::Archive,
+                source: SourceType::ArchiveOrg,
                 videos_found: 4,
                 error: None,
             },
         ];
         summary.add_source_results(&batch2);
 
-        assert_eq!(summary.source_totals[&Source::Tmdb], 7);
-        assert_eq!(summary.source_totals[&Source::Youtube], 3);
-        assert_eq!(summary.source_totals[&Source::Archive], 4);
+        assert_eq!(summary.source_totals[&SourceType::TMDB], 7);
+        assert_eq!(summary.source_totals[&SourceType::YouTube], 3);
+        assert_eq!(summary.source_totals[&SourceType::ArchiveOrg], 4);
         assert_eq!(summary.total_videos_discovered, 14);
     }
 
@@ -2177,12 +2116,12 @@ mod tests {
             2,
             vec![
                 SourceResult {
-                    source: Source::Tmdb,
+                    source: SourceType::TMDB,
                     videos_found: 5,
                     error: None,
                 },
                 SourceResult {
-                    source: Source::Youtube,
+                    source: SourceType::YouTube,
                     videos_found: 8,
                     error: None,
                 },
@@ -2192,8 +2131,8 @@ mod tests {
         summary.add_movie_result(&result);
 
         assert_eq!(summary.successful_movies, 1);
-        assert_eq!(summary.source_totals[&Source::Tmdb], 5);
-        assert_eq!(summary.source_totals[&Source::Youtube], 8);
+        assert_eq!(summary.source_totals[&SourceType::TMDB], 5);
+        assert_eq!(summary.source_totals[&SourceType::YouTube], 8);
         assert_eq!(summary.total_videos_discovered, 13);
     }
 
@@ -2215,7 +2154,7 @@ mod tests {
             4,
             3,
             vec![SourceResult {
-                source: Source::Tmdb,
+                source: SourceType::TMDB,
                 videos_found: 6,
                 error: None,
             }],
@@ -2224,7 +2163,7 @@ mod tests {
         summary.add_series_result(&result);
 
         assert_eq!(summary.successful_series, 1);
-        assert_eq!(summary.source_totals[&Source::Tmdb], 6);
+        assert_eq!(summary.source_totals[&SourceType::TMDB], 6);
         assert_eq!(summary.total_videos_discovered, 6);
     }
 

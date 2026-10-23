@@ -1,11 +1,11 @@
 // TMDB content discoverer
 
 use crate::error::DiscoveryError;
-use crate::models::{ContentCategory, MovieEntry, SourceType, VideoSource};
+use crate::models::{ContentCategory, SourceType, VideoSource};
 use log::{debug, error, info};
 use serde::Deserialize;
 
-use super::ContentDiscoverer;
+use super::orchestrator::{CandidateSource, DiscoveryQuery};
 
 /// TMDB API response for movie search
 #[derive(Debug, Deserialize)]
@@ -72,9 +72,9 @@ impl TmdbDiscoverer {
                 .send()
                 .await
                 .map_err(|e| {
-                error!("TMDB search request failed: {}", e);
-                DiscoveryError::NetworkError(e)
-            })
+                    error!("TMDB search request failed: {}", e);
+                    DiscoveryError::NetworkError(e)
+                })
         })
         .await?;
 
@@ -103,10 +103,7 @@ impl TmdbDiscoverer {
 
     /// Fetch videos for a movie by ID
     async fn fetch_videos(&self, movie_id: u64) -> Result<Vec<TmdbVideo>, DiscoveryError> {
-        let url = format!(
-            "https://api.themoviedb.org/3/movie/{}/videos",
-            movie_id
-        );
+        let url = format!("https://api.themoviedb.org/3/movie/{}/videos", movie_id);
 
         debug!("Fetching TMDB videos for movie ID: {}", movie_id);
 
@@ -117,9 +114,9 @@ impl TmdbDiscoverer {
                 .send()
                 .await
                 .map_err(|e| {
-                error!("TMDB videos request failed: {}", e);
-                DiscoveryError::NetworkError(e)
-            })
+                    error!("TMDB videos request failed: {}", e);
+                    DiscoveryError::NetworkError(e)
+                })
         })
         .await?;
 
@@ -162,18 +159,19 @@ impl TmdbDiscoverer {
     /// Discover TMDB content for a movie, returning sources and the TMDB movie ID.
     pub async fn discover_for_movie(
         &self,
-        movie: &MovieEntry,
+        title: &str,
+        year: u16,
     ) -> Result<(Vec<VideoSource>, Option<u64>), DiscoveryError> {
-        info!("Discovering TMDB content for: {}", movie);
+        info!("Discovering TMDB content for: {} ({})", title, year);
 
-        let movie_id = match self.search_movie(&movie.title, movie.year).await {
+        let movie_id = match self.search_movie(title, year).await {
             Ok(Some(id)) => id,
             Ok(None) => {
-                info!("No TMDB match found for: {}", movie);
+                info!("No TMDB match found for: {} ({})", title, year);
                 return Ok((Vec::new(), None));
             }
             Err(e) => {
-                error!("TMDB search failed for {}: {}", movie, e);
+                error!("TMDB search failed for {}: {}", title, e);
                 return Err(e);
             }
         };
@@ -181,7 +179,7 @@ impl TmdbDiscoverer {
         let videos = match self.fetch_videos(movie_id).await {
             Ok(v) => v,
             Err(e) => {
-                error!("Failed to fetch TMDB videos for {}: {}", movie, e);
+                error!("Failed to fetch TMDB videos for {}: {}", title, e);
                 return Err(e);
             }
         };
@@ -201,14 +199,16 @@ impl TmdbDiscoverer {
             })
             .collect();
 
-        info!("Discovered {} TMDB sources for: {}", sources.len(), movie);
+        info!("Discovered {} TMDB sources for: {}", sources.len(), title);
         Ok((sources, Some(movie_id)))
     }
 }
 
-impl ContentDiscoverer for TmdbDiscoverer {
-    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
-        let (sources, _movie_id) = self.discover_for_movie(movie).await?;
+impl CandidateSource for TmdbDiscoverer {
+    async fn discover(&self, query: &DiscoveryQuery) -> Result<Vec<VideoSource>, DiscoveryError> {
+        let (sources, _movie_id) = self
+            .discover_for_movie(&query.title, query.year.unwrap_or(0))
+            .await?;
         Ok(sources)
     }
 }

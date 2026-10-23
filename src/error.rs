@@ -227,14 +227,14 @@ mod tests {
 
     #[test]
     fn test_error_propagation_io_to_series_scan() {
-        let io_error = std::io::Error::new(std::io::ErrorKind::Other, "disk error");
+        let io_error = std::io::Error::other("disk error");
         let series_error: SeriesScanError = io_error.into();
         assert!(series_error.to_string().contains("IO error"));
     }
 
     #[test]
     fn test_error_propagation_io_to_series_organizer() {
-        let io_error = std::io::Error::new(std::io::ErrorKind::Other, "disk error");
+        let io_error = std::io::Error::other("disk error");
         let organizer_error: SeriesOrganizerError = io_error.into();
         assert!(organizer_error.to_string().contains("IO error"));
     }
@@ -282,16 +282,11 @@ mod tests {
     #[test]
     fn test_partial_success_scenario() {
         // Simulate partial success: some operations succeed, some fail
-        let mut results = Vec::new();
-
-        // Success case
-        results.push(Ok::<(), SeriesOrganizerError>(()));
-
-        // Failure case
-        results.push(Err(SeriesOrganizerError::InvalidSeason(100)));
-
-        // Success case
-        results.push(Ok::<(), SeriesOrganizerError>(()));
+        let results = [
+            Ok::<(), SeriesOrganizerError>(()),
+            Err(SeriesOrganizerError::InvalidSeason(100)),
+            Ok::<(), SeriesOrganizerError>(()),
+        ];
 
         // Count successes and failures
         let successes = results.iter().filter(|r| r.is_ok()).count();

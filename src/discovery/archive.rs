@@ -1,11 +1,11 @@
 // Archive.org content discoverer
 
 use crate::error::DiscoveryError;
-use crate::models::{ContentCategory, MovieEntry, SourceType, VideoSource};
+use crate::models::{ContentCategory, SourceType, VideoSource};
 use log::{debug, error, info};
 use serde::Deserialize;
 
-use super::ContentDiscoverer;
+use super::orchestrator::{CandidateSource, DiscoveryQuery};
 
 /// Deserializes a field that may be a single string or an array of strings.
 /// Archive.org's API is inconsistent — fields like `subject` and `collection`
@@ -347,54 +347,56 @@ impl ArchiveOrgDiscoverer {
     }
 }
 
-impl ContentDiscoverer for ArchiveOrgDiscoverer {
-    async fn discover(&self, movie: &MovieEntry) -> Result<Vec<VideoSource>, DiscoveryError> {
-        info!("Discovering Archive.org content for: {}", movie);
+impl CandidateSource for ArchiveOrgDiscoverer {
+    async fn discover(&self, query: &DiscoveryQuery) -> Result<Vec<VideoSource>, DiscoveryError> {
+        let title = &query.title;
+        let year = query.year.unwrap_or(0);
+        info!("Discovering Archive.org content for: {} ({})", title, year);
 
         let mut all_docs = Vec::new();
 
         // Search general Archive.org collection for all movies
-        match self.search_general(&movie.title, movie.year).await {
+        match self.search_general(title, year).await {
             Ok(docs) => {
                 info!(
                     "Found {} results from Archive.org general for {}",
                     docs.len(),
-                    movie
+                    title
                 );
                 all_docs.extend(docs);
             }
             Err(e) => {
-                info!("Archive.org general search failed for {}: {}", movie, e);
+                info!("Archive.org general search failed for {}: {}", title, e);
             }
         }
 
         // Search Archive.org for making-of content (all movies)
-        match self.search_making_of(&movie.title).await {
+        match self.search_making_of(title).await {
             Ok(docs) => {
                 info!(
                     "Found {} results from Archive.org making-of for {}",
                     docs.len(),
-                    movie
+                    title
                 );
                 all_docs.extend(docs);
             }
             Err(e) => {
-                info!("Archive.org making-of search failed for {}: {}", movie, e);
+                info!("Archive.org making-of search failed for {}: {}", title, e);
             }
         }
 
         // Search DVDXtras collection for all movies (EPK content from DVD releases)
-        match self.search_dvdxtras(&movie.title).await {
+        match self.search_dvdxtras(title).await {
             Ok(docs) => {
                 info!(
                     "Found {} results from Archive.org DVDXtras for {}",
                     docs.len(),
-                    movie
+                    title
                 );
                 all_docs.extend(docs);
             }
             Err(e) => {
-                info!("Archive.org DVDXtras search failed for {}: {}", movie, e);
+                info!("Archive.org DVDXtras search failed for {}: {}", title, e);
             }
         }
 
@@ -411,7 +413,7 @@ impl ContentDiscoverer for ArchiveOrgDiscoverer {
         info!(
             "Discovered {} Archive.org sources for: {}",
             sources.len(),
-            movie
+            title
         );
         Ok(sources)
     }

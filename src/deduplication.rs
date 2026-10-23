@@ -12,7 +12,7 @@
 // Within the same tier, the source that appears earlier in the active source list wins.
 
 use crate::discovery::FuzzyMatcher;
-use crate::models::{SeriesExtra, Source, SourceType, VideoSource};
+use crate::models::{Source, SourceType, VideoSource};
 use log::debug;
 use std::collections::HashSet;
 
@@ -42,36 +42,10 @@ pub(crate) fn deduplicate(
     (deduped, removed)
 }
 
-/// Deduplicate a list of series extras using the same logic as `deduplicate`.
-///
-/// Returns the deduplicated list and the number of removed duplicates.
-pub(crate) fn deduplicate_series(
-    extras: Vec<SeriesExtra>,
-    active_sources: &[Source],
-) -> (Vec<SeriesExtra>, usize) {
-    let to_remove = find_duplicate_indices(
-        extras.len(),
-        |i| extras[i].title.as_str(),
-        |i| extras[i].duration_secs,
-        |i| extras[i].source_type.tier(),
-        |i| source_order(&extras[i].source_type, active_sources),
-    );
-
-    let removed = to_remove.len();
-    let deduped = extras
-        .into_iter()
-        .enumerate()
-        .filter(|(idx, _)| !to_remove.contains(idx))
-        .map(|(_, e)| e)
-        .collect();
-
-    (deduped, removed)
-}
-
 /// Core O(n²) pairwise duplicate detection.
 ///
 /// Accepts closures to extract title, duration, tier, and source order from
-/// any item type — shared by both `deduplicate` and `deduplicate_series`.
+/// any item type.
 fn find_duplicate_indices<'a, FTitle, FDuration, FTier, FOrder>(
     len: usize,
     title: FTitle,
@@ -173,7 +147,7 @@ fn source_type_to_source(st: &SourceType) -> Option<Source> {
 ///
 /// Sources not in the active list (or non-user-selectable types) get `usize::MAX`,
 /// meaning they lose all same-tier tiebreaks.
-fn source_order(source_type: &SourceType, active_sources: &[Source]) -> usize {
+pub(crate) fn source_order(source_type: &SourceType, active_sources: &[Source]) -> usize {
     source_type_to_source(source_type)
         .and_then(|s| active_sources.iter().position(|a| *a == s))
         .unwrap_or(usize::MAX)
@@ -286,7 +260,7 @@ mod tests {
         let t2 = "Iron Man Official Trail";
         let similarity = FuzzyMatcher::get_similarity_score(t1, t2);
         assert!(
-            similarity >= 80 && similarity < 95,
+            (80..95).contains(&similarity),
             "Test precondition: titles must be 80-94% similar, got {}%",
             similarity
         );
@@ -331,7 +305,7 @@ mod tests {
         let t2 = "Iron Man Official Trail";
         let similarity = FuzzyMatcher::get_similarity_score(t1, t2);
         assert!(
-            similarity >= 80 && similarity < 95,
+            (80..95).contains(&similarity),
             "Test precondition: titles must be 80-94% similar, got {}%",
             similarity
         );
@@ -354,39 +328,6 @@ mod tests {
         let (result, removed) = deduplicate(vec![], &default_sources());
         assert_eq!(result.len(), 0);
         assert_eq!(removed, 0);
-    }
-
-    // 6.9: deduplicate_series applies same logic to SeriesExtra
-    #[test]
-    fn test_series_dedup_works_same_as_movie() {
-        use crate::models::SeriesExtra;
-
-        let extras = vec![
-            SeriesExtra {
-                series_id: "bb".to_string(),
-                season_number: None,
-                category: ContentCategory::Trailer,
-                title: "Breaking Bad Trailer".to_string(),
-                url: "https://tmdb.com/trailer".to_string(),
-                source_type: SourceType::TMDB,
-                local_path: None,
-                duration_secs: Some(120),
-            },
-            SeriesExtra {
-                series_id: "bb".to_string(),
-                season_number: None,
-                category: ContentCategory::Trailer,
-                title: "Breaking Bad Trailer".to_string(),
-                url: "https://youtube.com/trailer".to_string(),
-                source_type: SourceType::YouTube,
-                local_path: None,
-                duration_secs: Some(122),
-            },
-        ];
-        let (result, removed) = deduplicate_series(extras, &default_sources());
-        assert_eq!(result.len(), 1);
-        assert_eq!(removed, 1);
-        assert_eq!(result[0].source_type, SourceType::TMDB);
     }
 
     // 6.10: 3 copies from Tier 1, 2, 3 → only Tier 1 kept, 2 removed
