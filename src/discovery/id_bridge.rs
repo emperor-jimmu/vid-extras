@@ -338,13 +338,15 @@ mod tests {
                 let temp_dir = tempfile::tempdir().unwrap();
                 let cache = IdMappingCache::new(temp_dir.path().to_path_buf());
 
-                // Store multiple mappings
+                // Store multiple mappings; duplicate TMDB IDs are last-write-wins
+                let mut expected = std::collections::HashMap::new();
                 for (tmdb_id, tvdb_id) in &entries {
                     cache.set(*tmdb_id, *tvdb_id).await.unwrap();
+                    expected.insert(*tmdb_id, *tvdb_id);
                 }
 
                 // Verify all can be retrieved
-                for (tmdb_id, tvdb_id) in &entries {
+                for (tmdb_id, tvdb_id) in &expected {
                     let result = cache.get(*tmdb_id).await;
                     if result != Some(*tvdb_id) {
                         return Err("Cache retrieval failed");
