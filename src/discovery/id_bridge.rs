@@ -136,10 +136,7 @@ impl IdBridge {
 
     /// Query TMDB external_ids endpoint for a TVDB ID
     async fn query_tmdb_external_ids(&self, tmdb_id: u64) -> Result<Option<u64>, DiscoveryError> {
-        let url = format!(
-            "https://api.themoviedb.org/3/tv/{}/external_ids",
-            tmdb_id
-        );
+        let url = format!("https://api.themoviedb.org/3/tv/{}/external_ids", tmdb_id);
 
         match self
             .client

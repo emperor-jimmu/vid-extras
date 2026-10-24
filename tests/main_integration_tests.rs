@@ -637,7 +637,7 @@ async fn test_idempotency_force_flag_behavior() {
     // Verify all movies have done markers but are still included
     for movie in &movies_force {
         assert!(
-            movie.has_done_marker,
+            extras_fetcher::done_marker::DoneMarker::exists(&movie.path),
             "Movie should have done marker: {}",
             movie.title
         );

@@ -17,8 +17,6 @@ pub struct MovieEntry {
     pub title: String,
     /// Release year extracted from folder name
     pub year: u16,
-    /// Whether a done marker file exists in this folder
-    pub has_done_marker: bool,
 }
 
 impl fmt::Display for MovieEntry {
@@ -121,21 +119,6 @@ impl fmt::Display for ConversionResult {
                 self.error.as_deref().unwrap_or("Unknown error")
             )
         }
-    }
-}
-
-/// Done marker file content indicating completed processing
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DoneMarker {
-    /// ISO 8601 timestamp when processing finished
-    pub finished_at: String,
-    /// Version of the tool that created this marker
-    pub version: String,
-}
-
-impl fmt::Display for DoneMarker {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Completed at {} (v{})", self.finished_at, self.version)
     }
 }
 
@@ -362,8 +345,6 @@ pub struct SeriesEntry {
     pub title: String,
     /// Optional release year extracted from folder name
     pub year: Option<u16>,
-    /// Whether a done marker file exists in this folder
-    pub has_done_marker: bool,
     /// List of season numbers found in the folder
     pub seasons: Vec<u8>,
 }
@@ -435,7 +416,6 @@ mod tests {
             path: PathBuf::from("/movies/The Matrix (1999)"),
             title: "The Matrix".to_string(),
             year: 1999,
-            has_done_marker: false,
         };
         assert_eq!(entry.to_string(), "The Matrix (1999)");
     }
@@ -446,7 +426,6 @@ mod tests {
             path: PathBuf::from("/series/Breaking Bad (2008)"),
             title: "Breaking Bad".to_string(),
             year: Some(2008),
-            has_done_marker: false,
             seasons: vec![1, 2, 3, 4, 5],
         };
         assert_eq!(entry.to_string(), "Breaking Bad (2008)");
@@ -458,7 +437,6 @@ mod tests {
             path: PathBuf::from("/series/Breaking Bad"),
             title: "Breaking Bad".to_string(),
             year: None,
-            has_done_marker: false,
             seasons: vec![1, 2, 3, 4, 5],
         };
         assert_eq!(entry.to_string(), "Breaking Bad");
@@ -574,55 +552,5 @@ mod tests {
         assert_eq!(HardwareAccel::Nvenc.to_string(), "NVIDIA NVENC");
         assert_eq!(HardwareAccel::Qsv.to_string(), "Intel Quick Sync");
         assert_eq!(HardwareAccel::Software.to_string(), "Software");
-    }
-}
-
-#[cfg(test)]
-mod property_tests {
-    use super::*;
-    use proptest::prelude::*;
-
-    // Feature: extras-fetcher, Property 2: Done Marker Round-Trip
-    // Validates: Requirements 2.2
-    proptest! {
-        #[test]
-        fn prop_done_marker_round_trip(
-            year in 2000i32..2100i32,
-            month in 1u32..=12u32,
-            day in 1u32..=28u32,  // Use 28 to avoid invalid dates
-            hour in 0u32..24u32,
-            minute in 0u32..60u32,
-            second in 0u32..60u32,
-            version in "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}"
-        ) {
-            // Create ISO 8601 timestamp
-            let timestamp = format!(
-                "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-                year, month, day, hour, minute, second
-            );
-
-            let marker = DoneMarker {
-                finished_at: timestamp.clone(),
-                version: version.clone(),
-            };
-
-            // Serialize to JSON
-            let json = serde_json::to_string(&marker).unwrap();
-
-            // Deserialize from JSON
-            let deserialized: DoneMarker = serde_json::from_str(&json).unwrap();
-
-            // Verify round-trip preserves data
-            prop_assert_eq!(&marker.finished_at, &deserialized.finished_at);
-            prop_assert_eq!(&marker.version, &deserialized.version);
-
-            // Verify ISO 8601 format is valid
-            // The timestamp should be parseable as RFC 3339 (which is compatible with ISO 8601)
-            prop_assert!(
-                chrono::DateTime::parse_from_rfc3339(&deserialized.finished_at).is_ok(),
-                "Timestamp should be valid ISO 8601/RFC 3339 format: {}",
-                deserialized.finished_at
-            );
-        }
     }
 }

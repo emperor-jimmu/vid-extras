@@ -126,7 +126,9 @@ fn test_series_scanning_basic() {
     let series_entry = &series[0];
     assert_eq!(series_entry.title, "Breaking Bad");
     assert_eq!(series_entry.year, Some(2008));
-    assert!(!series_entry.has_done_marker);
+    assert!(!extras_fetcher::done_marker::DoneMarker::exists(
+        &series_entry.path
+    ));
     assert_eq!(series_entry.seasons, vec![1, 2, 3]);
 }
 
@@ -281,7 +283,7 @@ fn test_invalid_done_marker_handling() {
     fs::create_dir_all(&season_dir).unwrap();
 
     // Create invalid done marker (not valid JSON)
-    fs::write(&series_dir.join("done.ext"), "invalid json content").unwrap();
+    fs::write(series_dir.join("done.ext"), "invalid json content").unwrap();
 
     let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
     let (_, series) = scanner.scan_all().unwrap();
@@ -293,7 +295,7 @@ fn test_invalid_done_marker_handling() {
         "Should include series with invalid done marker"
     );
     assert!(
-        !series[0].has_done_marker,
+        !extras_fetcher::done_marker::DoneMarker::exists(&series[0].path),
         "Invalid marker should not be recognized"
     );
 }
@@ -356,13 +358,14 @@ fn test_series_entry_data_model() {
         path: PathBuf::from("/test/series"),
         title: "Test Series".to_string(),
         year: Some(2020),
-        has_done_marker: false,
         seasons: vec![1, 2, 3],
     };
 
     assert_eq!(entry.title, "Test Series");
     assert_eq!(entry.year, Some(2020));
-    assert!(!entry.has_done_marker);
+    assert!(!extras_fetcher::done_marker::DoneMarker::exists(
+        &entry.path
+    ));
     assert_eq!(entry.seasons.len(), 3);
 }
 
@@ -473,7 +476,6 @@ fn test_series_display_formatting() {
         path: PathBuf::from("/test"),
         title: "Test Series".to_string(),
         year: Some(2020),
-        has_done_marker: false,
         seasons: vec![1],
     };
 
@@ -484,7 +486,6 @@ fn test_series_display_formatting() {
         path: PathBuf::from("/test"),
         title: "Another Series".to_string(),
         year: None,
-        has_done_marker: false,
         seasons: vec![1],
     };
 
@@ -605,7 +606,7 @@ fn test_invalid_done_marker_handling_edge_case() {
     fs::create_dir_all(&season_dir).unwrap();
 
     // Create invalid done marker (corrupted JSON)
-    fs::write(&series_dir.join("done.ext"), "{ invalid json }").unwrap();
+    fs::write(series_dir.join("done.ext"), "{ invalid json }").unwrap();
 
     let scanner = Scanner::new(temp_dir.path().to_path_buf(), false, false);
     let (_, series) = scanner.scan_all().unwrap();
@@ -617,7 +618,7 @@ fn test_invalid_done_marker_handling_edge_case() {
         "Should include series with invalid done marker"
     );
     assert!(
-        !series[0].has_done_marker,
+        !extras_fetcher::done_marker::DoneMarker::exists(&series[0].path),
         "Invalid marker should not be recognized"
     );
 }

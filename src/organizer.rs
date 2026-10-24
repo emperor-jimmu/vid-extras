@@ -1,9 +1,7 @@
 // Organizer module - moves converted files to Jellyfin subdirectories and creates done markers
 
 use crate::error::OrganizerError;
-use crate::models::{
-    ContentCategory, ConversionResult, DoneMarker, SUBTITLE_EXTENSIONS, SpecialEpisode,
-};
+use crate::models::{ContentCategory, ConversionResult, SUBTITLE_EXTENSIONS, SpecialEpisode};
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -122,18 +120,14 @@ impl Organizer {
         Self { movie_path }
     }
 
-    /// Organize converted files into appropriate subdirectories and create done marker
+    /// Organize converted files into appropriate subdirectories.
     ///
-    /// This method:
-    /// 1. Creates subdirectories for each content category if they don't exist
-    /// 2. Moves converted files to their appropriate subdirectories
-    /// 3. Cleans up the temporary download folder
-    /// 4. Creates a done marker file to indicate completion
+    /// Returns the number of files placed. Temp cleanup and the Done marker are the
+    /// pipeline's responsibility.
     pub async fn organize(
         &self,
         conversions: Vec<ConversionResult>,
-        temp_dir: &Path,
-    ) -> Result<(), OrganizerError> {
+    ) -> Result<usize, OrganizerError> {
         info!(
             "Organizing {} files for movie at {:?}",
             conversions.len(),
@@ -168,6 +162,7 @@ impl Organizer {
 
         // Move files to their subdirectories
         let mut category_counters: HashMap<ContentCategory, usize> = HashMap::new();
+        let mut placed = 0;
         for (category, files) in files_by_category {
             let subdir = self.ensure_subdirectory(category).await?;
 
@@ -185,17 +180,12 @@ impl Organizer {
                 }
                 self.move_file(&file_path, &subdir, &dest_filename).await?;
                 move_sibling_subtitles(&file_path, &subdir).await;
+                placed += 1;
             }
         }
 
-        // Clean up temp directory
-        self.cleanup_temp_dir(temp_dir).await?;
-
-        // Create done marker
-        self.create_done_marker().await?;
-
         info!("Organization complete for {:?}", self.movie_path);
-        Ok(())
+        Ok(placed)
     }
 
     /// Ensure a subdirectory exists for the given content category
@@ -269,48 +259,6 @@ impl Organizer {
             ))),
         }
     }
-
-    /// Clean up the temporary download directory
-    async fn cleanup_temp_dir(&self, temp_dir: &Path) -> Result<(), OrganizerError> {
-        if !temp_dir.exists() {
-            debug!(
-                "Temp directory does not exist, skipping cleanup: {:?}",
-                temp_dir
-            );
-            return Ok(());
-        }
-
-        debug!("Cleaning up temp directory: {:?}", temp_dir);
-
-        fs::remove_dir_all(temp_dir).await.map_err(|e| {
-            // Log as warning but don't fail the operation
-            warn!("Failed to cleanup temp directory {:?}: {}", temp_dir, e);
-            OrganizerError::Io(e)
-        })?;
-
-        info!("Cleaned up temp directory: {:?}", temp_dir);
-        Ok(())
-    }
-
-    /// Create a done marker file indicating successful completion
-    async fn create_done_marker(&self) -> Result<(), OrganizerError> {
-        let marker_path = self.movie_path.join("done.ext");
-
-        debug!("Creating done marker: {:?}", marker_path);
-
-        let marker = DoneMarker {
-            finished_at: chrono::Utc::now().to_rfc3339(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-        };
-
-        let json = serde_json::to_string_pretty(&marker)
-            .map_err(|e| OrganizerError::Io(std::io::Error::other(e)))?;
-
-        fs::write(&marker_path, json).await?;
-
-        info!("Created done marker: {:?}", marker_path);
-        Ok(())
-    }
 }
 
 /// SeriesOrganizer handles file organization for TV series into Jellyfin-compatible structure
@@ -340,7 +288,7 @@ impl SeriesOrganizer {
         &self,
         conversions: Vec<ConversionResult>,
         season: Option<u8>,
-    ) -> Result<(), OrganizerError> {
+    ) -> Result<usize, OrganizerError> {
         // Validate that the season exists on disk if specified
         if let Some(s) = season
             && !self.available_seasons.contains(&s)
@@ -349,7 +297,7 @@ impl SeriesOrganizer {
                 "Skipping organization for non-existent season {} at {:?}",
                 s, self.series_path
             );
-            return Ok(());
+            return Ok(0);
         }
 
         info!(
@@ -386,6 +334,7 @@ impl SeriesOrganizer {
 
         // Move files to their subdirectories
         let mut category_counters: HashMap<ContentCategory, usize> = HashMap::new();
+        let mut placed = 0;
         for (category, files) in files_by_category {
             let subdir = self.ensure_subdirectory(category, season).await?;
 
@@ -403,6 +352,7 @@ impl SeriesOrganizer {
                 }
                 self.move_file(&file_path, &subdir, &dest_filename).await?;
                 move_sibling_subtitles(&file_path, &subdir).await;
+                placed += 1;
             }
         }
 
@@ -410,7 +360,7 @@ impl SeriesOrganizer {
             "Organization complete for series at {:?}, season: {:?}",
             self.series_path, season
         );
-        Ok(())
+        Ok(placed)
     }
 
     /// Organize Season 0 special episodes with Sonarr-compatible naming
@@ -434,10 +384,10 @@ impl SeriesOrganizer {
         series_name: &str,
         specials: Vec<SpecialEpisode>,
         folder_name: &str,
-    ) -> Result<(), OrganizerError> {
+    ) -> Result<usize, OrganizerError> {
         if specials.is_empty() {
             debug!("No specials to organize");
-            return Ok(());
+            return Ok(0);
         }
 
         info!(
@@ -457,6 +407,7 @@ impl SeriesOrganizer {
                 ))
             })?;
 
+        let mut placed = 0;
         for special in specials {
             if let Some(local_path) = special.local_path {
                 // Sanitize both series name and episode title for filename safety
@@ -524,10 +475,11 @@ impl SeriesOrganizer {
                     }
                 }
             }
+            placed += 1;
         }
 
         info!("Special episodes organization complete");
-        Ok(())
+        Ok(placed)
     }
 
     /// Ensure a subdirectory exists for the given content category
@@ -705,41 +657,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cleanup_temp_dir() {
-        let temp = TempDir::new().unwrap();
-        let movie_path = temp.path().join("Movie (2020)");
-        fs::create_dir(&movie_path).await.unwrap();
-
-        let temp_dir = temp.path().join("tmp_downloads");
-        fs::create_dir(&temp_dir).await.unwrap();
-        fs::write(temp_dir.join("file.mp4"), b"test").await.unwrap();
-
-        let organizer = Organizer::new(movie_path);
-        organizer.cleanup_temp_dir(&temp_dir).await.unwrap();
-
-        assert!(!temp_dir.exists());
-    }
-
-    #[tokio::test]
-    async fn test_create_done_marker() {
-        let temp = TempDir::new().unwrap();
-        let movie_path = temp.path().join("Movie (2020)");
-        fs::create_dir(&movie_path).await.unwrap();
-
-        let organizer = Organizer::new(movie_path.clone());
-        organizer.create_done_marker().await.unwrap();
-
-        let marker_path = movie_path.join("done.ext");
-        assert!(marker_path.exists());
-
-        let content = fs::read_to_string(&marker_path).await.unwrap();
-        let marker: DoneMarker = serde_json::from_str(&content).unwrap();
-
-        assert!(!marker.finished_at.is_empty());
-        assert!(!marker.version.is_empty());
-    }
-
-    #[tokio::test]
     async fn test_organize_integration() {
         let temp = TempDir::new().unwrap();
         let movie_path = temp.path().join("Movie (2020)");
@@ -777,7 +694,8 @@ mod tests {
         ];
 
         let organizer = Organizer::new(movie_path.clone());
-        organizer.organize(conversions, &temp_dir).await.unwrap();
+        let placed = organizer.organize(conversions).await.unwrap();
+        assert_eq!(placed, 2);
 
         // Verify subdirectories were created
         assert!(movie_path.join("trailers").exists());
@@ -786,12 +704,6 @@ mod tests {
         // Verify files were moved
         assert!(movie_path.join("trailers/trailer.mp4").exists());
         assert!(movie_path.join("featurettes/featurette.mp4").exists());
-
-        // Verify temp dir was cleaned up
-        assert!(!temp_dir.exists());
-
-        // Verify done marker was created
-        assert!(movie_path.join("done.ext").exists());
     }
 
     #[tokio::test]
@@ -826,7 +738,7 @@ mod tests {
         ];
 
         let organizer = Organizer::new(movie_path.clone());
-        organizer.organize(conversions, &temp_dir).await.unwrap();
+        organizer.organize(conversions).await.unwrap();
 
         // Only successful conversion should be organized
         assert!(movie_path.join("trailers").exists());
@@ -892,7 +804,7 @@ mod tests {
         ];
 
         let organizer = Organizer::new(movie_path.clone());
-        organizer.organize(conversions, &temp_dir).await.unwrap();
+        organizer.organize(conversions).await.unwrap();
 
         // Verify all subdirectories were created
         assert!(movie_path.join("trailers").exists());
@@ -905,42 +817,6 @@ mod tests {
         assert!(movie_path.join("featurettes/featurette.mp4").exists());
         assert!(movie_path.join("behind the scenes/behind.mp4").exists());
         assert!(movie_path.join("deleted scenes/deleted.mp4").exists());
-    }
-
-    #[tokio::test]
-    async fn test_done_marker_json_format() {
-        let temp = TempDir::new().unwrap();
-        let movie_path = temp.path().join("Movie (2020)");
-        fs::create_dir(&movie_path).await.unwrap();
-
-        let organizer = Organizer::new(movie_path.clone());
-        organizer.create_done_marker().await.unwrap();
-
-        let marker_path = movie_path.join("done.ext");
-        let content = fs::read_to_string(&marker_path).await.unwrap();
-
-        // Verify it's valid JSON
-        let marker: DoneMarker = serde_json::from_str(&content).unwrap();
-
-        // Verify timestamp is ISO 8601 format
-        assert!(chrono::DateTime::parse_from_rfc3339(&marker.finished_at).is_ok());
-
-        // Verify version matches package version
-        assert_eq!(marker.version, env!("CARGO_PKG_VERSION"));
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_temp_dir_handles_nonexistent_dir() {
-        let temp = TempDir::new().unwrap();
-        let movie_path = temp.path().join("Movie (2020)");
-        fs::create_dir(&movie_path).await.unwrap();
-
-        let nonexistent_dir = temp.path().join("does_not_exist");
-
-        let organizer = Organizer::new(movie_path);
-        // Should not error when temp dir doesn't exist
-        let result = organizer.cleanup_temp_dir(&nonexistent_dir).await;
-        assert!(result.is_ok());
     }
 
     // Series organizer tests
@@ -1342,10 +1218,7 @@ mod tests {
         ];
 
         let organizer = Organizer::new(movie_path.clone());
-        organizer
-            .organize(conversions, &temp_dir)
-            .await
-            .expect("organize");
+        organizer.organize(conversions).await.expect("organize");
 
         // Both should be renamed to Trailer #1.mp4 and Trailer #2.mp4
         let trailers_dir = movie_path.join("trailers");
@@ -1377,10 +1250,7 @@ mod tests {
         }];
 
         let organizer = Organizer::new(movie_path.clone());
-        organizer
-            .organize(conversions, &temp_dir)
-            .await
-            .expect("organize");
+        organizer.organize(conversions).await.expect("organize");
 
         // Descriptive filename should be preserved
         assert!(movie_path.join("trailers/Official Trailer.mp4").exists());
@@ -1477,18 +1347,12 @@ mod tests {
         ];
 
         let organizer = Organizer::new(movie_path.clone());
-        organizer
-            .organize(conversions, &temp_dir)
-            .await
-            .expect("organize");
+        organizer.organize(conversions).await.expect("organize");
 
         // Renamed files exist at destination
         let trailers_dir = movie_path.join("trailers");
         assert!(trailers_dir.join("Trailer #1.mp4").exists());
         assert!(trailers_dir.join("Trailer #2.mp4").exists());
-
-        // Source numeric files are gone (temp dir itself is cleaned up by organize)
-        assert!(!temp_dir.exists());
     }
 
     // Task 4.7: subtitle file is moved alongside its video into the Jellyfin subfolder
@@ -1517,7 +1381,7 @@ mod tests {
         }];
 
         let organizer = Organizer::new(movie_path.clone());
-        organizer.organize(conversions, &tmp_dir).await.unwrap();
+        organizer.organize(conversions).await.unwrap();
 
         let trailers_dir = movie_path.join("trailers");
         // Video was moved (descriptive name preserved)
@@ -1555,7 +1419,7 @@ mod tests {
         }];
 
         let organizer = Organizer::new(movie_path.clone());
-        organizer.organize(conversions, &tmp_dir).await.unwrap();
+        organizer.organize(conversions).await.unwrap();
 
         let trailers_dir = movie_path.join("trailers");
         // Video was renamed to normalized form
@@ -1815,105 +1679,6 @@ mod property_tests {
                 let expected_path = series_path.join("Season 00").join(&expected_filename);
 
                 prop_assert!(expected_path.exists());
-
-                Ok(())
-            })?;
-        }
-    }
-
-    // Feature: extras-fetcher, Property 25: Temp Folder Cleanup on Success
-    // Validates: Requirements 8.6
-    proptest! {
-        #[test]
-        fn prop_temp_folder_cleanup_on_success(
-            num_files in 1usize..10usize,
-        ) {
-            let runtime = tokio::runtime::Runtime::new().unwrap();
-            runtime.block_on(async {
-                let temp = tempfile::TempDir::new().unwrap();
-                let movie_path = temp.path().join("Movie (2020)");
-                tokio::fs::create_dir(&movie_path).await.unwrap();
-
-                let temp_dir = temp.path().join("tmp_downloads");
-                tokio::fs::create_dir(&temp_dir).await.unwrap();
-
-                // Create multiple files in temp directory
-                for i in 0..num_files {
-                    let file_path = temp_dir.join(format!("file_{}.mp4", i));
-                    tokio::fs::write(&file_path, b"test content").await.unwrap();
-                }
-
-                // Verify temp directory exists with files
-                prop_assert!(temp_dir.exists());
-                let mut count = 0;
-                let mut read_dir = tokio::fs::read_dir(&temp_dir).await.unwrap();
-                while let Some(_entry) = read_dir.next_entry().await.unwrap() {
-                    count += 1;
-                }
-                prop_assert_eq!(count, num_files);
-
-                // Organize with empty conversions (just cleanup)
-                let organizer = Organizer::new(movie_path.clone());
-                organizer.organize(vec![], &temp_dir).await.unwrap();
-
-                // Verify temp directory was deleted
-                prop_assert!(!temp_dir.exists());
-
-                Ok(())
-            })?;
-        }
-    }
-
-    // Feature: extras-fetcher, Property 26: Done Marker Creation on Completion
-    // Validates: Requirements 2.1, 8.7
-    proptest! {
-        #[test]
-        fn prop_done_marker_creation_on_completion(
-            num_conversions in 0usize..5usize,
-        ) {
-            let runtime = tokio::runtime::Runtime::new().unwrap();
-            runtime.block_on(async {
-                let temp = tempfile::TempDir::new().unwrap();
-                let movie_path = temp.path().join("Movie (2020)");
-                tokio::fs::create_dir(&movie_path).await.unwrap();
-
-                let temp_dir = temp.path().join("tmp_downloads");
-                tokio::fs::create_dir(&temp_dir).await.unwrap();
-
-                // Create conversion results
-                let mut conversions = vec![];
-                for i in 0..num_conversions {
-                    let output_file = temp_dir.join(format!("file_{}.mp4", i));
-                    tokio::fs::write(&output_file, b"test content").await.unwrap();
-
-                    conversions.push(ConversionResult {
-                        input_path: temp_dir.join(format!("file_{}.mp4", i)),
-                        output_path: output_file,
-                        category: ContentCategory::Trailer,
-                        season_number: None,
-                        success: true,
-                        error: None,
-                    });
-                }
-
-                // Organize
-                let organizer = Organizer::new(movie_path.clone());
-                organizer.organize(conversions, &temp_dir).await.unwrap();
-
-                // Verify done marker was created
-                let marker_path = movie_path.join("done.ext");
-                prop_assert!(marker_path.exists());
-
-                // Verify done marker content is valid JSON with required fields
-                let content = tokio::fs::read_to_string(&marker_path).await.unwrap();
-                let marker: DoneMarker = serde_json::from_str(&content).unwrap();
-
-                // Verify timestamp is not empty and is valid ISO 8601
-                prop_assert!(!marker.finished_at.is_empty());
-                prop_assert!(chrono::DateTime::parse_from_rfc3339(&marker.finished_at).is_ok());
-
-                // Verify version is not empty
-                prop_assert!(!marker.version.is_empty());
 
                 Ok(())
             })?;

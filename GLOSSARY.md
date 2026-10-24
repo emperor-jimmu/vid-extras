@@ -20,6 +20,14 @@ _Avoid_: provider type
 A video that a source type proposes as an extra for one library item, with its category and, where known, duration.
 _Avoid_: result, hit, video
 
+**Library item**:
+A movie or a series, as the unit the pipeline processes from discovery to placement.
+_Avoid_: entry, media object, record
+
+**Extras scope**:
+Where a batch of extras belongs: the library item itself (a movie folder or a series root), one real season (1 or higher), or Specials. Season 0 is not a season's extras; it is specials for the whole series.
+_Avoid_: target, destination, category group
+
 **Discovery**:
 The operation that turns a **Discovery query** into candidates plus a **Discovery report**. It resolves identities, queries the enabled sources, and applies duplicate removal and content limits.
 _Avoid_: search, crawl, fetch
@@ -33,7 +41,7 @@ The outcome of one **Discovery**: the candidates, one outcome per source type qu
 _Avoid_: results, response
 
 **Special**:
-A Season 0 episode as defined by TheTVDB, matched to a video candidate and placed in the specials folder.
+A season-0 episode as defined by TheTVDB, matched to a video candidate and placed in the specials folder. Specials are series-wide extras, not extras for a particular season.
 _Avoid_: bonus episode, extra episode
 
 **Done marker**:

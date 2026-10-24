@@ -1,12 +1,12 @@
 use extras_fetcher::cli::{display_banner, display_config, parse_args};
 use extras_fetcher::config::Config;
 use extras_fetcher::error::ValidationError;
-use extras_fetcher::json_output;
 use extras_fetcher::models::Source;
 use extras_fetcher::orchestrator::{
     DiscoveryConfig, Orchestrator, OrchestratorConfig, SeriesConfig,
 };
 use extras_fetcher::output::display_summary;
+use extras_fetcher::progress::{CliSink, JsonSink, Progress, TuiSink};
 use extras_fetcher::tui::TuiState;
 use extras_fetcher::validation::Validator;
 use std::sync::Arc;
@@ -173,10 +173,6 @@ async fn main() {
         }
     };
 
-    if config.json_progress {
-        json_output::set_json_progress_enabled(true);
-    }
-
     init_logging(&config);
     display_banner();
 
@@ -204,7 +200,7 @@ async fn main() {
     display.cookies_from_browser = cookies_from_browser.clone();
     display_config(&display);
 
-    let mut orchestrator = create_orchestrator(
+    let orchestrator = create_orchestrator(
         &config,
         tmdb_api_key,
         tvdb_api_key,
@@ -212,11 +208,21 @@ async fn main() {
         vimeo_access_token,
     );
 
+    let mut progress = Progress::new();
     if config.tui {
-        extras_fetcher::set_tui_active(true);
         let tui_state = Arc::new(TuiState::new());
-        orchestrator = orchestrator.with_tui(tui_state);
+        tui_state.set_thread_count(config.concurrency);
+        tui_state.start();
+        let tui_clone = tui_state.clone();
+        std::thread::spawn(move || extras_fetcher::tui::run_tui(tui_clone));
+        progress.add_sink(Box::new(TuiSink::new(tui_state)));
+    } else {
+        progress.add_sink(Box::new(CliSink));
     }
+    if config.json_progress {
+        progress.add_sink(Box::new(JsonSink));
+    }
+    let orchestrator = orchestrator.with_progress(Arc::new(progress));
 
     log::info!("Starting processing pipeline");
     let summary = match orchestrator.run().await {

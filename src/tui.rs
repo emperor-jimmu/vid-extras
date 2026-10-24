@@ -1,13 +1,13 @@
 // TUI module - Terminal UI with split-pane logs per thread
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use ratatui::Frame;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
 use ratatui::prelude::Color;
 use ratatui::style::Style;
 use ratatui::symbols::block::FULL;
 use ratatui::widgets::{Block, Paragraph};
-use ratatui::Frame;
 use std::collections::HashMap;
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -71,7 +71,9 @@ impl TuiState {
     }
 
     pub fn add_active_item(&self, item: &str) {
-        if let Ok(mut items) = self.active_items.lock() && !items.contains(&item.to_string()) {
+        if let Ok(mut items) = self.active_items.lock()
+            && !items.contains(&item.to_string())
+        {
             items.push(item.to_string());
         }
     }
@@ -227,12 +229,7 @@ impl TuiState {
             frame.render_widget(paragraph, *pane_area);
         }
 
-        let progress_area = Rect::new(
-            area.x,
-            area.y + total_height,
-            area.width,
-            progress_height,
-        );
+        let progress_area = Rect::new(area.x, area.y + total_height, area.width, progress_height);
 
         self.render_progress_bar(frame, progress_area);
     }
@@ -244,10 +241,15 @@ impl TuiState {
         let total_threads = self.thread_count.load(Ordering::Relaxed);
 
         let active_items = self.get_active_items();
-        let current_item = self.current_item.lock().map(|c| c.clone()).unwrap_or_default();
+        let current_item = self
+            .current_item
+            .lock()
+            .map(|c| c.clone())
+            .unwrap_or_default();
 
         let progress_bar_width = area.width.saturating_sub(2) as usize;
-        let filled = ((progress * progress_bar_width as f64).round() as usize).min(progress_bar_width);
+        let filled =
+            ((progress * progress_bar_width as f64).round() as usize).min(progress_bar_width);
         let empty = progress_bar_width - filled;
 
         let bar: String = FULL
@@ -258,7 +260,11 @@ impl TuiState {
             .chain(" ".repeat(empty).chars())
             .collect();
 
-        let system_status = self.system_status.lock().map(|s| s.clone()).unwrap_or_default();
+        let system_status = self
+            .system_status
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default();
 
         let status_text = if self.requested_stop.load(Ordering::Acquire) {
             " STOPPING... ".to_string()
@@ -282,11 +288,7 @@ impl TuiState {
 
         let title = format!(
             " {} {}/{} | {} threads | {}",
-            status_text,
-            processed,
-            total,
-            total_threads,
-            items_display
+            status_text, processed, total, total_threads, items_display
         );
 
         let border_color = if self.requested_stop.load(Ordering::Acquire) {
@@ -334,12 +336,12 @@ pub fn run_tui(state: Arc<TuiState>) {
             break;
         }
 
-#[allow(clippy::collapsible_if)]
+        #[allow(clippy::collapsible_if)]
         if event::poll(Duration::from_millis(50)).unwrap_or(false) {
             if let Event::Key(key) = event::read().unwrap_or(Event::FocusGained) {
                 if key.kind == KeyEventKind::Press
                     && (key.code == KeyCode::Char('q') || key.code == KeyCode::Esc)
-{
+                {
                     state.request_stop();
                     break;
                 }

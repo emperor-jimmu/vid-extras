@@ -1,12 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
 
-static JSON_PROGRESS_ENABLED: AtomicBool = AtomicBool::new(false);
-
-pub fn set_json_progress_enabled(enabled: bool) {
-    JSON_PROGRESS_ENABLED.store(enabled, Ordering::Release);
-}
-
+/// One line of the `--json-progress` stream. Field order is part of the contract.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressEvent {
     pub event: String,
@@ -48,12 +42,6 @@ impl ProgressEvent {
     pub fn emit(&self) {
         println!("{}", serde_json::to_string(self).unwrap());
     }
-
-    pub fn emit_if_enabled(&self) {
-        if JSON_PROGRESS_ENABLED.load(Ordering::Acquire) {
-            self.emit();
-        }
-    }
 }
 
 #[cfg(test)]
@@ -89,6 +77,7 @@ mod tests {
         event.downloads = Some(5);
         event.conversions = Some(4);
         let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"event\":\"completed\""));
         assert!(json.contains("\"success\":true"));
         assert!(json.contains("\"downloads\":5"));
         assert!(json.contains("\"conversions\":4"));

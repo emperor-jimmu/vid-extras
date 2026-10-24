@@ -2,6 +2,7 @@
 
 use crate::error::ConversionError;
 use crate::models::{ConversionResult, DownloadResult, HardwareAccel};
+use crate::progress::{Progress, WorkerId};
 use log::{debug, error, info, warn};
 use std::path::Path;
 use std::process::Stdio;
@@ -44,7 +45,12 @@ impl Converter {
     }
 
     /// Convert a batch of downloaded videos
-    pub async fn convert_batch(&self, downloads: Vec<DownloadResult>) -> Vec<ConversionResult> {
+    pub async fn convert_batch(
+        &self,
+        downloads: Vec<DownloadResult>,
+        progress: &Progress,
+        worker: WorkerId,
+    ) -> Vec<ConversionResult> {
         let mut results = Vec::new();
         let total = downloads.iter().filter(|d| d.success).count();
         let mut current = 0;
@@ -59,7 +65,7 @@ impl Converter {
             }
 
             current += 1;
-            crate::output::display_conversion_progress(&download.source.title, current, total);
+            progress.file_progress(worker, &download.source.title, current, total);
 
             let result = self.convert_single(&download).await;
             results.push(result);
@@ -629,7 +635,10 @@ mod tests {
             subtitle_paths: vec![],
         };
 
-        let results = converter.convert_batch(vec![successful, failed]).await;
+        let progress = crate::progress::Progress::new();
+        let results = converter
+            .convert_batch(vec![successful, failed], &progress, WorkerId(0))
+            .await;
 
         // Should only attempt to convert the successful download
         // The failed download should be skipped, so we get 1 result

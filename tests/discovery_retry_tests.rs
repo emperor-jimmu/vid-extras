@@ -25,7 +25,7 @@ async fn test_retry_eventually_succeeds() {
     let result: Result<&str, std::io::Error> = retry_with_backoff(3, 10, || async {
         count.fetch_add(1, Ordering::SeqCst);
         if count.load(Ordering::SeqCst) < 2 {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "transient"))
+            Err(std::io::Error::other("transient"))
         } else {
             Ok("success")
         }
@@ -43,7 +43,7 @@ async fn test_retry_exhausts_all_attempts() {
 
     let result: Result<&str, std::io::Error> = retry_with_backoff(3, 10, || async {
         count.fetch_add(1, Ordering::SeqCst);
-        Err(std::io::Error::new(std::io::ErrorKind::Other, "permanent"))
+        Err(std::io::Error::other("permanent"))
     })
     .await;
 

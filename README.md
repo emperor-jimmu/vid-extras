@@ -145,6 +145,7 @@ Options:
   --cookies-from-browser   Browser to use for yt-dlp cookie authentication [possible values: chrome,
                           firefox, edge]
   --dry-run              Discover extras without downloading, converting, or organizing files
+  --json-progress        Emit line-delimited JSON progress events to stdout
 
   Series-specific options:
   --series-only            Process only TV series (skip movies)
@@ -187,13 +188,11 @@ extras_fetcher --tui /path/to/library
 ```
 ┌ [Thread 1] ──────────────────────┐
 │▶ Processing: Movie Name (2020)       │
-│  🔍 Discovering...              │
-│  ✓ Found 5 sources              │
-│  ↓ Downloading 5 videos...     │
-│    → trailer.mp4               │
-│    → behind_scenes.mp4         │
-│  ⇄ Converting 5 videos...     │
-│  ✓ Done: Movie (5 dl, 5 conv)  │
+│  Found 5 candidates             │
+│  ↓ Downloaded 5/5               │
+│  ⇄ Converted 4/5               │
+│  ✓ Placed 4 files              │
+│  ✓ Done: Movie (5 dl, 4 conv)  │
 └───────────────────────────────┘
 ┌ [Thread 2] ──────────────────────┐
 │▶ Processing: Another (2021)       │
@@ -203,6 +202,19 @@ extras_fetcher --tui /path/to/library
 │ ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 50% │
 └───────────────────────────────────────────────────────────┘
 ```
+
+### JSON Progress Output
+
+`--json-progress` emits one JSON object per line on stdout, for scripts and dashboards. The envelope is stable; fields that do not apply to an event are `null`.
+
+```json
+{"event":"started","current":1,"total":10,"title":"The Matrix","year":1999,"phase":null,"downloads":null,"conversions":null,"discovered":null,"success":null,"error":null}
+{"event":"phase","current":0,"total":0,"title":"The Matrix","year":1999,"phase":"discovery","downloads":null,"conversions":null,"discovered":15,"success":null,"error":null}
+{"event":"phase","current":0,"total":0,"title":"The Matrix","year":1999,"phase":"conversion","downloads":null,"conversions":4,"discovered":null,"success":null,"error":null}
+{"event":"completed","current":0,"total":0,"title":"The Matrix","year":1999,"phase":null,"downloads":5,"conversions":4,"discovered":null,"success":true,"error":null}
+```
+
+Event names are `started`, `phase` (with `phase` set to `discovery`, `download`, `conversion` or `placement`) and `completed`. Combine with `--tui` if you want both the TUI and the JSON stream; sinks are independent.
 
 ### Examples
 
@@ -379,7 +391,7 @@ Full series support with all available content types.
 2. **Organize by season**: Keep episodes organized in `Season XX` folders before running the tool
 3. **Run with appropriate flags**: Use `--specials` and `--season-extras` based on your preferences
 4. **Monitor first run**: Use `--verbose` on first run to verify correct detection and organization
-5. **Reprocess selectively**: Use `--force` only when needed; the tool tracks completed series with `.extras_done` markers
+5. **Reprocess selectively**: Use `--force` only when needed; the tool tracks completed series with `done.ext` markers
 
 ## Directory Structure
 
@@ -433,7 +445,7 @@ After processing, extras are organized into Jellyfin-compatible subdirectories:
     │   └── Deleted Scene 1.mp4
     ├── featurettes/
     │   └── Cast Interviews.mp4
-    └── .extras_done  (completion marker)
+    └── done.ext  (completion marker)
 ```
 
 ### Output Structure - TV Series
@@ -461,7 +473,7 @@ After processing, series extras are organized by series and season:
     │   └── Series Overview.mp4
     ├── interviews/
     │   └── Creator Interview.mp4
-    └── .extras_done  (completion marker)
+    └── done.ext  (completion marker)
 ```
 
 **Note**: The Season 0 folder name can be customized using the `--specials-folder` parameter. Default is "Specials", but you can use "Season 00", "Season 0", or any custom name.
@@ -477,7 +489,7 @@ The tool automatically detects whether each folder contains a movie or TV series
 1. **Scanning**: Recursively scans the library directory
    - Detects folders with video files directly inside (movie folders)
    - Parses folder names to extract movie title and year
-   - Skips folders with `.extras_done` marker (unless `--force` is used)
+   - Skips folders with `done.ext` marker (unless `--force` is used)
 
 2. **Discovery**: Queries multiple sources for extra content (configurable via `--sources` or `--all`)
    - **TMDB**: Official trailers, behind-the-scenes, deleted scenes, featurettes
@@ -498,7 +510,7 @@ The tool automatically detects whether each folder contains a movie or TV series
 5. **Organization**: Moves converted files to appropriate subdirectories
    - Creates Jellyfin-compatible folder structure
    - Cleans up temporary files
-   - Creates `.extras_done` marker to prevent reprocessing
+   - Writes a `done.ext` marker only when at least one extra was placed
 
 #### For TV Series:
 
@@ -506,7 +518,7 @@ The tool automatically detects whether each folder contains a movie or TV series
    - Detects folders with Season XX subfolders (series folders)
    - Parses folder names to extract series title and optional year
    - Identifies available seasons and checks for Season 0 (specials)
-   - Skips folders with `.extras_done` marker (unless `--force` is used)
+   - Skips folders with a `done.ext` marker (unless `--force` is used)
 
 2. **Discovery**: Queries multiple sources for series extras
    - **TMDB**: Series-level trailers, interviews, behind-the-scenes content
@@ -528,8 +540,8 @@ The tool automatically detects whether each folder contains a movie or TV series
 5. **Organization**: Moves converted files to appropriate subdirectories
    - Series-level extras go to series root subdirectories (trailers, interviews, etc.)
    - Season-specific extras go to season subdirectories
-   - Season 0 specials go to `Season 00` folder with proper naming format
-   - Creates `.extras_done` marker to prevent reprocessing
+   - Season 0 specials go to the configured specials folder (`--specials-folder`, default `Specials`) with Sonarr-compatible naming
+   - Writes a `done.ext` marker only when at least one extra was placed
 
 ### Content Filtering
 
@@ -553,7 +565,7 @@ YouTube content is intelligently filtered to exclude:
 
 The tool is designed to be safely re-runnable:
 
-- Completed items are marked with a `.extras_done` file
+- Completed items are marked with a `done.ext` file
 - Subsequent runs skip marked items (unless `--force` is used)
 - Interrupted processing can be safely resumed
 - Temporary files are cleaned up on exit
@@ -717,14 +729,17 @@ src/
 │   └── youtube.rs   - YouTube integration
 ├── downloader.rs    - Video downloading with yt-dlp
 ├── converter.rs     - Video format conversion with ffmpeg
-├── organizer.rs     - File organization and done markers
+├── organizer.rs     - Jellyfin placement (returns files placed)
 ├── validation.rs    - Dependency validation
-├── output.rs        - CLI output formatting
+├── output.rs        - CLI views for the progress module
 ├── models.rs        - Data structures and types
 ├── error.rs         - Error type definitions
-├── orchestrator.rs  - Processing orchestration
+├── pipeline.rs      - Per-library-item pipeline (scopes, phases, concurrency)
+├── progress.rs      - Progress module with CLI/JSON/TUI sinks
+├── done_marker.rs   - `done.ext` marker: validity, write, removal
+├── orchestrator.rs  - Scan + summary shell
 ├── deduplication.rs - Deduplication logic
-└── json_output.rs   - JSON progress output
+└── json_output.rs   - JSON progress event envelope
 ```
 
 ## License

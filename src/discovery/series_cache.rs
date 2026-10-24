@@ -41,13 +41,19 @@ impl SeriesMetadataCache {
     /// Create a new cache manager for a series (default 7-day TTL)
     pub fn new(series_path: &Path) -> Self {
         let cache_dir = series_path.join(".cache");
-        Self { cache_dir, ttl_days: 7 }
+        Self {
+            cache_dir,
+            ttl_days: 7,
+        }
     }
 
     /// Create a new cache manager with a custom TTL in days
     pub fn with_ttl(series_path: &Path, ttl_days: i64) -> Self {
         let cache_dir = series_path.join(".cache");
-        Self { cache_dir, ttl_days }
+        Self {
+            cache_dir,
+            ttl_days,
+        }
     }
 
     /// Get cache file path for a series

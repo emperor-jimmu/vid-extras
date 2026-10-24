@@ -1,50 +1,18 @@
-// Orchestrator module - coordinates all processing phases
+//! Orchestrator: scans the library, hands items to the pipeline, folds outcomes into
+//! the run summary. All per-item policy lives in `pipeline`.
 
 use crate::converter::Converter;
-use crate::discovery::{
-    Discovery, DiscoveryQuery, SourceResult, SpecialDiscovery, TvdbEpisodeExtended,
-};
+use crate::discovery::{Discovery, SpecialDiscovery};
 use crate::downloader::Downloader;
 use crate::error::OrchestratorError;
-use crate::models::{
-    ConversionResult, MovieEntry, ProcessingMode, SeriesEntry, Source, SourceType, VideoSource,
-};
-use crate::organizer::{Organizer, SeriesOrganizer};
-use crate::output;
+use crate::models::{ProcessingMode, Source, SourceType};
+use crate::pipeline::{ItemOutcome, LibraryItem, Pipeline, PipelineConfig, ProductionPhases};
+use crate::progress::Progress;
 use crate::scanner::Scanner;
-use crate::tui::TuiState;
-use log::{debug, error, info, warn};
-use std::collections::HashMap;
+use log::{debug, info, warn};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use tokio::sync::Semaphore;
-
-/// Shared context for series processing, bundling dependencies passed between phases
-struct SeriesProcessingContext {
-    discovery: Arc<Discovery>,
-    special_discovery: Arc<SpecialDiscovery>,
-    downloader: Arc<Downloader>,
-    converter: Arc<Converter>,
-    temp_base: PathBuf,
-    season_extras: bool,
-    specials: bool,
-    specials_folder: String,
-    dry_run: bool,
-    sources: Vec<Source>,
-}
-
-/// Shared context for movie processing, bundling dependencies passed between phases
-struct MovieProcessingContext {
-    discovery: Arc<Discovery>,
-    downloader: Arc<Downloader>,
-    converter: Arc<Converter>,
-    temp_base: PathBuf,
-    dry_run: bool,
-    sources: Vec<Source>,
-    tui: Option<Arc<TuiState>>,
-    thread_id: usize,
-}
+use std::sync::atomic::AtomicU32;
 
 /// Summary statistics for processing run
 #[derive(Debug, Clone, Default)]
@@ -53,22 +21,22 @@ pub struct ProcessingSummary {
     pub total_movies: usize,
     /// Number of movies successfully processed
     pub successful_movies: usize,
-    /// Number of movies that failed processing
+    /// Number of movies that failed
     pub failed_movies: usize,
     /// Total number of series found
     pub total_series: usize,
     /// Number of series successfully processed
     pub successful_series: usize,
-    /// Number of series that failed processing
+    /// Number of series that failed
     pub failed_series: usize,
-    /// Total number of videos downloaded
+    /// Total downloads across all items
     pub total_downloads: usize,
-    /// Total number of videos converted
+    /// Total conversions across all items
     pub total_conversions: usize,
-    /// Per-source-type video counts (pre-dedup raw totals)
-    pub(crate) source_totals: HashMap<SourceType, usize>,
-    /// Total videos discovered across all sources (pre-dedup raw total)
-    pub(crate) total_videos_discovered: usize,
+    /// Per-source discovered video totals
+    pub source_totals: std::collections::HashMap<SourceType, usize>,
+    /// Total videos discovered across all sources
+    pub total_videos_discovered: usize,
     /// Total duplicates removed by title+duration deduplication
     pub duplicates_removed: usize,
 }
@@ -80,171 +48,35 @@ impl ProcessingSummary {
     }
 
     /// Merge source results into the running per-source totals
-    pub fn add_source_results(&mut self, results: &[SourceResult]) {
+    pub fn add_source_results(&mut self, results: &[crate::discovery::SourceResult]) {
         for sr in results {
             *self.source_totals.entry(sr.source).or_insert(0) += sr.videos_found;
             self.total_videos_discovered += sr.videos_found;
         }
     }
 
-    /// Add statistics from a movie result
-    fn add_movie_result(&mut self, result: &MovieResult) {
-        if result.success {
-            self.successful_movies += 1;
-        } else {
-            self.failed_movies += 1;
+    /// Add the statistics of one processed library item
+    pub(crate) fn add_outcome(&mut self, outcome: &ItemOutcome) {
+        match &outcome.item {
+            LibraryItem::Movie(_) => {
+                if outcome.success {
+                    self.successful_movies += 1;
+                } else {
+                    self.failed_movies += 1;
+                }
+            }
+            LibraryItem::Series(_) => {
+                if outcome.success {
+                    self.successful_series += 1;
+                } else {
+                    self.failed_series += 1;
+                }
+            }
         }
-        self.total_downloads += result.downloads;
-        self.total_conversions += result.conversions;
-        self.duplicates_removed += result.duplicates_removed;
-        self.add_source_results(&result.source_results);
-    }
-
-    /// Add statistics from a series result
-    fn add_series_result(&mut self, result: &SeriesResult) {
-        if result.success {
-            self.successful_series += 1;
-        } else {
-            self.failed_series += 1;
-        }
-        self.total_downloads += result.downloads;
-        self.total_conversions += result.conversions;
-        self.duplicates_removed += result.duplicates_removed;
-        self.add_source_results(&result.source_results);
-    }
-}
-
-/// Result of processing a single movie
-#[derive(Debug)]
-struct MovieResult {
-    movie: MovieEntry,
-    success: bool,
-    downloads: usize,
-    conversions: usize,
-    error: Option<String>,
-    source_results: Vec<SourceResult>,
-    duplicates_removed: usize,
-}
-
-impl MovieResult {
-    #[cfg(test)]
-    fn success(
-        movie: MovieEntry,
-        downloads: usize,
-        conversions: usize,
-        source_results: Vec<SourceResult>,
-    ) -> Self {
-        Self {
-            movie,
-            success: true,
-            downloads,
-            conversions,
-            error: None,
-            source_results,
-            duplicates_removed: 0,
-        }
-    }
-
-    fn success_with_dedup(
-        movie: MovieEntry,
-        downloads: usize,
-        conversions: usize,
-        source_results: Vec<SourceResult>,
-        duplicates_removed: usize,
-    ) -> Self {
-        Self {
-            movie,
-            success: true,
-            downloads,
-            conversions,
-            error: None,
-            source_results,
-            duplicates_removed,
-        }
-    }
-
-    fn failed(
-        movie: MovieEntry,
-        phase: &str,
-        error: String,
-        source_results: Vec<SourceResult>,
-    ) -> Self {
-        Self {
-            movie,
-            success: false,
-            downloads: 0,
-            conversions: 0,
-            error: Some(format!("{} phase failed: {}", phase, error)),
-            source_results,
-            duplicates_removed: 0,
-        }
-    }
-}
-
-/// Result of processing a single series
-#[derive(Debug)]
-struct SeriesResult {
-    series: SeriesEntry,
-    success: bool,
-    downloads: usize,
-    conversions: usize,
-    error: Option<String>,
-    source_results: Vec<SourceResult>,
-    duplicates_removed: usize,
-}
-
-impl SeriesResult {
-    #[cfg(test)]
-    fn success(
-        series: SeriesEntry,
-        downloads: usize,
-        conversions: usize,
-        source_results: Vec<SourceResult>,
-    ) -> Self {
-        Self {
-            series,
-            success: true,
-            downloads,
-            conversions,
-            error: None,
-            source_results,
-            duplicates_removed: 0,
-        }
-    }
-
-    fn success_with_dedup(
-        series: SeriesEntry,
-        downloads: usize,
-        conversions: usize,
-        source_results: Vec<SourceResult>,
-        duplicates_removed: usize,
-    ) -> Self {
-        Self {
-            series,
-            success: true,
-            downloads,
-            conversions,
-            error: None,
-            source_results,
-            duplicates_removed,
-        }
-    }
-
-    fn failed(
-        series: SeriesEntry,
-        phase: &str,
-        error: String,
-        source_results: Vec<SourceResult>,
-    ) -> Self {
-        Self {
-            series,
-            success: false,
-            downloads: 0,
-            conversions: 0,
-            error: Some(format!("{} phase failed: {}", phase, error)),
-            source_results,
-            duplicates_removed: 0,
-        }
+        self.total_downloads += outcome.downloads;
+        self.total_conversions += outcome.conversions;
+        self.duplicates_removed += outcome.duplicates_removed;
+        self.add_source_results(&outcome.source_results);
     }
 }
 
@@ -274,10 +106,9 @@ pub struct DiscoveryConfig {
     pub sources: Vec<Source>,
     /// Optional browser name for cookie-based authentication
     pub cookies_from_browser: Option<String>,
-    /// Discovery-only mode: skip download, conversion, and organization
+    /// Skip all downloads and file I/O when true
     pub dry_run: bool,
-    /// Vimeo Personal Access Token — empty string when Vimeo is not active.
-    /// SECURITY: Must never be logged, printed, or interpolated into log messages.
+    /// Vimeo personal access token
     pub vimeo_access_token: String,
 }
 
@@ -292,45 +123,40 @@ impl DiscoveryConfig {
     }
 }
 
-/// Configuration for creating an Orchestrator instance.
 /// Groups all parameters to avoid a long argument list.
 pub struct OrchestratorConfig {
     /// Root directory containing media folders
     pub root_dir: PathBuf,
     /// TMDB API key for content discovery
     pub tmdb_api_key: String,
-    /// Optional TheTVDB API key for Season 0 specials discovery
+    /// Optional TVDB API key for Season 0 specials
     pub tvdb_api_key: Option<String>,
-    /// Ignore done markers and reprocess all media
+    /// Ignore done markers and reprocess everything
     pub force: bool,
-    /// Maximum number of media items to process concurrently
+    /// Maximum number of items processed in parallel
     pub concurrency: usize,
-    /// Process a single folder directly instead of scanning
+    /// Treat the root as a single library item
     pub single: bool,
-    /// Which media types to process (Both, MoviesOnly, SeriesOnly)
+    /// Which library item kinds to process
     pub processing_mode: ProcessingMode,
-    /// Series-specific configuration
+    /// Series-specific options
     pub series: SeriesConfig,
-    /// Discovery and download configuration
+    /// Discovery and download options
     pub discovery: DiscoveryConfig,
 }
 
-/// Orchestrator coordinates all processing phases
+/// Orchestrator coordinates scanning and the per-item pipeline
 pub struct Orchestrator {
     scanner: Scanner,
     discovery: Arc<Discovery>,
     special_discovery: Arc<SpecialDiscovery>,
     downloader: Arc<Downloader>,
     converter: Arc<Converter>,
+    pipeline_config: PipelineConfig,
     temp_base: PathBuf,
     concurrency: usize,
     processing_mode: ProcessingMode,
-    season_extras: bool,
-    specials: bool,
-    specials_folder: String,
-    dry_run: bool,
-    sources: Vec<Source>,
-    tui: Option<Arc<TuiState>>,
+    progress: Arc<Progress>,
 }
 
 impl Orchestrator {
@@ -381,7 +207,6 @@ impl Orchestrator {
             kinocheck_request_count: kinocheck_counter,
         });
 
-        // Season 0 specials are their own module, outside the discovery seam.
         if config.series.specials && config.tvdb_api_key.is_some() {
             info!("  TVDB support enabled for Season 0 specials");
         }
@@ -404,26 +229,32 @@ impl Orchestrator {
             None => Downloader::new(temp_base.clone()),
         };
 
+        let pipeline_config = PipelineConfig {
+            dry_run: config.discovery.dry_run,
+            sources: config.discovery.sources,
+            season_extras: config.series.season_extras,
+            specials: config.series.specials,
+            specials_folder: config.series.specials_folder,
+            temp_base: temp_base.clone(),
+        };
+
         Ok(Self {
             scanner: Scanner::new(config.root_dir, config.force, config.single),
             discovery: Arc::new(discovery),
             special_discovery: Arc::new(special_discovery),
             downloader: Arc::new(downloader),
             converter: Arc::new(Converter::new()),
+            pipeline_config,
             temp_base,
             concurrency: config.concurrency,
             processing_mode: config.processing_mode,
-            season_extras: config.series.season_extras,
-            specials: config.series.specials,
-            specials_folder: config.series.specials_folder,
-            dry_run: config.discovery.dry_run,
-            sources: config.discovery.sources,
-            tui: None,
+            progress: Arc::new(Progress::new()),
         })
     }
 
-    pub fn with_tui(mut self, tui: Arc<TuiState>) -> Self {
-        self.tui = Some(tui);
+    /// Attach the progress instance built by the entry point.
+    pub fn with_progress(mut self, progress: Arc<Progress>) -> Self {
+        self.progress = progress;
         self
     }
 
@@ -431,22 +262,10 @@ impl Orchestrator {
     pub async fn run(&self) -> Result<ProcessingSummary, OrchestratorError> {
         info!("Starting orchestrator run");
 
-        let tui = self.tui.clone();
-        if let Some(ref tui_state) = tui {
-            tui_state.set_thread_count(self.concurrency);
-            tui_state.start();
-            let tui_clone = tui_state.clone();
-            std::thread::spawn(move || {
-                crate::tui::run_tui(tui_clone);
-            });
-        }
-
         self.cleanup_pre_existing_temp().await;
 
         info!("Phase 1: Scanning for media");
-        if let Some(ref tui_state) = tui {
-            tui_state.set_system_status("Scanning folder...");
-        }
+        self.progress.system_status("Scanning folder...");
         let (movies, series) = self
             .scanner
             .scan_all()
@@ -459,71 +278,74 @@ impl Orchestrator {
             movie_count, series_count
         );
 
-        let total_items = movie_count + series_count;
-        if let Some(ref tui_state) = tui {
-            tui_state.set_total_items(total_items);
-            tui_state.set_system_status(&format!(
-                "Found {} movies, {} series",
-                movie_count, series_count
-            ));
-        }
+        self.progress.run_started(movie_count + series_count);
+        self.progress.system_status(&format!(
+            "Found {} movies, {} series",
+            movie_count, series_count
+        ));
 
         let mut summary = ProcessingSummary::new();
         summary.total_movies = movie_count;
         summary.total_series = series_count;
 
+        let phases = ProductionPhases::new(
+            self.discovery.clone(),
+            self.special_discovery.clone(),
+            self.downloader.clone(),
+            self.converter.clone(),
+            self.pipeline_config.clone(),
+        );
+        let pipeline = Arc::new(Pipeline::new(
+            phases,
+            self.pipeline_config.clone(),
+            self.progress.clone(),
+            self.concurrency,
+        ));
+
         if self.processing_mode != ProcessingMode::SeriesOnly && !movies.is_empty() {
             info!("Processing movies");
-            if let Some(ref tui_state) = tui {
-                tui_state.set_system_status(&format!("Processing {} movies...", movie_count));
-            }
-            let results = if self.concurrency > 1 {
-                self.process_movies_parallel(movies, tui.clone()).await
-            } else {
-                self.process_movies_sequential(movies, tui.clone()).await
-            };
-
-            for result in results {
-                if let Some(ref error) = result.error {
-                    error!("Movie {} failed: {}", result.movie, error);
+            self.progress
+                .system_status(&format!("Processing {} movies...", movie_count));
+            let items = movies.into_iter().map(LibraryItem::Movie).collect();
+            let outcomes = pipeline.process_all(items).await;
+            for outcome in outcomes {
+                if let Some(ref error) = outcome.error {
+                    log::error!("Movie {} failed: {}", outcome.item.label(), error);
                 } else {
                     info!(
                         "Movie {} completed: {} downloads, {} conversions",
-                        result.movie, result.downloads, result.conversions
+                        outcome.item.label(),
+                        outcome.downloads,
+                        outcome.conversions
                     );
                 }
-                summary.add_movie_result(&result);
+                summary.add_outcome(&outcome);
             }
         }
 
         if self.processing_mode != ProcessingMode::MoviesOnly && !series.is_empty() {
             info!("Processing series");
-            if let Some(ref tui_state) = tui {
-                tui_state.set_system_status(&format!("Processing {} series...", series.len()));
-            }
-            let results = if self.concurrency > 1 {
-                self.process_series_parallel(series, tui.clone()).await
-            } else {
-                self.process_series_sequential(series, tui.clone()).await
-            };
-
-            for result in results {
-                if let Some(ref error) = result.error {
-                    error!("Series {} failed: {}", result.series, error);
+            self.progress
+                .system_status(&format!("Processing {} series...", series.len()));
+            let items = series.into_iter().map(LibraryItem::Series).collect();
+            let outcomes = pipeline.process_all(items).await;
+            for outcome in outcomes {
+                if let Some(ref error) = outcome.error {
+                    log::error!("Series {} failed: {}", outcome.item.label(), error);
                 } else {
                     info!(
                         "Series {} completed: {} downloads, {} conversions",
-                        result.series, result.downloads, result.conversions
+                        outcome.item.label(),
+                        outcome.downloads,
+                        outcome.conversions
                     );
                 }
-                summary.add_series_result(&result);
+                summary.add_outcome(&outcome);
             }
         }
 
-        if let Some(ref tui_state) = tui {
-            tui_state.set_system_status("Complete!");
-            tui_state.stop();
-        }
+        self.progress.system_status("Complete!");
+        self.progress.run_finished();
 
         info!("Orchestrator run complete");
         info!("  Total movies: {}", summary.total_movies);
@@ -536,550 +358,6 @@ impl Orchestrator {
         info!("  Total conversions: {}", summary.total_conversions);
 
         Ok(summary)
-    }
-
-    async fn process_movies_sequential(
-        &self,
-        movies: Vec<MovieEntry>,
-        tui: Option<Arc<TuiState>>,
-    ) -> Vec<MovieResult> {
-        let total = movies.len();
-        let mut results = Vec::new();
-        for (idx, movie) in movies.into_iter().enumerate() {
-            if let Some(ref tui_state) = tui {
-                tui_state.set_current_item(&format!("{}", movie));
-            }
-            output::display_movie_start(&movie, idx + 1, total);
-            let result = self.process_movie(movie).await;
-            results.push(result);
-            if let Some(ref tui_state) = tui {
-                tui_state.increment_processed();
-            }
-        }
-        results
-    }
-
-    async fn process_movies_parallel(
-        &self,
-        movies: Vec<MovieEntry>,
-        tui: Option<Arc<TuiState>>,
-    ) -> Vec<MovieResult> {
-        let semaphore = Arc::new(Semaphore::new(self.concurrency));
-        let total = movies.len();
-        let counter = Arc::new(AtomicUsize::new(0));
-        let thread_counter = Arc::new(AtomicUsize::new(0));
-        let mut tasks = Vec::new();
-
-        for movie in movies {
-            let sem = semaphore.clone();
-            let counter = counter.clone();
-            let thread_counter = thread_counter.clone();
-            let tui = tui.clone();
-
-            let mut ctx = MovieProcessingContext {
-                discovery: self.discovery.clone(),
-                downloader: self.downloader.clone(),
-                converter: self.converter.clone(),
-                temp_base: self.temp_base.clone(),
-                dry_run: self.dry_run,
-                sources: self.sources.clone(),
-                tui: tui.clone(),
-                thread_id: 0,
-            };
-
-            let task = tokio::spawn(async move {
-                let _permit = sem.acquire().await.expect("semaphore should not be closed");
-                let current = counter.fetch_add(1, Ordering::SeqCst) + 1;
-                let thread_id = thread_counter.fetch_add(1, Ordering::SeqCst);
-                ctx.thread_id = thread_id;
-                if let Some(ref tui_state) = tui {
-                    tui_state.set_current_item(&format!("{}", movie));
-                    tui_state.log(thread_id, &format!("▶ Processing: {}", movie));
-                }
-                output::display_movie_start(&movie, current, total);
-                let result = Self::process_movie_standalone(movie, ctx).await;
-                if let Some(ref tui_state) = tui {
-                    tui_state.increment_processed();
-                    if result.success {
-                        tui_state.log(
-                            thread_id,
-                            &format!(
-                                "✓ Done: {} ({} dl, {} conv)",
-                                result.movie, result.downloads, result.conversions
-                            ),
-                        );
-                    } else {
-                        let err = result
-                            .error
-                            .clone()
-                            .unwrap_or_else(|| "unknown".to_string());
-                        tui_state.log(thread_id, &format!("✗ Failed: {} — {}", result.movie, err));
-                    }
-                }
-                result
-            });
-            tasks.push(task);
-        }
-
-        let mut results = Vec::new();
-        for task in tasks {
-            if let Ok(result) = task.await {
-                results.push(result);
-            }
-        }
-        results
-    }
-
-    async fn process_movie(&self, movie: MovieEntry) -> MovieResult {
-        let ctx = MovieProcessingContext {
-            discovery: self.discovery.clone(),
-            downloader: self.downloader.clone(),
-            converter: self.converter.clone(),
-            temp_base: self.temp_base.clone(),
-            dry_run: self.dry_run,
-            sources: self.sources.clone(),
-            tui: None,
-            thread_id: 0,
-        };
-        Self::process_movie_standalone(movie, ctx).await
-    }
-
-    /// Process a single movie through all phases without requiring &self.
-    /// Used by both sequential and parallel paths.
-    async fn process_movie_standalone(
-        movie: MovieEntry,
-        ctx: MovieProcessingContext,
-    ) -> MovieResult {
-        info!("Processing movie: {}", movie);
-
-        let movie_id = format!("{}_{}", movie.title.replace(' ', "_"), movie.year);
-
-        // Phase 2: Discovery
-        info!("Phase 2: Discovering content for {}", movie);
-        if let Some(ref tui) = ctx.tui {
-            tui.log(ctx.thread_id, "  🔍 Discovering...");
-        }
-        let query = DiscoveryQuery::movie(&movie, ctx.sources.clone());
-        let report = ctx.discovery.discover(std::slice::from_ref(&query)).await;
-        let sources = report.candidates;
-        let source_results = report.source_results;
-        let dedup_removed = report.duplicates_removed;
-
-        if let Some(ref tui) = ctx.tui {
-            tui.log(ctx.thread_id, &format!("  Found {} sources", sources.len()));
-        }
-
-        // Dry-run: display results and return early — no file I/O (AC3/NFR5)
-        if ctx.dry_run {
-            output::display_dry_run_movie_results(
-                &movie,
-                &source_results,
-                sources.len(),
-                dedup_removed,
-            );
-            return MovieResult::success_with_dedup(movie, 0, 0, source_results, dedup_removed);
-        }
-
-        // Remove stale done marker only when actually reprocessing (not in dry-run)
-        if movie.has_done_marker {
-            remove_stale_done_marker(&movie.path).await;
-        }
-
-        if sources.is_empty() {
-            warn!("No sources found for {}", movie);
-            if let Some(ref tui) = ctx.tui {
-                tui.log(ctx.thread_id, "  ✗ No sources found");
-            }
-            return MovieResult::success_with_dedup(movie, 0, 0, source_results, dedup_removed);
-        }
-        info!("Found {} sources for {}", sources.len(), movie);
-        if let Some(ref tui) = ctx.tui {
-            tui.log(
-                ctx.thread_id,
-                &format!("  ✓ Found {} sources", sources.len()),
-            );
-        }
-
-        // Phase 3: Download
-        info!(
-            "Phase 3: Downloading {} videos for {}",
-            sources.len(),
-            movie
-        );
-        if let Some(ref tui) = ctx.tui {
-            tui.log(
-                ctx.thread_id,
-                &format!("  ↓ Downloading {} videos...", sources.len()),
-            );
-        }
-        let downloads = ctx.downloader.download_all(&movie_id, sources).await;
-        let successful_downloads = downloads.iter().filter(|d| d.success).count();
-        info!(
-            "Downloaded {}/{} videos for {}",
-            successful_downloads,
-            downloads.len(),
-            movie
-        );
-        if let Some(ref tui) = ctx.tui {
-            if successful_downloads > 0 {
-                tui.log(
-                    ctx.thread_id,
-                    &format!(
-                        "  ✓ Downloaded {}/{}",
-                        successful_downloads,
-                        downloads.len()
-                    ),
-                );
-                for d in downloads.iter().filter(|d| d.success) {
-                    let name = d
-                        .local_path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "unknown".to_string());
-                    tui.log(ctx.thread_id, &format!("    → {}", name));
-                }
-            } else {
-                tui.log(ctx.thread_id, "  ✗ No downloads");
-            }
-        }
-
-        if successful_downloads == 0 {
-            warn!("No successful downloads for {}", movie);
-            cleanup_temp_dir(&ctx.temp_base.join(&movie_id)).await;
-            return MovieResult::success_with_dedup(
-                movie,
-                downloads.len(),
-                0,
-                source_results,
-                dedup_removed,
-            );
-        }
-
-        // Phase 4: Conversion
-        info!(
-            "Phase 4: Converting {} videos for {}",
-            successful_downloads, movie
-        );
-        if let Some(ref tui) = ctx.tui {
-            tui.log(
-                ctx.thread_id,
-                &format!("  ⇄ Converting {} videos...", successful_downloads),
-            );
-        }
-        let conversions = ctx.converter.convert_batch(downloads).await;
-        let successful_conversions = conversions.iter().filter(|c| c.success).count();
-        info!(
-            "Converted {}/{} videos for {}",
-            successful_conversions,
-            conversions.len(),
-            movie
-        );
-        if let Some(ref tui) = ctx.tui {
-            if successful_conversions > 0 {
-                tui.log(
-                    ctx.thread_id,
-                    &format!(
-                        "  ✓ Converted {}/{}",
-                        successful_conversions,
-                        conversions.len()
-                    ),
-                );
-            } else {
-                tui.log(ctx.thread_id, "  ✗ No conversions");
-            }
-        }
-
-        if successful_conversions == 0 {
-            warn!("No successful conversions for {}", movie);
-            cleanup_temp_dir(&ctx.temp_base.join(&movie_id)).await;
-            return MovieResult::success_with_dedup(
-                movie,
-                successful_downloads,
-                0,
-                source_results,
-                dedup_removed,
-            );
-        }
-
-        // Phase 5: Organization
-        info!(
-            "Phase 5: Organizing {} files for {}",
-            successful_conversions, movie
-        );
-        let organizer = Organizer::new(movie.path.clone());
-        let temp_dir = ctx.temp_base.join(&movie_id);
-
-        match organizer.organize(conversions, &temp_dir).await {
-            Ok(_) => {
-                info!("✓ Movie processing complete: {}", movie);
-                MovieResult::success_with_dedup(
-                    movie,
-                    successful_downloads,
-                    successful_conversions,
-                    source_results,
-                    dedup_removed,
-                )
-            }
-            Err(e) => {
-                error!("✗ Movie processing failed: {}: {}", movie, e);
-                MovieResult::failed(movie, "organization", e.to_string(), source_results)
-            }
-        }
-    }
-
-    async fn process_series_sequential(
-        &self,
-        series_list: Vec<SeriesEntry>,
-        tui: Option<Arc<TuiState>>,
-    ) -> Vec<SeriesResult> {
-        let total = series_list.len();
-        let mut results = Vec::new();
-        for (idx, series) in series_list.into_iter().enumerate() {
-            if let Some(ref tui_state) = tui {
-                tui_state.set_current_item(&format!("{}", series));
-            }
-            output::display_series_start(&series, idx + 1, total);
-            let result = self.process_series(series).await;
-            results.push(result);
-            if let Some(ref tui_state) = tui {
-                tui_state.increment_processed();
-            }
-        }
-        results
-    }
-
-    async fn process_series_parallel(
-        &self,
-        series_list: Vec<SeriesEntry>,
-        tui: Option<Arc<TuiState>>,
-    ) -> Vec<SeriesResult> {
-        let semaphore = Arc::new(Semaphore::new(self.concurrency));
-        let total = series_list.len();
-        let counter = Arc::new(AtomicUsize::new(0));
-        let thread_counter = Arc::new(AtomicUsize::new(0));
-        let mut tasks = Vec::new();
-
-        for series in series_list {
-            let sem = semaphore.clone();
-            let discovery = self.discovery.clone();
-            let special_discovery = self.special_discovery.clone();
-            let downloader = self.downloader.clone();
-            let converter = self.converter.clone();
-            let temp_base = self.temp_base.clone();
-            let specials_folder = self.specials_folder.clone();
-            let season_extras = self.season_extras;
-            let specials = self.specials;
-            let counter = counter.clone();
-            let thread_counter = thread_counter.clone();
-            let tui = tui.clone();
-
-            let ctx = SeriesProcessingContext {
-                discovery,
-                special_discovery,
-                downloader,
-                converter,
-                temp_base,
-                season_extras,
-                specials,
-                specials_folder,
-                dry_run: self.dry_run,
-                sources: self.sources.clone(),
-            };
-
-            let task = tokio::spawn(async move {
-                let _permit = sem.acquire().await.expect("semaphore should not be closed");
-                let current = counter.fetch_add(1, Ordering::SeqCst) + 1;
-                let thread_id = thread_counter.fetch_add(1, Ordering::SeqCst);
-                let series_name = format!("{}", series);
-                if let Some(ref tui_state) = tui {
-                    tui_state.set_current_item(&series_name);
-                    tui_state.add_active_item(&series_name);
-                    tui_state.log(thread_id, &format!("▶ Processing: {}", series));
-                }
-                output::display_series_start(&series, current, total);
-                let result = Self::process_series_standalone(series, ctx).await;
-                if let Some(ref tui_state) = tui {
-                    tui_state.remove_active_item(&series_name);
-                    tui_state.increment_processed();
-                    if result.success {
-                        tui_state.log(
-                            thread_id,
-                            &format!(
-                                "✓ Done: {} ({} dl, {} conv)",
-                                result.series, result.downloads, result.conversions
-                            ),
-                        );
-                    } else {
-                        let err = result
-                            .error
-                            .clone()
-                            .unwrap_or_else(|| "unknown".to_string());
-                        tui_state.log(thread_id, &format!("✗ Failed: {} — {}", result.series, err));
-                    }
-                }
-                result
-            });
-            tasks.push(task);
-        }
-
-        let mut results = Vec::new();
-        for task in tasks {
-            if let Ok(result) = task.await {
-                results.push(result);
-            }
-        }
-        results
-    }
-
-    async fn process_series(&self, series: SeriesEntry) -> SeriesResult {
-        let ctx = SeriesProcessingContext {
-            discovery: self.discovery.clone(),
-            special_discovery: self.special_discovery.clone(),
-            downloader: self.downloader.clone(),
-            converter: self.converter.clone(),
-            temp_base: self.temp_base.clone(),
-            season_extras: self.season_extras,
-            specials: self.specials,
-            specials_folder: self.specials_folder.clone(),
-            dry_run: self.dry_run,
-            sources: self.sources.clone(),
-        };
-        Self::process_series_standalone(series, ctx).await
-    }
-
-    /// Process a single series through all phases without requiring &self.
-    /// Delegates to focused helper functions for each stage.
-    async fn process_series_standalone(
-        series: SeriesEntry,
-        ctx: SeriesProcessingContext,
-    ) -> SeriesResult {
-        info!("Processing series: {}", series);
-
-        let series_id = format!(
-            "{}_{}",
-            series.title.replace(' ', "_"),
-            series.year.unwrap_or(0)
-        );
-
-        // Phase 2: Discovery
-        let SeriesDiscoveryOutcome {
-            extras: all_extras,
-            season_zero: season_zero_extras,
-            tvdb_episodes: tvdb_episodes_metadata,
-            source_results: series_source_results,
-            duplicates_removed: dedup_removed,
-        } = discover_series_content(
-            &series,
-            &ctx.discovery,
-            &ctx.special_discovery,
-            ctx.season_extras,
-            ctx.specials,
-            &ctx.sources,
-        )
-        .await;
-
-        // Dry-run: display results and return early — no file I/O (AC3/NFR5)
-        if ctx.dry_run {
-            let total = all_extras.len() + season_zero_extras.len();
-            if total == 0 {
-                info!(
-                    "Dry-run: no extras discovered for {} (discovery may have failed or returned no results)",
-                    series
-                );
-            }
-            output::display_dry_run_series_results(
-                &series,
-                &series_source_results,
-                total,
-                dedup_removed,
-            );
-            return SeriesResult::success_with_dedup(
-                series,
-                0,
-                0,
-                series_source_results,
-                dedup_removed,
-            );
-        }
-
-        // Remove stale done marker only when actually reprocessing (not in dry-run)
-        if series.has_done_marker {
-            remove_stale_done_marker(&series.path).await;
-        }
-
-        if all_extras.is_empty() && season_zero_extras.is_empty() {
-            warn!("No extras found for {}", series);
-            return SeriesResult::success_with_dedup(
-                series,
-                0,
-                0,
-                series_source_results,
-                dedup_removed,
-            );
-        }
-
-        // Phase 3 & 4: Download and convert
-        let (total_successful_downloads, total_conversions, conversions, specials_conversions) =
-            download_and_convert_series(
-                &series,
-                &series_id,
-                all_extras,
-                &season_zero_extras,
-                &ctx.downloader,
-                &ctx.converter,
-                &ctx.temp_base,
-            )
-            .await;
-
-        if total_conversions == 0 {
-            warn!("No successful conversions for {}", series);
-            cleanup_temp_dir(&ctx.temp_base.join(&series_id)).await;
-            return SeriesResult::success_with_dedup(
-                series,
-                total_successful_downloads,
-                0,
-                series_source_results,
-                dedup_removed,
-            );
-        }
-
-        // Phase 5: Organization
-        let specials_ctx = SpecialsOrganizationContext {
-            tvdb_episodes_metadata: &tvdb_episodes_metadata,
-            season_zero_extras: &season_zero_extras,
-            specials_folder: &ctx.specials_folder,
-        };
-        let org_failed = organize_series_results(
-            &series,
-            &series_id,
-            conversions,
-            specials_conversions,
-            &specials_ctx,
-            &ctx.temp_base,
-        )
-        .await;
-
-        cleanup_temp_dir(&ctx.temp_base.join(&series_id)).await;
-
-        if org_failed {
-            error!("✗ Series processing had organization errors: {}", series);
-            SeriesResult::failed(
-                series,
-                "organization",
-                "Some seasons failed".to_string(),
-                series_source_results,
-            )
-        } else {
-            write_done_marker(&series.path, &format!("{}", series)).await;
-            info!("✓ Series processing complete: {}", series);
-            SeriesResult::success_with_dedup(
-                series,
-                total_successful_downloads,
-                total_conversions,
-                series_source_results,
-                dedup_removed,
-            )
-        }
     }
 
     /// Clean up any pre-existing temp directories before processing
@@ -1120,284 +398,15 @@ impl Drop for Orchestrator {
     }
 }
 
-// --- Free-standing helper functions (SRP: each does one thing) ---
-
-/// Remove a stale done marker file before reprocessing
-async fn remove_stale_done_marker(path: &std::path::Path) {
-    let marker_path = path.join("done.ext");
-    info!(
-        "Removing stale done marker before reprocessing: {:?}",
-        marker_path
-    );
-    if let Err(e) = tokio::fs::remove_file(&marker_path).await {
-        warn!("Failed to remove done marker {:?}: {}", marker_path, e);
-    }
-}
-
-/// Clean up a temp directory if it exists
-async fn cleanup_temp_dir(temp_dir: &std::path::Path) {
-    if temp_dir.exists()
-        && let Err(e) = tokio::fs::remove_dir_all(temp_dir).await
-    {
-        warn!("Failed to cleanup temp dir {:?}: {}", temp_dir, e);
-    }
-}
-
-/// Write a done marker JSON file for a completed media item
-async fn write_done_marker(path: &std::path::Path, label: &str) {
-    let marker_path = path.join("done.ext");
-    let marker = serde_json::json!({
-        "finished_at": chrono::Utc::now().to_rfc3339(),
-        "version": env!("CARGO_PKG_VERSION"),
-    });
-
-    match serde_json::to_string_pretty(&marker) {
-        Ok(json) => {
-            if let Err(e) = tokio::fs::write(&marker_path, json).await {
-                warn!("Failed to create done marker for {}: {}", label, e);
-            } else {
-                info!("Created done marker for: {:?}", marker_path);
-            }
-        }
-        Err(_) => warn!("Failed to serialize done marker for {}", label),
-    }
-}
-
-/// Everything the series discovery stage produces.
-struct SeriesDiscoveryOutcome {
-    extras: Vec<VideoSource>,
-    season_zero: Vec<VideoSource>,
-    tvdb_episodes: Vec<TvdbEpisodeExtended>,
-    source_results: Vec<SourceResult>,
-    duplicates_removed: usize,
-}
-
-/// Discover all content for a series: regular extras, season extras, and Season 0 specials.
-async fn discover_series_content(
-    series: &SeriesEntry,
-    discovery: &Discovery,
-    special_discovery: &SpecialDiscovery,
-    season_extras_enabled: bool,
-    specials_enabled: bool,
-    sources: &[Source],
-) -> SeriesDiscoveryOutcome {
-    info!("Phase 2: Discovering content for {}", series);
-    info!(
-        "Discovery flags: season_extras={}, specials={}",
-        season_extras_enabled, specials_enabled
-    );
-
-    // One discover call for the series and all its seasons, so duplicates that
-    // appear in both scopes are removed once over the union.
-    let base_query = DiscoveryQuery::series(series, sources.to_vec());
-    let mut queries = vec![base_query.clone()];
-    if season_extras_enabled {
-        for &season in &series.seasons {
-            queries.push(base_query.for_season(season));
-        }
-    }
-
-    let report = discovery.discover(&queries).await;
-
-    // Season 0 specials are selected from TVDB metadata, not from source queries.
-    let (season_zero, tvdb_episodes) = if specials_enabled {
-        info!("Discovering Season 0 specials for {}", series);
-        special_discovery.select(series).await
-    } else {
-        (Vec::new(), Vec::new())
-    };
-
-    info!(
-        "Discovery summary for {}: {} extras, {} specials",
-        series,
-        report.candidates.len(),
-        season_zero.len()
-    );
-
-    SeriesDiscoveryOutcome {
-        extras: report.candidates,
-        season_zero,
-        tvdb_episodes,
-        source_results: report.source_results,
-        duplicates_removed: report.duplicates_removed,
-    }
-}
-
-/// Download and convert both regular extras and Season 0 specials.
-/// Returns (total_successful_downloads, total_conversions, regular_conversions, specials_conversions).
-async fn download_and_convert_series(
-    series: &SeriesEntry,
-    series_id: &str,
-    all_extras: Vec<VideoSource>,
-    season_zero_extras: &[VideoSource],
-    downloader: &Downloader,
-    converter: &Converter,
-    temp_base: &std::path::Path,
-) -> (usize, usize, Vec<ConversionResult>, Vec<ConversionResult>) {
-    // Download regular extras
-    info!(
-        "Phase 3: Downloading {} regular extras for {}",
-        all_extras.len(),
-        series
-    );
-    let downloads = downloader.download_all(series_id, all_extras).await;
-    let successful_downloads = downloads.iter().filter(|d| d.success).count();
-    info!(
-        "Downloaded {}/{} regular extras for {}",
-        successful_downloads,
-        downloads.len(),
-        series
-    );
-
-    // Download Season 0 specials
-    let specials_downloads = if !season_zero_extras.is_empty() {
-        info!(
-            "Downloading {} Season 0 specials for {}",
-            season_zero_extras.len(),
-            series
-        );
-        downloader
-            .download_all(series_id, season_zero_extras.to_vec())
-            .await
-    } else {
-        Vec::new()
-    };
-    let successful_specials = specials_downloads.iter().filter(|d| d.success).count();
-
-    let total_successful_downloads = successful_downloads + successful_specials;
-
-    if total_successful_downloads == 0 {
-        warn!("No successful downloads for {}", series);
-        cleanup_temp_dir(&temp_base.join(series_id)).await;
-        return (0, 0, Vec::new(), Vec::new());
-    }
-
-    // Phase 4: Conversion
-    info!(
-        "Phase 4: Converting {} videos for {}",
-        total_successful_downloads, series
-    );
-    let conversions = converter.convert_batch(downloads).await;
-    let specials_conversions = if !specials_downloads.is_empty() {
-        converter.convert_batch(specials_downloads).await
-    } else {
-        Vec::new()
-    };
-
-    let successful_conversions = conversions.iter().filter(|c| c.success).count();
-    let successful_specials_conversions = specials_conversions.iter().filter(|c| c.success).count();
-    let total_conversions = successful_conversions + successful_specials_conversions;
-
-    info!(
-        "Converted {}/{} videos for {} ({} regular, {} specials)",
-        total_conversions,
-        conversions.len() + specials_conversions.len(),
-        series,
-        successful_conversions,
-        successful_specials_conversions
-    );
-
-    (
-        total_successful_downloads,
-        total_conversions,
-        conversions,
-        specials_conversions,
-    )
-}
-
-/// Context for organizing Season 0 specials
-struct SpecialsOrganizationContext<'a> {
-    tvdb_episodes_metadata: &'a [TvdbEpisodeExtended],
-    season_zero_extras: &'a [VideoSource],
-    specials_folder: &'a str,
-}
-
-/// Organize converted files into Jellyfin directory structure.
-/// Returns true if any organization step failed.
-async fn organize_series_results(
-    series: &SeriesEntry,
-    series_id: &str,
-    conversions: Vec<ConversionResult>,
-    specials_conversions: Vec<ConversionResult>,
-    specials_ctx: &SpecialsOrganizationContext<'_>,
-    temp_base: &std::path::Path,
-) -> bool {
-    let total_conversions = conversions.iter().filter(|c| c.success).count()
-        + specials_conversions.iter().filter(|c| c.success).count();
-
-    info!(
-        "Phase 5: Organizing {} files for {}",
-        total_conversions, series
-    );
-    let organizer = SeriesOrganizer::new(series.path.clone(), series.seasons.clone());
-    let _temp_dir = temp_base.join(series_id);
-
-    // Group regular conversions by season_number
-    let mut by_season: std::collections::HashMap<Option<u8>, Vec<_>> =
-        std::collections::HashMap::new();
-    for conversion in conversions {
-        by_season
-            .entry(conversion.season_number)
-            .or_default()
-            .push(conversion);
-    }
-
-    let mut org_failed = false;
-    for (season, season_conversions) in by_season {
-        if let Err(e) = organizer.organize_extras(season_conversions, season).await {
-            error!(
-                "Organization failed for {} season {:?}: {}",
-                series, season, e
-            );
-            org_failed = true;
-        }
-    }
-
-    // Organize Season 0 specials
-    if !specials_conversions.is_empty() {
-        let mut special_episodes = Vec::new();
-        for (idx, conversion) in specials_conversions.iter().enumerate() {
-            if conversion.success
-                && let Some(episode) = specials_ctx.tvdb_episodes_metadata.get(idx)
-            {
-                special_episodes.push(crate::models::SpecialEpisode {
-                    episode_number: episode.number,
-                    title: episode.name.clone(),
-                    air_date: episode.aired.clone(),
-                    url: specials_ctx
-                        .season_zero_extras
-                        .get(idx)
-                        .map(|e| e.url.clone()),
-                    local_path: Some(conversion.output_path.clone()),
-                    tvdb_id: Some(episode.id),
-                });
-            }
-        }
-
-        if !special_episodes.is_empty()
-            && let Err(e) = organizer
-                .organize_specials(
-                    &series.title,
-                    special_episodes,
-                    specials_ctx.specials_folder,
-                )
-                .await
-        {
-            error!("Failed to organize Season 0 specials for {}: {}", series, e);
-            org_failed = true;
-        }
-    }
-
-    org_failed
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::discovery::SourceResult;
+    use crate::models::{MovieEntry, SeriesEntry};
+    use crate::progress::Outcome;
+    use std::path::Path;
 
-    /// Helper to build an OrchestratorConfig with common test defaults
     fn test_config(root_dir: PathBuf) -> OrchestratorConfig {
-        use crate::models::default_sources;
         OrchestratorConfig {
             root_dir,
             tmdb_api_key: "fake_api_key".to_string(),
@@ -1407,972 +416,86 @@ mod tests {
             single: false,
             processing_mode: ProcessingMode::Both,
             series: SeriesConfig::default(),
-            discovery: DiscoveryConfig::new(default_sources()),
+            discovery: DiscoveryConfig::new(vec![Source::Youtube]),
         }
     }
 
-    #[test]
-    fn test_processing_summary_new() {
-        let summary = ProcessingSummary::new();
-        assert_eq!(summary.total_movies, 0);
-        assert_eq!(summary.successful_movies, 0);
-        assert_eq!(summary.failed_movies, 0);
-        assert_eq!(summary.total_series, 0);
-        assert_eq!(summary.successful_series, 0);
-        assert_eq!(summary.failed_series, 0);
-        assert_eq!(summary.total_downloads, 0);
-        assert_eq!(summary.total_conversions, 0);
-        assert!(summary.source_totals.is_empty());
-        assert_eq!(summary.total_videos_discovered, 0);
-    }
-
-    #[test]
-    fn test_processing_summary_add_successful_result() {
-        let mut summary = ProcessingSummary::new();
-        let result = MovieResult::success(
-            MovieEntry {
-                path: PathBuf::from("/movies/Test (2020)"),
-                title: "Test".to_string(),
-                year: 2020,
-                has_done_marker: false,
-            },
-            5,
-            4,
-            vec![],
-        );
-
-        summary.add_movie_result(&result);
-
-        assert_eq!(summary.successful_movies, 1);
-        assert_eq!(summary.failed_movies, 0);
-        assert_eq!(summary.total_downloads, 5);
-        assert_eq!(summary.total_conversions, 4);
-    }
-
-    #[test]
-    fn test_processing_summary_add_failed_result() {
-        let mut summary = ProcessingSummary::new();
-        let result = MovieResult::failed(
-            MovieEntry {
-                path: PathBuf::from("/movies/Test (2020)"),
-                title: "Test".to_string(),
-                year: 2020,
-                has_done_marker: false,
-            },
-            "download",
-            "Network error".to_string(),
-            vec![],
-        );
-
-        summary.add_movie_result(&result);
-
-        assert_eq!(summary.successful_movies, 0);
-        assert_eq!(summary.failed_movies, 1);
-        assert_eq!(summary.total_downloads, 0);
-        assert_eq!(summary.total_conversions, 0);
-    }
-
-    #[test]
-    fn test_movie_result_success() {
-        let movie = MovieEntry {
-            path: PathBuf::from("/movies/Test (2020)"),
-            title: "Test".to_string(),
-            year: 2020,
-            has_done_marker: false,
-        };
-
-        let result = MovieResult::success(movie, 3, 2, vec![]);
-
-        assert!(result.success);
-        assert_eq!(result.downloads, 3);
-        assert_eq!(result.conversions, 2);
-        assert!(result.error.is_none());
-    }
-
-    #[test]
-    fn test_movie_result_failed() {
-        let movie = MovieEntry {
-            path: PathBuf::from("/movies/Test (2020)"),
-            title: "Test".to_string(),
-            year: 2020,
-            has_done_marker: false,
-        };
-
-        let result = MovieResult::failed(movie, "conversion", "FFmpeg error".to_string(), vec![]);
-
-        assert!(!result.success);
-        assert_eq!(result.downloads, 0);
-        assert_eq!(result.conversions, 0);
-        assert!(result.error.is_some());
-        assert!(
-            result
-                .error
-                .as_ref()
-                .expect("error should be set")
-                .contains("conversion phase failed: FFmpeg error")
-        );
-    }
-
-    #[test]
-    fn test_orchestrator_new_validates_root_dir() {
-        let nonexistent = PathBuf::from("/nonexistent/path/that/does/not/exist");
-        let result = Orchestrator::new(test_config(nonexistent));
-
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_pre_existing_temp() {
-        use tempfile::TempDir;
-
-        let temp_root = TempDir::new().expect("tempdir creation should succeed");
-        let root_dir = temp_root.path().join("movies");
-        tokio::fs::create_dir(&root_dir)
-            .await
-            .expect("dir creation should succeed");
-
-        let temp_base = temp_root.path().join("tmp_downloads");
-        tokio::fs::create_dir(&temp_base)
-            .await
-            .expect("dir creation should succeed");
-        tokio::fs::write(temp_base.join("test.txt"), b"test")
-            .await
-            .expect("file write should succeed");
-
-        // Create orchestrator with custom temp_base
-        let mut orchestrator =
-            Orchestrator::new(test_config(root_dir)).expect("orchestrator build should succeed");
-
-        orchestrator.temp_base = temp_base.clone();
-        orchestrator.cleanup_pre_existing_temp().await;
-
-        assert!(!temp_base.exists());
-    }
-
-    #[tokio::test]
-    async fn test_orchestrator_run_with_empty_directory() {
-        use tempfile::TempDir;
-
-        let temp_root = TempDir::new().expect("tempdir creation should succeed");
-        let root_dir = temp_root.path().join("movies");
-        tokio::fs::create_dir(&root_dir)
-            .await
-            .expect("dir creation should succeed");
-
-        let orchestrator =
-            Orchestrator::new(test_config(root_dir)).expect("orchestrator build should succeed");
-
-        let summary = orchestrator.run().await.expect("run should succeed");
-
-        assert_eq!(summary.total_movies, 0);
-        assert_eq!(summary.successful_movies, 0);
-        assert_eq!(summary.failed_movies, 0);
-    }
-
-    #[tokio::test]
-    async fn test_orchestrator_sequential_vs_parallel() {
-        use tempfile::TempDir;
-
-        let temp_root = TempDir::new().expect("tempdir creation should succeed");
-        let root_dir = temp_root.path().join("movies");
-        tokio::fs::create_dir(&root_dir)
-            .await
-            .expect("dir creation should succeed");
-
-        for i in 1..=3 {
-            let movie_dir = root_dir.join(format!("Movie {} (202{})", i, i));
-            tokio::fs::create_dir(&movie_dir)
-                .await
-                .expect("dir creation should succeed");
-        }
-
-        // Test sequential processing (concurrency = 1)
-        let orchestrator_seq = Orchestrator::new(OrchestratorConfig {
-            root_dir: root_dir.clone(),
-            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
-            ..test_config(PathBuf::new())
-        })
-        .expect("orchestrator build should succeed");
-
-        // Test parallel processing (concurrency = 2)
-        let orchestrator_par = Orchestrator::new(OrchestratorConfig {
-            root_dir,
-            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
-            concurrency: 2,
-            ..test_config(PathBuf::new())
-        })
-        .expect("orchestrator build should succeed");
-
-        assert_eq!(orchestrator_seq.concurrency, 1);
-        assert_eq!(orchestrator_par.concurrency, 2);
-    }
-
-    #[tokio::test]
-    async fn test_orchestrator_drop_cleanup() {
-        use tempfile::TempDir;
-
-        let temp_root = TempDir::new().expect("tempdir creation should succeed");
-        let root_dir = temp_root.path().join("movies");
-        tokio::fs::create_dir(&root_dir)
-            .await
-            .expect("dir creation should succeed");
-
-        let temp_base = temp_root.path().join("tmp_downloads");
-
-        {
-            let mut orchestrator = Orchestrator::new(test_config(root_dir))
-                .expect("orchestrator build should succeed");
-
-            orchestrator.temp_base = temp_base.clone();
-
-            tokio::fs::create_dir(&temp_base)
-                .await
-                .expect("dir creation should succeed");
-            tokio::fs::write(temp_base.join("test.txt"), b"test")
-                .await
-                .expect("file write should succeed");
-
-            assert!(temp_base.exists());
-        }
-
-        assert!(!temp_base.exists());
-    }
-
-    #[test]
-    fn test_movie_result_display() {
-        let movie = MovieEntry {
-            path: PathBuf::from("/movies/Test (2020)"),
+    fn movie(dir: &Path) -> LibraryItem {
+        LibraryItem::Movie(MovieEntry {
+            path: dir.to_path_buf(),
             title: "Test Movie".to_string(),
             year: 2020,
-            has_done_marker: false,
-        };
-
-        let success_result = MovieResult::success(movie.clone(), 5, 4, vec![]);
-        assert!(success_result.success);
-        assert_eq!(success_result.downloads, 5);
-        assert_eq!(success_result.conversions, 4);
-
-        let failed_result =
-            MovieResult::failed(movie, "download", "Network error".to_string(), vec![]);
-        assert!(!failed_result.success);
-        assert!(failed_result.error.is_some());
-        assert!(
-            failed_result
-                .error
-                .as_ref()
-                .expect("error should be set")
-                .contains("download phase failed")
-        );
-    }
-
-    #[test]
-    fn test_processing_summary_aggregation() {
-        let mut summary = ProcessingSummary::new();
-        summary.total_movies = 5;
-
-        for i in 0..3 {
-            let result = MovieResult::success(
-                MovieEntry {
-                    path: PathBuf::from(format!("/movies/Movie {} (2020)", i)),
-                    title: format!("Movie {}", i),
-                    year: 2020,
-                    has_done_marker: false,
-                },
-                2,
-                2,
-                vec![],
-            );
-            summary.add_movie_result(&result);
-        }
-
-        for i in 3..5 {
-            let result = MovieResult::failed(
-                MovieEntry {
-                    path: PathBuf::from(format!("/movies/Movie {} (2020)", i)),
-                    title: format!("Movie {}", i),
-                    year: 2020,
-                    has_done_marker: false,
-                },
-                "discovery",
-                "API error".to_string(),
-                vec![],
-            );
-            summary.add_movie_result(&result);
-        }
-
-        assert_eq!(summary.total_movies, 5);
-        assert_eq!(summary.successful_movies, 3);
-        assert_eq!(summary.failed_movies, 2);
-        assert_eq!(summary.total_downloads, 6);
-        assert_eq!(summary.total_conversions, 6);
-    }
-
-    #[tokio::test]
-    async fn test_orchestrator_with_done_markers() {
-        use tempfile::TempDir;
-
-        let temp_root = TempDir::new().expect("tempdir creation should succeed");
-        let root_dir = temp_root.path().join("movies");
-        tokio::fs::create_dir(&root_dir)
-            .await
-            .expect("dir creation should succeed");
-
-        let movie1 = root_dir.join("Movie 1 (2021)");
-        tokio::fs::create_dir(&movie1)
-            .await
-            .expect("dir creation should succeed");
-
-        let movie2 = root_dir.join("Movie 2 (2022)");
-        tokio::fs::create_dir(&movie2)
-            .await
-            .expect("dir creation should succeed");
-        let done_marker = crate::models::DoneMarker {
-            finished_at: "2024-01-01T00:00:00Z".to_string(),
-            version: "0.1.0".to_string(),
-        };
-        let marker_json =
-            serde_json::to_string(&done_marker).expect("marker serialization should succeed");
-        tokio::fs::write(movie2.join("done.ext"), marker_json)
-            .await
-            .expect("file write should succeed");
-
-        // Without force flag - should skip movie2
-        let orchestrator = Orchestrator::new(OrchestratorConfig {
-            root_dir: root_dir.clone(),
-            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
-            ..test_config(PathBuf::new())
         })
-        .expect("orchestrator build should succeed");
-
-        let movies = orchestrator.scanner.scan().expect("scan should succeed");
-        assert_eq!(movies.len(), 1);
-
-        // With force flag - should process both
-        let orchestrator_force = Orchestrator::new(OrchestratorConfig {
-            root_dir,
-            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
-            force: true,
-            ..test_config(PathBuf::new())
-        })
-        .expect("orchestrator build should succeed");
-
-        let movies_force = orchestrator_force
-            .scanner
-            .scan()
-            .expect("scan should succeed");
-        assert_eq!(movies_force.len(), 2);
     }
 
-    #[test]
-    fn test_orchestrator_concurrency_validation() {
-        use tempfile::TempDir;
-
-        let temp_root = TempDir::new().expect("tempdir creation should succeed");
-        let root_dir = temp_root.path().join("movies");
-        std::fs::create_dir(&root_dir).expect("dir creation should succeed");
-
-        for concurrency in 1..=10 {
-            let orchestrator = Orchestrator::new(OrchestratorConfig {
-                root_dir: root_dir.clone(),
-                concurrency,
-                ..test_config(PathBuf::new())
-            })
-            .expect("orchestrator build should succeed");
-
-            assert_eq!(orchestrator.concurrency, concurrency);
-        }
-    }
-
-    #[test]
-    fn test_series_result_success() {
-        let series = SeriesEntry {
-            path: PathBuf::from("/series/Test (2020)"),
-            title: "Test".to_string(),
+    fn series(dir: &Path) -> LibraryItem {
+        LibraryItem::Series(SeriesEntry {
+            path: dir.to_path_buf(),
+            title: "Test Series".to_string(),
             year: Some(2020),
-            has_done_marker: false,
-            seasons: vec![1, 2],
-        };
-
-        let result = SeriesResult::success(series, 3, 2, vec![]);
-
-        assert!(result.success);
-        assert_eq!(result.downloads, 3);
-        assert_eq!(result.conversions, 2);
-        assert!(result.error.is_none());
+            seasons: vec![1],
+        })
     }
 
-    #[test]
-    fn test_series_result_failed() {
-        let series = SeriesEntry {
-            path: PathBuf::from("/series/Test (2020)"),
-            title: "Test".to_string(),
-            year: Some(2020),
-            has_done_marker: false,
-            seasons: vec![1, 2],
-        };
-
-        let result = SeriesResult::failed(series, "discovery", "API error".to_string(), vec![]);
-
-        assert!(!result.success);
-        assert_eq!(result.downloads, 0);
-        assert_eq!(result.conversions, 0);
-        assert!(result.error.is_some());
-        assert!(
-            result
-                .error
-                .as_ref()
-                .expect("error should be set")
-                .contains("discovery phase failed: API error")
-        );
-    }
-
-    #[test]
-    fn test_processing_summary_add_series_result() {
-        let mut summary = ProcessingSummary::new();
-        let result = SeriesResult::success(
-            SeriesEntry {
-                path: PathBuf::from("/series/Test (2020)"),
-                title: "Test".to_string(),
-                year: Some(2020),
-                has_done_marker: false,
-                seasons: vec![1],
-            },
-            4,
-            3,
-            vec![],
-        );
-
-        summary.add_series_result(&result);
-
-        assert_eq!(summary.successful_series, 1);
-        assert_eq!(summary.failed_series, 0);
-        assert_eq!(summary.total_downloads, 4);
-        assert_eq!(summary.total_conversions, 3);
-    }
-
-    #[test]
-    fn test_orchestrator_new_with_processing_mode() {
-        use tempfile::TempDir;
-
-        let temp_root = TempDir::new().expect("tempdir creation should succeed");
-        let root_dir = temp_root.path().join("library");
-        std::fs::create_dir(&root_dir).unwrap();
-
-        // Test with Both mode
-        let orchestrator_both = Orchestrator::new(test_config(root_dir.clone()))
-            .expect("orchestrator build should succeed");
-        assert_eq!(orchestrator_both.processing_mode, ProcessingMode::Both);
-
-        // Test with MoviesOnly mode
-        let orchestrator_movies = Orchestrator::new(OrchestratorConfig {
-            root_dir: root_dir.clone(),
-            processing_mode: ProcessingMode::MoviesOnly,
-            ..test_config(PathBuf::new())
-        })
-        .expect("orchestrator build should succeed");
-
-        assert_eq!(
-            orchestrator_movies.processing_mode,
-            ProcessingMode::MoviesOnly
-        );
-
-        // Test with SeriesOnly mode
-        let orchestrator_series = Orchestrator::new(OrchestratorConfig {
-            root_dir,
-            processing_mode: ProcessingMode::SeriesOnly,
-            ..test_config(PathBuf::new())
-        })
-        .expect("orchestrator build should succeed");
-
-        assert_eq!(
-            orchestrator_series.processing_mode,
-            ProcessingMode::SeriesOnly
-        );
-    }
-
-    #[tokio::test]
-    async fn test_orchestrator_run_with_series_and_movies() {
-        use tempfile::TempDir;
-
-        let temp_root = TempDir::new().expect("tempdir creation should succeed");
-        let root_dir = temp_root.path().join("library");
-        tokio::fs::create_dir(&root_dir)
-            .await
-            .expect("dir creation should succeed");
-
-        let movie_dir = root_dir.join("TestMovie (2020)");
-        tokio::fs::create_dir(&movie_dir)
-            .await
-            .expect("dir creation should succeed");
-        tokio::fs::write(movie_dir.join("movie.mp4"), "")
-            .await
-            .expect("file write should succeed");
-
-        let series_dir = root_dir.join("TestSeries (2021)");
-        tokio::fs::create_dir(&series_dir)
-            .await
-            .expect("dir creation should succeed");
-        let season_dir = series_dir.join("Season 01");
-        tokio::fs::create_dir(&season_dir)
-            .await
-            .expect("dir creation should succeed");
-
-        // Test with Both mode - should find both
-        let orchestrator = Orchestrator::new(OrchestratorConfig {
-            root_dir: root_dir.clone(),
-            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
-            ..test_config(PathBuf::new())
-        })
-        .expect("orchestrator build should succeed");
-
-        let (movies, series) = orchestrator
-            .scanner
-            .scan_all()
-            .expect("scan_all should succeed");
-        assert_eq!(movies.len(), 1, "Both mode should find 1 movie");
-        assert_eq!(series.len(), 1, "Both mode should find 1 series");
-
-        // Test with MoviesOnly mode - should only find movies
-        let orchestrator_movies = Orchestrator::new(OrchestratorConfig {
-            root_dir: root_dir.clone(),
-            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
-            processing_mode: ProcessingMode::MoviesOnly,
-            ..test_config(PathBuf::new())
-        })
-        .expect("orchestrator build should succeed");
-
-        let (movies_only, series_only) = orchestrator_movies
-            .scanner
-            .scan_all()
-            .expect("scan_all should succeed");
-        assert_eq!(movies_only.len(), 1);
-        assert_eq!(
-            series_only.len(),
-            1,
-            "Scanner still finds series regardless of mode"
-        );
-
-        // Test with SeriesOnly mode - should only find series
-        let orchestrator_series = Orchestrator::new(OrchestratorConfig {
-            root_dir,
-            discovery: DiscoveryConfig::new(vec![crate::models::Source::Youtube]),
-            processing_mode: ProcessingMode::SeriesOnly,
-            ..test_config(PathBuf::new())
-        })
-        .expect("orchestrator build should succeed");
-
-        let (movies_series, series_series) = orchestrator_series
-            .scanner
-            .scan_all()
-            .expect("scan_all should succeed");
-        assert_eq!(
-            movies_series.len(),
-            1,
-            "Scanner still finds movies regardless of mode"
-        );
-        assert_eq!(series_series.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_dry_run_returns_zero_downloads_and_conversions() {
-        use tempfile::TempDir;
-
-        let temp_root = TempDir::new().expect("tempdir creation should succeed");
-        let root_dir = temp_root.path().join("movies");
-        tokio::fs::create_dir(&root_dir)
-            .await
-            .expect("dir creation should succeed");
-
-        // Create a movie folder so the scanner finds something
-        let movie_dir = root_dir.join("DryRunTest (2023)");
-        tokio::fs::create_dir(&movie_dir)
-            .await
-            .expect("dir creation should succeed");
-        // A video file is needed so the scanner classifies this as a movie folder
-        tokio::fs::write(movie_dir.join("movie.mp4"), b"")
-            .await
-            .expect("file write should succeed");
-
-        let orchestrator = Orchestrator::new(OrchestratorConfig {
-            root_dir,
-            discovery: DiscoveryConfig {
-                sources: vec![crate::models::Source::Youtube],
-                dry_run: true,
-                cookies_from_browser: None,
-                vimeo_access_token: String::new(),
-            },
-            ..test_config(PathBuf::new())
-        })
-        .expect("orchestrator build should succeed");
-
-        assert!(orchestrator.dry_run);
-
-        let summary = orchestrator.run().await.expect("run should succeed");
-
-        // Dry-run should report the movie but 0 downloads and 0 conversions
-        assert_eq!(summary.total_movies, 1);
-        assert_eq!(summary.total_downloads, 0);
-        assert_eq!(summary.total_conversions, 0);
-    }
-
-    #[tokio::test]
-    async fn test_dry_run_does_not_write_done_marker() {
-        use tempfile::TempDir;
-
-        let temp_root = TempDir::new().expect("tempdir creation should succeed");
-        let root_dir = temp_root.path().join("movies");
-        tokio::fs::create_dir(&root_dir)
-            .await
-            .expect("dir creation should succeed");
-
-        let movie_dir = root_dir.join("MarkerTest (2023)");
-        tokio::fs::create_dir(&movie_dir)
-            .await
-            .expect("dir creation should succeed");
-
-        let orchestrator = Orchestrator::new(OrchestratorConfig {
-            root_dir,
-            discovery: DiscoveryConfig {
-                sources: vec![crate::models::Source::Youtube],
-                dry_run: true,
-                cookies_from_browser: None,
-                vimeo_access_token: String::new(),
-            },
-            ..test_config(PathBuf::new())
-        })
-        .expect("orchestrator build should succeed");
-
-        let _summary = orchestrator.run().await.expect("run should succeed");
-
-        // Verify no done marker was written
-        let marker_path = movie_dir.join("done.ext");
-        assert!(
-            !marker_path.exists(),
-            "done.ext should NOT be created in dry-run mode"
-        );
-    }
-
-    #[test]
-    fn test_add_source_results_accumulates_correctly() {
-        use crate::discovery::SourceResult;
-
-        let mut summary = ProcessingSummary::new();
-
-        // First batch: TMDB 5, YouTube 3
-        let batch1 = vec![
-            SourceResult {
-                source: SourceType::TMDB,
-                videos_found: 5,
-                error: None,
-            },
-            SourceResult {
+    fn outcome(
+        item: LibraryItem,
+        success: bool,
+        downloads: usize,
+        conversions: usize,
+    ) -> ItemOutcome {
+        ItemOutcome {
+            item,
+            success,
+            downloads,
+            conversions,
+            placed: conversions,
+            source_results: vec![SourceResult {
                 source: SourceType::YouTube,
                 videos_found: 3,
                 error: None,
-            },
-        ];
-        summary.add_source_results(&batch1);
-
-        assert_eq!(summary.source_totals[&SourceType::TMDB], 5);
-        assert_eq!(summary.source_totals[&SourceType::YouTube], 3);
-        assert_eq!(summary.total_videos_discovered, 8);
-
-        // Second batch: TMDB 2, Archive 4 — TMDB should accumulate
-        let batch2 = vec![
-            SourceResult {
-                source: SourceType::TMDB,
-                videos_found: 2,
-                error: None,
-            },
-            SourceResult {
-                source: SourceType::ArchiveOrg,
-                videos_found: 4,
-                error: None,
-            },
-        ];
-        summary.add_source_results(&batch2);
-
-        assert_eq!(summary.source_totals[&SourceType::TMDB], 7);
-        assert_eq!(summary.source_totals[&SourceType::YouTube], 3);
-        assert_eq!(summary.source_totals[&SourceType::ArchiveOrg], 4);
-        assert_eq!(summary.total_videos_discovered, 14);
+            }],
+            duplicates_removed: 1,
+            error: None,
+        }
     }
 
     #[test]
-    fn test_add_movie_result_merges_source_results() {
-        use crate::discovery::SourceResult;
+    fn rejects_missing_root_directory() {
+        let missing = std::env::temp_dir().join("definitely-not-a-real-library-dir");
+        assert!(Orchestrator::new(test_config(missing)).is_err());
+    }
 
+    #[test]
+    fn rejects_file_as_root() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        assert!(Orchestrator::new(test_config(file.path().to_path_buf())).is_err());
+    }
+
+    #[test]
+    fn summary_folds_movie_and_series_outcomes() {
+        let dir = tempfile::TempDir::new().unwrap();
         let mut summary = ProcessingSummary::new();
-        summary.total_movies = 1;
-
-        let result = MovieResult::success(
-            MovieEntry {
-                path: PathBuf::from("/movies/Test (2020)"),
-                title: "Test".to_string(),
-                year: 2020,
-                has_done_marker: false,
-            },
-            3,
-            2,
-            vec![
-                SourceResult {
-                    source: SourceType::TMDB,
-                    videos_found: 5,
-                    error: None,
-                },
-                SourceResult {
-                    source: SourceType::YouTube,
-                    videos_found: 8,
-                    error: None,
-                },
-            ],
-        );
-
-        summary.add_movie_result(&result);
+        summary.add_outcome(&outcome(movie(dir.path()), true, 4, 3));
+        summary.add_outcome(&outcome(series(dir.path()), false, 2, 0));
 
         assert_eq!(summary.successful_movies, 1);
-        assert_eq!(summary.source_totals[&SourceType::TMDB], 5);
-        assert_eq!(summary.source_totals[&SourceType::YouTube], 8);
-        assert_eq!(summary.total_videos_discovered, 13);
-    }
-
-    #[test]
-    fn test_add_series_result_merges_source_results() {
-        use crate::discovery::SourceResult;
-
-        let mut summary = ProcessingSummary::new();
-        summary.total_series = 1;
-
-        let result = SeriesResult::success(
-            SeriesEntry {
-                path: PathBuf::from("/series/Test (2020)"),
-                title: "Test".to_string(),
-                year: Some(2020),
-                has_done_marker: false,
-                seasons: vec![1],
-            },
-            4,
-            3,
-            vec![SourceResult {
-                source: SourceType::TMDB,
-                videos_found: 6,
-                error: None,
-            }],
-        );
-
-        summary.add_series_result(&result);
-
-        assert_eq!(summary.successful_series, 1);
-        assert_eq!(summary.source_totals[&SourceType::TMDB], 6);
+        assert_eq!(summary.failed_movies, 0);
+        assert_eq!(summary.successful_series, 0);
+        assert_eq!(summary.failed_series, 1);
+        assert_eq!(summary.total_downloads, 6);
+        assert_eq!(summary.total_conversions, 3);
         assert_eq!(summary.total_videos_discovered, 6);
+        assert_eq!(summary.duplicates_removed, 2);
+        assert_eq!(summary.source_totals[&SourceType::YouTube], 6);
     }
 
     #[test]
-    fn test_failed_result_has_empty_source_results() {
-        let result = MovieResult::failed(
-            MovieEntry {
-                path: PathBuf::from("/movies/Test (2020)"),
-                title: "Test".to_string(),
-                year: 2020,
-                has_done_marker: false,
-            },
-            "discovery",
-            "API error".to_string(),
-            vec![],
-        );
-
-        assert!(result.source_results.is_empty());
-
-        let mut summary = ProcessingSummary::new();
-        summary.add_movie_result(&result);
-        assert!(summary.source_totals.is_empty());
-        assert_eq!(summary.total_videos_discovered, 0);
-    }
-}
-
-#[cfg(test)]
-mod property_tests {
-    use crate::models::ProcessingMode;
-    use crate::scanner::Scanner;
-    use proptest::prelude::*;
-
-    proptest! {
-        #[test]
-        fn prop_sequential_downloads_within_movie(
-            title in "[a-zA-Z][a-zA-Z0-9 ]{4,29}",
-            year in 2000u16..2025u16,
-            num_sources in 1usize..5usize
-        ) {
-            prop_assert!(num_sources > 0);
-            prop_assert!((2000..2025).contains(&year));
-            prop_assert!(!title.trim().is_empty());
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn prop_concurrency_limit_enforcement(
-            concurrency in 1usize..=5usize
-        ) {
-            prop_assert!(concurrency >= 1);
-            prop_assert!(concurrency <= 5);
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn prop_error_isolation_between_movies(
-            num_movies in 2usize..6usize
-        ) {
-            prop_assert!(num_movies >= 2);
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn prop_temp_folder_cleanup_on_exit(_dummy in 0u8..10u8) {
-            // Drop trait guarantees cleanup
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn prop_pre_existing_temp_cleanup(_dummy in 0u8..10u8) {
-            // cleanup_pre_existing_temp() called at start of run()
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn prop_idempotent_re_execution(
-            num_movies in 2usize..5usize,
-            force_flag in proptest::bool::ANY
-        ) {
-            use tempfile::TempDir;
-            use tokio::runtime::Runtime;
-
-            let rt = Runtime::new().expect("tokio runtime creation should succeed");
-            rt.block_on(async {
-                let temp_root = TempDir::new().expect("tempdir creation should succeed");
-                let root_dir = temp_root.path().join("movies");
-                tokio::fs::create_dir(&root_dir).await.expect("dir creation should succeed");
-
-                let mut movie_paths = Vec::new();
-                for i in 0..num_movies {
-                    let movie_folder = format!("Movie {} (202{})", i, i);
-                    let movie_path = root_dir.join(&movie_folder);
-                    tokio::fs::create_dir(&movie_path).await.expect("dir creation should succeed");
-                    movie_paths.push(movie_path);
-                }
-
-                let scanner1 = Scanner::new(root_dir.clone(), false, false);
-                let movies1 = scanner1.scan().expect("scan should succeed");
-                prop_assert_eq!(movies1.len(), num_movies);
-
-                let num_with_markers = num_movies / 2;
-                for movie_path in movie_paths.iter().take(num_with_markers) {
-                    let done_marker = crate::models::DoneMarker {
-                        finished_at: "2024-01-15T10:30:00Z".to_string(),
-                        version: "0.1.0".to_string(),
-                    };
-                    let marker_json = serde_json::to_string(&done_marker)
-                        .expect("marker serialization should succeed");
-                    tokio::fs::write(movie_path.join("done.ext"), marker_json)
-                        .await
-                        .expect("file write should succeed");
-                }
-
-                let scanner2 = Scanner::new(root_dir.clone(), false, false);
-                let movies2 = scanner2.scan().expect("scan should succeed");
-                let expected_without_force = num_movies - num_with_markers;
-                prop_assert_eq!(movies2.len(), expected_without_force);
-
-                for movie in &movies2 {
-                    prop_assert!(!movie.has_done_marker);
-                }
-
-                let scanner3 = Scanner::new(root_dir.clone(), force_flag, false);
-                let movies3 = scanner3.scan().expect("scan should succeed");
-
-                if force_flag {
-                    prop_assert_eq!(movies3.len(), num_movies);
-                } else {
-                    prop_assert_eq!(movies3.len(), expected_without_force);
-                }
-
-                let scanner4 = Scanner::new(root_dir.clone(), force_flag, false);
-                let movies4 = scanner4.scan().expect("scan should succeed");
-                prop_assert_eq!(movies3.len(), movies4.len());
-
-                Ok(()) as Result<(), proptest::test_runner::TestCaseError>
-            }).expect("async block should succeed");
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn prop_processing_mode_filtering(
-            num_movies in 1usize..4usize,
-            num_series in 1usize..4usize,
-            mode in prop_oneof![
-                Just(ProcessingMode::Both),
-                Just(ProcessingMode::MoviesOnly),
-                Just(ProcessingMode::SeriesOnly),
-            ]
-        ) {
-            use tempfile::TempDir;
-            use tokio::runtime::Runtime;
-
-            let rt = Runtime::new().expect("tokio runtime creation should succeed");
-            rt.block_on(async {
-                let temp_root = TempDir::new().expect("tempdir creation should succeed");
-                let root_dir = temp_root.path().join("library");
-                tokio::fs::create_dir(&root_dir).await.expect("dir creation should succeed");
-
-                for i in 0..num_movies {
-                    let movie_folder = format!("TestMovie{} (202{})", i, i);
-                    let movie_path = root_dir.join(&movie_folder);
-                    tokio::fs::create_dir(&movie_path).await.expect("dir creation should succeed");
-                    tokio::fs::write(movie_path.join("movie.mp4"), "").await.expect("file write should succeed");
-                }
-
-                for i in 0..num_series {
-                    let series_folder = format!("TestSeries{} (202{})", i, i);
-                    let series_path = root_dir.join(&series_folder);
-                    tokio::fs::create_dir(&series_path).await.expect("dir creation should succeed");
-                    let season_path = series_path.join("Season 01");
-                    tokio::fs::create_dir(&season_path).await.expect("dir creation should succeed");
-                }
-
-                let scanner = Scanner::new(root_dir.clone(), false, false);
-                let (movies, series) = scanner.scan_all().expect("scan_all should succeed");
-
-                match mode {
-                    ProcessingMode::Both => {
-                        prop_assert_eq!(movies.len(), num_movies);
-                        prop_assert_eq!(series.len(), num_series);
-                    }
-                    ProcessingMode::MoviesOnly => {
-                        prop_assert_eq!(movies.len(), num_movies);
-                        prop_assert_eq!(series.len(), num_series);
-                    }
-                    ProcessingMode::SeriesOnly => {
-                        prop_assert_eq!(movies.len(), num_movies);
-                        prop_assert_eq!(series.len(), num_series);
-                    }
-                }
-
-                Ok(()) as Result<(), proptest::test_runner::TestCaseError>
-            }).expect("async block should succeed");
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn prop_series_error_isolation(
-            num_series in 2usize..5usize
-        ) {
-            prop_assert!(num_series >= 2);
-        }
+    fn progress_outcome_mirrors_item_outcome() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let outcome = outcome(movie(dir.path()), true, 4, 3);
+        let progress: Outcome = outcome.progress_outcome();
+        assert!(progress.success);
+        assert_eq!(progress.downloads, 4);
+        assert_eq!(progress.conversions, 3);
     }
 }

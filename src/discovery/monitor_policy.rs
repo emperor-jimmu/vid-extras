@@ -21,10 +21,7 @@ impl MonitorPolicy {
     ///
     /// All Season 0 episodes are monitored unless their episode number
     /// appears in the manual exclusion list.
-    pub fn should_monitor(
-        episode: &TvdbEpisodeExtended,
-        manual_exclude_list: &[u8],
-    ) -> bool {
+    pub fn should_monitor(episode: &TvdbEpisodeExtended, manual_exclude_list: &[u8]) -> bool {
         !manual_exclude_list.contains(&episode.number)
     }
 

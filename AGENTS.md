@@ -83,21 +83,24 @@ Extras organized into: `trailers/`, `behind the scenes/`, `deleted scenes/`, `fe
 
 | File | Description |
 |------|-------------|
-| `src/main.rs` | Entry point: parse CLI → init logging → validate deps → run pipeline |
-| `src/lib.rs` | Module declarations, `TUI_ACTIVE` global flag, re-exports |
+| `src/main.rs` | Entry point: parse CLI → init logging → validate deps → build progress sinks → run pipeline |
+| `src/lib.rs` | Module declarations and re-exports |
 | `src/cli.rs` | `CliArgs` (clap derive), `CliConfig`, validation, banner display |
 | `src/config.rs` | `config.cfg` load/save, interactive key prompting |
 | `src/models.rs` | All shared types: `MovieEntry`, `SeriesEntry`, `VideoSource`, `ContentCategory`, etc. |
 | `src/error.rs` | Structured error types via `thiserror` for every subsystem |
-| `src/orchestrator.rs` | Top-level 5-phase pipeline coordinator (scan → discover → download → convert → organize) |
-| `src/scanner.rs` | Directory traversal, `Movie`/`Series`/`Unknown` classification, `done.ext` skip logic |
+| `src/orchestrator.rs` | Thin shell: scan → hand library items to the pipeline → fold outcomes into `ProcessingSummary` |
+| `src/pipeline.rs` | One interface for a library item: discovery partitioned into extras scopes, download → convert → place per scope, temp cleanup, Done marker rule, concurrency |
+| `src/progress.rs` | Progress module: semantic event operations with CLI, JSON and TUI sink adapters |
+| `src/scanner.rs` | Directory traversal, `Movie`/`Series`/`Unknown` classification, done-marker skip logic |
 | `src/downloader.rs` | yt-dlp subprocess wrapper; 5-min timeout; subtitle sidecar collection |
 | `src/converter.rs` | ffmpeg HEVC conversion; auto-detects NVENC → QSV → VideoToolbox → software x265 |
-| `src/organizer.rs` | Moves files into Jellyfin subdirs; sanitizes Windows filenames; writes `done.ext` |
+| `src/done_marker.rs` | Owns `done.ext`: filename, JSON payload, validity rule, write and removal |
+| `src/organizer.rs` | Places files into Jellyfin subdirs and returns the number placed; sanitizes Windows filenames |
 | `src/deduplication.rs` | Tier-based fuzzy deduplication (title similarity + duration); higher tier wins |
 | `src/validation.rs` | Startup checks: yt-dlp/ffmpeg in PATH, HEVC encoder present, yt-dlp version |
-| `src/output.rs` | Colored CLI output, progress display, `ProcessingSummary`; suppressed when TUI active |
-| `src/json_output.rs` | `ProgressEvent` struct; line-delimited JSON to stdout for `--json-progress` |
+| `src/output.rs` | Human-readable CLI views rendered by the CLI progress sink |
+| `src/json_output.rs` | `ProgressEvent` struct: the line-delimited JSON envelope emitted by the JSON sink |
 | `src/tui.rs` | Ratatui split-pane TUI; per-thread log ring buffers; ~60fps render loop |
 
 ### Discovery submodules (`src/discovery/`)
@@ -127,7 +130,7 @@ Extras organized into: `trailers/`, `behind the scenes/`, `deleted scenes/`, `fe
 | `special_searcher.rs` | Builds ordered YouTube search queries per TVDB special episode (incl. OVA variants) |
 | `special_validator.rs` | Scores/selects best YouTube candidate via title similarity + duration matching |
 
-Pipeline is idempotent: `done.ext` marker is written on completion. Use `--force` to reprocess.
+Pipeline is idempotent: the pipeline writes a done marker only when at least one extra was placed. Use `--force` to reprocess.
 
 ## Testing
 

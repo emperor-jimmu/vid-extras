@@ -1,13 +1,12 @@
 // Scanner module - handles directory traversal and movie discovery
 
+use crate::done_marker::DoneMarker;
 use crate::error::ScanError;
-use crate::models::{DoneMarker, MediaType, MovieEntry, SeriesEntry};
+use crate::models::{MediaType, MovieEntry, SeriesEntry};
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
-
-const DONE_MARKER_FILENAME: &str = "done.ext";
 
 /// Pre-compiled regex for parsing "Title (Year)" folder names
 static FOLDER_NAME_RE: LazyLock<Regex> =
@@ -137,7 +136,6 @@ impl Scanner {
                         path: self.root_dir.clone(),
                         title,
                         year,
-                        has_done_marker,
                     }],
                     Vec::new(),
                 ))
@@ -170,7 +168,6 @@ impl Scanner {
                         path: self.root_dir.clone(),
                         title,
                         year,
-                        has_done_marker,
                         seasons,
                     }],
                 ))
@@ -236,7 +233,6 @@ impl Scanner {
                                 path: path.clone(),
                                 title,
                                 year,
-                                has_done_marker,
                             });
                         } else {
                             // Movie type detected but name doesn't parse, recurse
@@ -259,7 +255,6 @@ impl Scanner {
                                 path: path.clone(),
                                 title,
                                 year,
-                                has_done_marker,
                                 seasons,
                             });
                         } else {
@@ -334,7 +329,6 @@ impl Scanner {
             path: self.root_dir.clone(),
             title,
             year,
-            has_done_marker,
         }])
     }
 
@@ -384,7 +378,6 @@ impl Scanner {
                         path: path.clone(),
                         title,
                         year,
-                        has_done_marker,
                     });
                 } else {
                     // Not a movie folder, recurse into it
@@ -443,20 +436,7 @@ impl Scanner {
 
     /// Check if a done marker file exists in the given directory
     fn check_done_marker(path: &Path) -> bool {
-        let marker_path = path.join(DONE_MARKER_FILENAME);
-
-        if !marker_path.exists() {
-            return false;
-        }
-
-        // Try to read and parse the done marker to ensure it's valid
-        match fs::read_to_string(&marker_path) {
-            Ok(content) => {
-                // Try to parse as JSON to validate format
-                serde_json::from_str::<DoneMarker>(&content).is_ok()
-            }
-            Err(_) => false,
-        }
+        DoneMarker::exists(path)
     }
 
     /// Detect whether a folder contains a movie or a TV series
@@ -697,7 +677,7 @@ mod tests {
         // Should include the movie since done marker is invalid
         assert_eq!(movies.len(), 1);
         assert_eq!(movies[0].title, "Test Movie");
-        assert!(!movies[0].has_done_marker);
+        assert!(!crate::done_marker::DoneMarker::exists(&movies[0].path));
     }
 
     #[test]
@@ -889,7 +869,10 @@ mod property_tests {
                 );
                 prop_assert_eq!(&series[0].title, title_trimmed);
                 prop_assert_eq!(series[0].year, year);
-                prop_assert!(series[0].has_done_marker, "has_done_marker should be true");
+                prop_assert!(
+                    crate::done_marker::DoneMarker::exists(&series[0].path),
+                    "done marker should exist"
+                );
             } else {
                 // Without force flag, the series should be skipped
                 prop_assert_eq!(
@@ -1053,7 +1036,10 @@ mod property_tests {
                 );
                 prop_assert_eq!(&movies[0].title, title_trimmed);
                 prop_assert_eq!(movies[0].year, year);
-                prop_assert!(movies[0].has_done_marker, "has_done_marker should be true");
+                prop_assert!(
+                    crate::done_marker::DoneMarker::exists(&movies[0].path),
+                    "done marker should exist"
+                );
             } else {
                 // Without force flag, the movie should be skipped
                 prop_assert_eq!(
